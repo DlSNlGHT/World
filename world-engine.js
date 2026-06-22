@@ -146,6 +146,10 @@
       // stateOverride: 传入则使用该状态（重 roll 时用存档点），否则用当前状态
       function applyInjection(stateOverride) {
         try {
+          if (api.getSettings(true).engineEnabled === false) {
+            unregisterInjection();
+            return;
+          }
           if (api.getSettings(true).injectIntoPrompt === false) {
             unregisterInjection();
             console.log('[世界引擎] 正文注入已在设置中关闭');
@@ -229,6 +233,7 @@
 
       function onMessageReceived() {
         clearAutoEvolveTimer();
+        if (api.getSettings(true).engineEnabled === false) return;
 
         const ctx = SillyTavern.getContext();
         const chat = ctx?.chat || [];
@@ -371,7 +376,8 @@
             }
           }
           const start = Math.max(0, chat.length - readRounds * 2);
-          const dialogueText = chat.slice(start)
+          const sliceEnd = settings.evolveExcludeLatest ? -1 : undefined;
+          const dialogueText = chat.slice(start, sliceEnd)
             .map(m => (m.is_user ? '用户' : 'AI') + '：' + core.filterDialogue((m.mes || '').trim(), settings))
             .filter(line => line.length > 3)
             .join('\n');

@@ -345,9 +345,9 @@
 
 .we-panel-corner-actions {
   display: flex;
-  flex-direction: column;
+  flex-direction: row;
   align-items: center;
-  gap: 15px;
+  gap: 6px;
   flex-shrink: 0;
 }
 .we-panel-settings {
@@ -367,6 +367,8 @@
   border-color: var(--we-border);
   background: rgba(255,255,255,0.025);
 }
+.we-engine-on { color: var(--we-accent); }
+.we-engine-off { color: var(--we-text3); opacity: 0.4; }
 
 /* ===== 标签栏 ===== */
 .we-tabs {
