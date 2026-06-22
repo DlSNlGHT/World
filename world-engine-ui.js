@@ -427,6 +427,7 @@ window.WORLD_ENGINE_UI = (function() {
   //   date    —— 可选，日期不确定的留月份/年份；
   //   items   —— 该版本改动条目（每条一行，渲染时走 h() 转义）。
   const CHANGELOG = [
+    { version: '2.3.13', date: '2026-06-22', items: ['修复自动推演死锁：开了 syncToChat 的空壳聊天（从未推演过）首次 AI 楼层后状态行卡在「第 0/1 轮」永不自动推演', '修复火山方舟等自定义版本前缀（/api/v3、/api/coding/v3）API 无法拉取模型：URL 规整不再硬塞 /v1，版本前缀由用户填到完整，URL 框旁加格式提示', 'chatcache 跨设备同步护栏：云端缺少 checkpoint/fingerprint 时不随 exact 删除本地锚点，避免再次掉进死锁'] },
     { version: '2.3.12', date: '2026-06-22', items: ['新增「关于」选项卡：内置更新日志，可下拉选择版本查看历次改动', '正则过滤「简单模式」：勾选标签自动生成删除正则'] },
     { version: '2.3.11', date: '2026-06-22', items: ['正则过滤支持 /pattern/flags 写法、保存时校验、新增测试按钮'] },
     { version: '2.3.10', date: '2026-06-21', items: ['引擎预设系统代码审查修复（性能与卡顿）', '诊断包补采预设系统与 prompt 分段'] },
