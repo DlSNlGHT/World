@@ -102,7 +102,6 @@ window.WORLD_ENGINE_UI = (function() {
         </div>
         <div class="we-panel-corner-actions">
           <button class="we-panel-close">✕</button>
-          <button class="we-panel-power" id="we-btn-power" title="插上=关闭推演与注入 / 拔下=开启"><i class="fa-solid fa-power-off"></i></button>
           <button class="we-panel-settings" id="we-btn-settings-open" title="设置"><i class="fa-solid fa-gear"></i></button>
         </div>
       </div>
@@ -428,7 +427,7 @@ window.WORLD_ENGINE_UI = (function() {
   //   date    —— 可选，日期不确定的留月份/年份；
   //   items   —— 该版本改动条目（每条一行，渲染时走 h() 转义）。
   const CHANGELOG = [
-    { version: '2.3.14', date: '2026-06-23', items: ['修复 redo 轮次虚增：点「重新推进」卫星按钮时 round 无条件 +1（在 isNew 判定之前）导致 redo 也涨轮次，与注释「redo 轮次不变」不符；现 round++ 移进 if(isNew)，只 forward / 自动新轮次涨', '修复 redo 无存档点静默退化：首次推演后无 checkpoint，点 redo 旧版整块跳过→无声退化为「在当前 state 上推」+ round++ 的伪 redo（白涨一轮无提示）；现 mode==="redo" 且无 cp 时 return false 并报错「无存档点，无法重新推进（redo）；请先『向前推进』至少一轮」，不再伪 forward', '修复重 roll 同层注入旧世界状态：重 roll 同层（chatLayer==stateLayer）旧版走 else 注入「基于旧正文推演出的当前状态」，干扰正在重写的新正文；现 applyInjectionForCurrentRound 加「同层已推演→不注入」分支，判据用 fingerprint（只在真正新轮次时更新，比 chatLayer 忠实）命中 unregisterInjection，避免新正文被旧世界状态带偏', '新增面板右上角「插头」总开关：一键关闭/开启 推演与注入（联动 evolveMode + injectIntoPrompt 两个现有设置字段，不新增字段；关闭=切手动推演+关注入，开启=切自动推演+开注入；manual 模式自带拦 pending autoEvolveTimer，无需额外总开关注解）'] },
+    { version: '2.3.14', date: '2026-06-23', items: ['修复 redo 轮次虚增：点「重新推进」卫星按钮时 round 无条件 +1（在 isNew 判定之前）导致 redo 也涨轮次，与注释「redo 轮次不变」不符；现 round++ 移进 if(isNew)，只 forward / 自动新轮次涨', '修复 redo 无存档点静默退化：首次推演后无 checkpoint，点 redo 旧版整块跳过→无声退化为「在当前 state 上推」+ round++ 的伪 redo（白涨一轮无提示）；现 mode==="redo" 且无 cp 时 return false 并报错「无存档点，无法重新推进（redo）；请先『向前推进』至少一轮」，不再伪 forward', '修复重 roll 同层注入旧世界状态：重 roll 同层（chatLayer==stateLayer）旧版走 else 注入「基于旧正文推演出的当前状态」，干扰正在重写的新正文；现 applyInjectionForCurrentRound 加「同层已推演→不注入」分支，判据用 fingerprint（只在真正新轮次时更新，比 chatLayer 忠实）命中 unregisterInjection，避免新正文被旧世界状态带偏', '新增小地球（悬浮球）左侧第四卫星「插头」总开关：一键关闭/开启 推演与注入（联动 evolveMode + injectIntoPrompt 两个现有设置字段，不新增字段；关闭=切手动推演+关注入，开启=切自动推演+开注入；manual 模式自带拦 pending autoEvolveTimer，无需额外总开关注解）'] },
     { version: '2.3.13', date: '2026-06-22', items: ['修复自动推演死锁：开了 syncToChat 的空壳聊天（从未推演过）首次 AI 楼层后状态行卡在「第 0/1 轮」永不自动推演', '修复火山方舟等自定义版本前缀（/api/v3、/api/coding/v3）API 无法拉取模型：URL 规整不再硬塞 /v1，版本前缀由用户填到完整，URL 框旁加格式提示', 'chatcache 跨设备同步护栏：云端缺少 checkpoint/fingerprint 时不随 exact 删除本地锚点，避免再次掉进死锁'] },
     { version: '2.3.12', date: '2026-06-22', items: ['新增「关于」选项卡：内置更新日志，可下拉选择版本查看历次改动', '正则过滤「简单模式」：勾选标签自动生成删除正则'] },
     { version: '2.3.11', date: '2026-06-22', items: ['正则过滤支持 /pattern/flags 写法、保存时校验、新增测试按钮'] },
@@ -2559,37 +2558,6 @@ window.WORLD_ENGINE_UI = (function() {
     const settingsOpenBtn = document.getElementById('we-btn-settings-open');
     if (settingsOpenBtn) settingsOpenBtn.onclick = () => { _currentView = 'settings'; refresh(); };
 
-    // 「插头」总开关:一键联动 evolveMode + injectIntoPrompt
-    //   关闭态 = evolveMode='manual'(不自动推演) + injectIntoPrompt=false(不注入)；
-    //   开启态 = evolveMode='auto' + injectIntoPrompt=true。
-    //   不新增设置字段:状态从这俩字段反推(`manual && inject===false` = 关)。
-    //   立即生效:切完调 applyInjection 让 inject 守卫(world-engine.js:148) 生效(关→unregister,开→重注入)。
-    //   持久化:走 persist 同模式(setKV 内联,见 ui.js:3393 persist 体),改的是已持久化字段。
-    //   manual 自带拦 pending autoEvolveTimer 能力(world-engine.js:282 守卫),无需额外 engineEnabled 守卫
-    //   (吸取 PR#26 隐患 A 教训:不靠 engineEnabled,靠 manual 自然拦 timer fire)。
-    const powerBtn = document.getElementById('we-btn-power');
-    if (powerBtn) {
-      const wapi = window.WORLD_ENGINE_API;
-      const readSettings = () => (wapi && wapi.getSettings ? wapi.getSettings(true) : {}) || {};
-      const isOff = (s) => s.evolveMode === 'manual' && s.injectIntoPrompt === false;
-      // 初始视觉态:从 settings 反推
-      powerBtn.classList.toggle('on', isOff(readSettings()));
-      powerBtn.onclick = () => {
-        const turnOff = !isOff(readSettings()); // 切到对面
-        const setKV = (k, v) => {
-          const c = wapi && wapi.getSettings ? wapi.getSettings(true) : {};
-          window.WORLD_ENGINE_STORE.setItem('world_engine_settings', JSON.stringify({ ...c, [k]: v }));
-          if (wapi && wapi.getSettings) wapi.getSettings(true);
-        };
-        setKV('evolveMode', turnOff ? 'manual' : 'auto');
-        setKV('injectIntoPrompt', !turnOff); // 关=false, 开=true
-        window.WORLD_ENGINE?.applyInjection?.(); // 立即重注入:关→unregisterInjection,开→重新注入
-        powerBtn.classList.toggle('on', turnOff);
-        showToast(turnOff ? '已关闭推演与注入' : '已开启推演与注入');
-        if (typeof _currentView !== 'undefined' && _currentView === 'settings') refresh();
-      };
-    }
-
     document.querySelectorAll('.we-nav-row[data-view]').forEach(row => {
       row.onclick = () => {
         if (_selectedNavView === row.dataset.view) {
@@ -4189,6 +4157,37 @@ window.WORLD_ENGINE_UI = (function() {
     wire('we-sat-forward', () => runManualEvolve('forward', 'state'));
     wire('we-sat-redo', () => runManualEvolve('redo', 'checkpoint'));
     wire('we-sat-abort', () => { evolution.abort(); showToast('已发送停止信号'); });
+
+    // 「插头」总开关(球左侧第四卫星):一键联动 evolveMode + injectIntoPrompt
+    //   关闭态(插上)= evolveMode='manual'(不自动推演) + injectIntoPrompt=false(不注入)；
+    //   不新增设置字段:状态从这俩字段反推(`manual && inject===false` = 关)。
+    //   立即生效:切完调 applyInjection 让 inject 守卫(world-engine.js:148) 生效(关→unregister,开→重注入)。
+    //   持久化:走 persist 同模式(setKV 内联,见 ui.js:3393 persist 体),改的是已持久化字段。
+    //   manual 自带拦 pending autoEvolveTimer 能力(world-engine.js:282 守卫),无需额外 engineEnabled 守卫
+    //   (吸取 PR#26 隐患 A 教训:不靠 engineEnabled,靠 manual 自然拦 timer fire)。
+    //   不用 we-sat-off(wire 内会拦 we-sat-off 不可点);用 .on class 标关闭态,power 永远可点。
+    const wapi = window.WORLD_ENGINE_API;
+    const readSettings = () => (wapi && wapi.getSettings ? wapi.getSettings(true) : {}) || {};
+    const isPowerOff = (s) => s.evolveMode === 'manual' && s.injectIntoPrompt === false;
+    const syncPowerState = () => {
+      const el = ball.querySelector('#we-sat-power');
+      if (el) el.classList.toggle('on', isPowerOff(readSettings()));
+    };
+    syncPowerState(); // 初始视觉态
+    wire('we-sat-power', () => {
+      const turnOff = !isPowerOff(readSettings()); // 切到对面
+      const setKV = (k, v) => {
+        const c = wapi && wapi.getSettings ? wapi.getSettings(true) : {};
+        window.WORLD_ENGINE_STORE.setItem('world_engine_settings', JSON.stringify({ ...c, [k]: v }));
+        if (wapi && wapi.getSettings) wapi.getSettings(true);
+      };
+      setKV('evolveMode', turnOff ? 'manual' : 'auto');
+      setKV('injectIntoPrompt', !turnOff); // 关=false, 开=true
+      window.WORLD_ENGINE?.applyInjection?.(); // 立即重注入:关→unregisterInjection,开→重新注入
+      syncPowerState(); // 更新 .on 视觉态
+      showToast(turnOff ? '已关闭推演与注入' : '已开启推演与注入');
+      if (typeof _currentView !== 'undefined' && _currentView === 'settings') refresh();
+    });
   }
 
   function buildInputButton() {
@@ -4211,7 +4210,8 @@ window.WORLD_ENGINE_UI = (function() {
         '<span class="we-ball-tip"></span>' +
         '<span class="we-sat we-sat-up" id="we-sat-forward" role="button" title="向前推进"><i class="fa-solid fa-forward"></i></span>' +
         '<span class="we-sat we-sat-right we-sat-off" id="we-sat-abort" role="button" title="停止推演"><i class="fa-solid fa-stop"></i></span>' +
-        '<span class="we-sat we-sat-down" id="we-sat-redo" role="button" title="重新推进"><i class="fa-solid fa-rotate-right"></i></span>';
+        '<span class="we-sat we-sat-down" id="we-sat-redo" role="button" title="重新推进"><i class="fa-solid fa-rotate-right"></i></span>' +
+        '<span class="we-sat we-sat-left" id="we-sat-power" role="button" title="插上=关闭推演与注入 / 拔下=开启"><i class="fa-solid fa-power-off"></i></span>';
       btn.onclick = () => togglePanel();
       document.body.appendChild(btn);
       wireSatellites(btn);

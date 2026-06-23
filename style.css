@@ -186,6 +186,16 @@
 #we-input-btn.we-ball > .we-sat-up    { top: -22px;    left: 50%;  transform: translateX(-50%); }
 #we-input-btn.we-ball > .we-sat-down  { bottom: -22px; left: 50%;  transform: translateX(-50%); }
 #we-input-btn.we-ball > .we-sat-right { right: -22px;  top: 50%;   transform: translateY(-50%); }
+#we-input-btn.we-ball > .we-sat-left  { left: -22px;   top: 50%;   transform: translateY(-50%); }
+/* 「插头」钮(球左侧第四卫星)关闭态:转红边+暗底,区别于默认,提示当前"已关推演与注入" */
+#we-input-btn.we-ball > .we-sat-left.on {
+  color: var(--we-danger, #d66f68);
+  border-color: var(--we-danger, #d66f68);
+  background: radial-gradient(circle at 35% 30%, #5a2a2a, #2a1414);
+}
+#we-input-btn.we-ball > .we-sat-left.on:hover {
+  box-shadow: 0 0 9px rgba(214,108,104,0.7);
+}
 /* 停止键红调 */
 #we-input-btn.we-ball > .we-sat-right { color: #ffb3b3; border-color: rgba(217,90,90,0.55); }
 /* 禁用态：变暗、不可点 */
@@ -366,33 +376,6 @@
   color: var(--we-accent);
   border-color: var(--we-border);
   background: rgba(255,255,255,0.025);
-}
-.we-panel-power {
-  width: 28px;
-  height: 28px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  border: 1px solid transparent;
-  border-radius: 5px;
-  background: transparent;
-  color: var(--we-text3);
-  cursor: pointer;
-}
-.we-panel-power:hover {
-  color: var(--we-accent);
-  border-color: var(--we-border);
-  background: rgba(255,255,255,0.025);
-}
-/* 「插头」关闭态(已关推演与注入):转灰边框区别于默认,提示当前是"关闭" */
-.we-panel-power.on {
-  color: var(--we-text3);
-  border-color: var(--we-border);
-  background: rgba(0,0,0,0.18);
-}
-.we-panel-power.on:hover {
-  color: var(--we-danger); /* 关闭态 hover 偏红,提示"点会重新开启" */
-  border-color: var(--we-danger);
 }
 
 /* ===== 标签栏 ===== */
