@@ -761,6 +761,15 @@ type：${picked.type}
         state.enemies = cp.enemies || [];
         state.influenceChain = cp.influenceChain || [];
         console.log('[世界引擎] 🔄 检测到重roll，从存档点恢复');
+      } else if (mode === 'redo') {
+        // [FIX] redo（卫星按钮「重新推进」）必须有存档点作为基底。无存档点时（首次推演后、
+        //   或仅做过 redo 从未 forward 过）拒绝执行，避免无声退化成「在当前 state 上推」+ round++
+        //   的伪 redo（旧版 line 753 拿到 null 后整块跳过，后续在 state 上推并 line 945 round++）。
+        //   自动推演（mode 为 undefined）即便 isNew=false 也允许在当前 state 上推——那是
+        //   「基于当前状态推」的正道，不是「从存档点恢复」，不在本守卫范围。
+        _lastError = '无存档点，无法重新推进（redo）；请先「向前推进」至少一轮再使用「重新推进」';
+        console.warn('[世界引擎] ⚠️ redo 无存档点，已拒绝（不退化成伪 forward）');
+        return false;
       }
     }
 
@@ -942,17 +951,21 @@ type：${picked.type}
       }
       state.worldTrends = cleanedTrends;
 
-      state.round++;
       state.lastEvolveResult = update;
 
-      // 推演成功 → 存档点推进（backup 即推演前状态）
+      // [FIX] round 只在新轮次（isNew=true，即 forward / 自动楼层推进）时 +1；
+      //   redo / 同层重 roll 推演（isNew=false）不该涨轮次——注释（上方 line 742、本块 else
+      //   日志）明说 redo「轮次不变」，旧版 line 945 的 round++ 无条件放在 if(isNew) 之前，
+      //   导致 redo 也 +1、round 与 chatLayer/fingerprint 脱钩。现移进 if(isNew) 块。
+      //   连带：redo 不存 checkpoint、不更新 fingerprint（现状已在此块外，符合 redo 语义，不动）。
       if (isNew) {
         // 首次推演不创建空白存档点；后续旧当前状态成为存档点并保留原层数。
+        state.round++;                             // [FIX] 只在新轮次涨
         if (hadStoredState) core.saveCheckpoint(backup);
         core.saveFingerprint(core.getChatFingerprint());
         console.log('[世界引擎] ✅ 推演完成，新轮次第', state.round, '轮，存档点已推进');
       } else {
-        console.log('[世界引擎] ✅ 推演完成（重roll），轮次不变');
+        console.log('[世界引擎] ✅ 推演完成（重roll/redo），轮次不变：第', state.round, '轮');
       }
       core.saveStateWithLayer(state);
       return true;

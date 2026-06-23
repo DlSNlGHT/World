@@ -2,7 +2,7 @@
   "display_name": "🌍 世界引擎",
   "author": "Disnight",
   "description": "独立 API 世界推演引擎：对话后自动推演世界状态，注入上下文到 prompt；支持把存档随聊天保存到酒馆、跨设备同步与防丢失存档；世界书支持蓝绿灯触发（常驻/关键词命中）；支持批量重填世界推演（从首个 AI 楼层分批推到指定楼层）；修复升级后内存膨胀、批量回填切聊天存档污染等稳定性问题",
-  "version": "2.3.13",
+  "version": "2.3.14",
   "license": "MIT",
   "type": "extension",
   "js": "world-engine.js",

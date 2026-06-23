@@ -427,6 +427,7 @@ window.WORLD_ENGINE_UI = (function() {
   //   date    —— 可选，日期不确定的留月份/年份；
   //   items   —— 该版本改动条目（每条一行，渲染时走 h() 转义）。
   const CHANGELOG = [
+    { version: '2.3.14', date: '2026-06-23', items: ['修复 redo 轮次虚增：点「重新推进」卫星按钮时 round 无条件 +1（在 isNew 判定之前）导致 redo 也涨轮次，与注释「redo 轮次不变」不符；现 round++ 移进 if(isNew)，只 forward / 自动新轮次涨', '修复 redo 无存档点静默退化：首次推演后无 checkpoint，点 redo 旧版整块跳过→无声退化为「在当前 state 上推」+ round++ 的伪 redo（白涨一轮无提示）；现 mode==="redo" 且无 cp 时 return false 并报错「无存档点，无法重新推进（redo）；请先『向前推进』至少一轮」，不再伪 forward', '修复重 roll 同层注入旧世界状态：重 roll 同层（chatLayer==stateLayer）旧版走 else 注入「基于旧正文推演出的当前状态」，干扰正在重写的新正文；现 applyInjectionForCurrentRound 加「同层已推演→不注入」分支，判据用 fingerprint（只在真正新轮次时更新，比 chatLayer 忠实）命中 unregisterInjection，避免新正文被旧世界状态带偏'] },
     { version: '2.3.13', date: '2026-06-22', items: ['修复自动推演死锁：开了 syncToChat 的空壳聊天（从未推演过）首次 AI 楼层后状态行卡在「第 0/1 轮」永不自动推演', '修复火山方舟等自定义版本前缀（/api/v3、/api/coding/v3）API 无法拉取模型：URL 规整不再硬塞 /v1，版本前缀由用户填到完整，URL 框旁加格式提示', 'chatcache 跨设备同步护栏：云端缺少 checkpoint/fingerprint 时不随 exact 删除本地锚点，避免再次掉进死锁'] },
     { version: '2.3.12', date: '2026-06-22', items: ['新增「关于」选项卡：内置更新日志，可下拉选择版本查看历次改动', '正则过滤「简单模式」：勾选标签自动生成删除正则'] },
     { version: '2.3.11', date: '2026-06-22', items: ['正则过滤支持 /pattern/flags 写法、保存时校验、新增测试按钮'] },
