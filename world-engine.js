@@ -191,6 +191,21 @@
       function applyInjectionForCurrentRound() {
         const state = core.loadState();
         const chatLayer = core.getChatLayer();
+
+        // [FIX] 同层重 roll → 不注入：当前层 == 上次新轮次推演所在层（fingerprint）且该层已推演过，
+        //   说明这是对「已推演过的同一条 AI 正文」的重新生成（swipe/regenerate），
+        //   不该把「基于旧正文推演出的世界状态」注入进正在重写的新正文，否则新正文被旧世界状态带偏。
+        //   判据用 fingerprint（只在真正新轮次时更新）而非 state.chatLayer（redo 也会刷新），
+        //   故即使首次推演后无 checkpoint、即使 redo 不存 checkpoint，本守卫仍生效。
+        const fp = core.loadFingerprint();
+        const fpLayer = (fp !== '' && Number.isFinite(Number(fp))) ? Number(fp) : null;
+        if (fpLayer != null && fpLayer === chatLayer) {
+          unregisterInjection();
+          console.log('[世界引擎] 正文注入判定：同层重 roll（chatLayer ' + chatLayer + ' == fingerprint ' + fpLayer + '），不注入');
+          if (ui && ui.refresh) ui.refresh(true);
+          return;
+        }
+
         const stateLayer = Number.isFinite(Number(state.chatLayer)) ? Number(state.chatLayer) : chatLayer;
         let injectedScope = 'state';
         if (chatLayer < stateLayer) {
