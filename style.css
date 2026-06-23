@@ -367,6 +367,33 @@
   border-color: var(--we-border);
   background: rgba(255,255,255,0.025);
 }
+.we-panel-power {
+  width: 28px;
+  height: 28px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid transparent;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--we-text3);
+  cursor: pointer;
+}
+.we-panel-power:hover {
+  color: var(--we-accent);
+  border-color: var(--we-border);
+  background: rgba(255,255,255,0.025);
+}
+/* 「插头」关闭态(已关推演与注入):转灰边框区别于默认,提示当前是"关闭" */
+.we-panel-power.on {
+  color: var(--we-text3);
+  border-color: var(--we-border);
+  background: rgba(0,0,0,0.18);
+}
+.we-panel-power.on:hover {
+  color: var(--we-danger); /* 关闭态 hover 偏红,提示"点会重新开启" */
+  border-color: var(--we-danger);
+}
 
 /* ===== 标签栏 ===== */
 .we-tabs {
