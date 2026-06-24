@@ -101,8 +101,9 @@ window.WORLD_ENGINE_UI = (function() {
           </div>
         </div>
         <div class="we-panel-corner-actions">
-          <button class="we-panel-close">✕</button>
+          <button class="we-panel-settings" id="we-btn-engine-toggle" title="总开关"><i class="fa-solid fa-power-off"></i></button>
           <button class="we-panel-settings" id="we-btn-settings-open" title="设置"><i class="fa-solid fa-gear"></i></button>
+          <button class="we-panel-close">✕</button>
         </div>
       </div>
       <div class="we-panel-body" id="we-panel-body">
@@ -1802,6 +1803,13 @@ window.WORLD_ENGINE_UI = (function() {
         <input type="number" id="we-evolve-readrounds" min="1" max="${everyX}" step="1" value="${readRounds}" style="width:100%;">
         <div style="font-size:11px;color:var(--we-text3);margin-top:3px;">从当前层往前取 a 轮的「用户输入 + AI 输出」喂给后台推演。最小 1，最大不超过 X（每次推演的轮数）。默认 1 = 只读最新一轮。</div>
       </div>
+      <div class="we-input-group">
+        <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
+          <input type="checkbox" id="we-evolve-exclude-latest" ${settings.evolveExcludeLatest ? 'checked' : ''}>
+          排除最新 AI 楼层
+        </label>
+        <div style="font-size:11px;color:var(--we-text3);margin-top:3px;">开启后，构建推演上下文时跳过触发本次推演的最新 AI 回复，仅以之前的对话为依据。</div>
+      </div>
       <div id="we-evolve-time-group" style="${mode === 'time' ? '' : 'display:none;'}">
         <div class="we-input-group" style="display:flex;gap:6px;">
           <div style="flex:1;"><label>取正文前 N 字</label><input type="number" id="we-time-front" min="0" step="1" value="${tv('evolveTimeFront', 0)}" style="width:100%;"></div>
@@ -2558,6 +2566,22 @@ window.WORLD_ENGINE_UI = (function() {
     const settingsOpenBtn = document.getElementById('we-btn-settings-open');
     if (settingsOpenBtn) settingsOpenBtn.onclick = () => { _currentView = 'settings'; refresh(); };
 
+    const engineToggleBtn = document.getElementById('we-btn-engine-toggle');
+    if (engineToggleBtn) {
+      const _ts = window.WORLD_ENGINE_API ? window.WORLD_ENGINE_API.getSettings() : {};
+      const _on = _ts.engineEnabled !== false;
+      engineToggleBtn.className = 'we-panel-settings ' + (_on ? 'we-engine-on' : 'we-engine-off');
+      engineToggleBtn.onclick = () => {
+        const s2 = window.WORLD_ENGINE_API.getSettings(true);
+        const nowOn = s2.engineEnabled === false;
+        window.WORLD_ENGINE_STORE.setItem('world_engine_settings', JSON.stringify({ ...s2, engineEnabled: nowOn }));
+        window.WORLD_ENGINE_API.getSettings(true);
+        engineToggleBtn.className = 'we-panel-settings ' + (nowOn ? 'we-engine-on' : 'we-engine-off');
+        if (nowOn && window.WORLD_ENGINE?.applyInjection) window.WORLD_ENGINE.applyInjection();
+        showToast(nowOn ? '世界引擎已启用' : '世界引擎已禁用');
+      };
+    }
+
     document.querySelectorAll('.we-nav-row[data-view]').forEach(row => {
       row.onclick = () => {
         if (_selectedNavView === row.dataset.view) {
@@ -2829,6 +2853,7 @@ window.WORLD_ENGINE_UI = (function() {
           evolveMode: (_modeRaw === 'manual' || _modeRaw === 'time') ? _modeRaw : 'auto',
           evolveEveryX: Math.max(1, parseInt(document.getElementById('we-evolve-everyx')?.value) || 1),
           evolveReadRounds: Math.max(1, parseInt(document.getElementById('we-evolve-readrounds')?.value) || 1),
+          evolveExcludeLatest: document.getElementById('we-evolve-exclude-latest')?.checked === true,
           evolveFilterRegex: gv('we-filter-regex') || '',
           displayMode: document.getElementById('we-display-mode')?.value === 'expand' ? 'expand' : 'mask',
           // 按时间模式
@@ -3525,6 +3550,13 @@ window.WORLD_ENGINE_UI = (function() {
 
   function showPanel() {
     if (!panelElement) buildPanel();
+    // 窄视口（手机）下清掉桌面拖拽留下的 inline 坐标，让 CSS 默认位置生效
+    if (window.innerWidth < 500 && panelElement.style.left) {
+      panelElement.style.left = '';
+      panelElement.style.top = '';
+      panelElement.style.right = '';
+      panelElement.style.bottom = '';
+    }
     panelElement.style.display = 'flex';
     panelVisible = true;
     refresh();
@@ -3806,7 +3838,8 @@ window.WORLD_ENGINE_UI = (function() {
         rounds = Math.min(everyX, Math.max(1, parseInt(st.evolveReadRounds) || 1));
       }
       const start = Math.max(0, chat.length - rounds * 2);
-      const dialogueText = chat.slice(start)
+      const sliceEnd = st.evolveExcludeLatest ? -1 : undefined;
+      const dialogueText = chat.slice(start, sliceEnd)
         .map(m => (m.is_user ? '用户' : 'AI') + '：' + core.filterDialogue((m.mes || '').trim(), st))
         .filter(line => line.length > 3)
         .join('\n');

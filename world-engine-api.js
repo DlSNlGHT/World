@@ -34,7 +34,9 @@ window.WORLD_ENGINE_API = (function() {
       evolveTimeRe4: '', evolveTimeRe5: '', evolveTimeRe6: '',
       evolveTimeMul1: 360, evolveTimeMul2: 30, evolveTimeMul3: 1,
       evolveTimeThreshold: 1,
-      evolveTimeMaxRounds: 10
+      evolveTimeMaxRounds: 10,
+      engineEnabled: true,
+      evolveExcludeLatest: false
     };
     const raw = window.WORLD_ENGINE_STORE.getItem('world_engine_settings');
     if (raw) {
