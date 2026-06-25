@@ -14,6 +14,7 @@ window.WORLD_ENGINE_API = (function() {
       // [FIX] 连接方式：'direct'=浏览器直连（默认，原有行为）；'proxy'=经酒馆服务端转发，绕过第三方 API 的 CORS 限制
       connectionMode: 'direct',
       injectIntoPrompt: true,
+      injectIntoWorldbook: true, // 世界书注入：利用聊天世界书 constant 条目注入（与黑科技同策略）
       evolveMode: 'auto',
       // 酒馆缓存：把按聊天隔离的存档镜像进 chat_metadata，实现跨设备同步与防丢失存档（默认关闭）
       syncToChat: false,   // 实时同步：工作区状态持续镜像进聊天，换设备打开同一聊天即可续上

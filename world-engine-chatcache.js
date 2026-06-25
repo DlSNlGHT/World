@@ -45,8 +45,8 @@ window.WORLD_ENGINE_CHATCACHE = (function() {
   // —— 按聊天隔离的 5 个存档键（命名与 core.js / worldbook.js 保持一致；改这里前先核对源模块）——
   //   state:       world_engine_<id>                      (core.js loadState/saveState)
   //   checkpoint:  world_engine_<id>_checkpoint           (core.js getCheckpointKey)
-  //   fingerprint: world_engine_<id>_fingerprint          (core.js getFingerprintKey)
-  //   anchorLayer: world_engine_<id>_anchorLayer          (core.js getAnchorLayerKey，旧版遗留)
+  //   fingerprint: world_engine_<id>_fingerprint          (v2.x 遗留，保留槽位向后兼容)
+  //   anchorLayer: world_engine_<id>_anchorLayer          (v2.x 遗留，保留槽位向后兼容)
   //   worldbook:   world_engine_worldbook_selection_<id>  (worldbook.js getSelectionKey)
   const SLOTS = {
     state:       id => `world_engine_${id}`,
@@ -139,10 +139,10 @@ window.WORLD_ENGINE_CHATCACHE = (function() {
         if (Object.prototype.hasOwnProperty.call(data, name) && data[name] != null) {
           store().setItem(key, data[name]);
         } else if (exact) {
-          // [FIX] checkpoint/fingerprint 是自动推演的计数锚点，缺了会令 anchor 回退全空、触发死锁
-          //   （见 world-engine.js runAutoEvolution 的 anchor 兜底）。云端 live.data 缺这俩时，保留本地已有值，
-          //   不随 exact 删除；其余 slot（state/worldbook/anchorLayer）仍按精确还原语义删。
-          if (name === 'checkpoint' || name === 'fingerprint') continue;
+          // checkpoint 是存档锚点，缺了会令 anchor 回退全空。
+          // fingerprint/anchorLayer 为 v2.x 遗留槽位，保留向后兼容。
+          // 云端 live.data 缺这些时保留本地已有值，不随 exact 删除。
+          if (name === 'checkpoint' || name === 'fingerprint' || name === 'anchorLayer') continue;
           store().removeItem(key);
         }
       }
@@ -389,8 +389,7 @@ window.WORLD_ENGINE_CHATCACHE = (function() {
     return true;
   }
 
-  // 恢复历史存档后：把 state/checkpoint 的 chatLayer、fingerprint 对齐到「当前对话层数」。
-  // 与 ui.js 的「数据导入」逻辑一致，否则旧层数会让正文注入/推演把本轮误判为重 roll。
+  // 恢复历史存档后：把 state/checkpoint 的 chatLayer 对齐到「当前对话层数」。
   function normalizeAfterRestore(id) {
     const layer = core().getChatLayer();
     _suspend = true;
@@ -405,7 +404,6 @@ window.WORLD_ENGINE_CHATCACHE = (function() {
         const cp = JSON.parse(cpRaw); cp.chatLayer = layer;
         store().setItem(SLOTS.checkpoint(id), JSON.stringify(cp));
       }
-      store().setItem(SLOTS.fingerprint(id), String(layer));
     } catch (e) {
       console.warn('[世界引擎] 恢复后归一化失败', e);
     } finally {

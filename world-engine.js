@@ -14,6 +14,7 @@
     'world-engine-ledger.js',
     'world-engine-evolution.js',
     'world-engine-inject.js',
+    'world-engine-bookinject.js',
     'world-engine-diag.js',
     'world-engine-ui.js'
   ];
@@ -68,6 +69,11 @@
         window.WORLD_ENGINE_CHATCACHE.init();
       }
 
+      // 世界书注入：监听 store 写入，UI 编辑后自动刷新世界书条目
+      if (window.WORLD_ENGINE_BOOKINJECT) {
+        try { window.WORLD_ENGINE_BOOKINJECT.installStoreListener(); } catch (e) {}
+      }
+
       const core = window.WORLD_ENGINE_CORE;
       const api = window.WORLD_ENGINE_API;
       const ledger = window.WORLD_ENGINE_LEDGER;
@@ -99,7 +105,14 @@
       const INJ_POSITION = 1;
       const INJ_DEPTH = 1;
 
-      function registerInjection(content) {
+      async function registerInjection(content) {
+        // 世界书注入：await 确保写入完成再返回（swipe 时赶到扩展 prompt 之前）
+        const useWorldbook = api.getSettings(true).injectIntoWorldbook !== false
+                          && window.WORLD_ENGINE_BOOKINJECT;
+        if (useWorldbook) {
+          await window.WORLD_ENGINE_BOOKINJECT.inject(content);
+        }
+        // 退路：扩展 prompt 注入
         try {
           const ctx = SillyTavern.getContext();
           if (typeof ctx.setExtensionPrompt === 'function') {
@@ -121,19 +134,20 @@
             });
             return true;
           }
-          console.warn('[世界引擎] 所有注入方式均不可用');
-          return false;
-        } catch(e) {
-          console.error('[世界引擎] 注入失败', e);
-          return false;
-        }
+        } catch(e) {}
+        return false;
       }
 
       function unregisterInjection() {
+        // 世界书注入：移除内容
+        if (api.getSettings(true).injectIntoWorldbook !== false && window.WORLD_ENGINE_BOOKINJECT) {
+          window.WORLD_ENGINE_BOOKINJECT.remove();
+        }
+        // 扩展 prompt：清空
         try {
           const ctx = SillyTavern.getContext();
           if (typeof ctx.setExtensionPrompt === 'function') {
-            ctx.setExtensionPrompt(INJECTION_NAME, '', INJ_POSITION, INJ_DEPTH); // 清空内容即为取消注入
+            ctx.setExtensionPrompt(INJECTION_NAME, '', INJ_POSITION, INJ_DEPTH);
           } else if (typeof ctx.unregisterInjection === 'function') {
             ctx.unregisterInjection(INJECTION_NAME);
           } else if (Array.isArray(ctx.extensionPrompts)) {
@@ -144,7 +158,7 @@
 
       // ========== 注入世界状态到正文 prompt ==========
       // stateOverride: 传入则使用该状态（重 roll 时用存档点），否则用当前状态
-      function applyInjection(stateOverride) {
+      async function applyInjection(stateOverride) {
         try {
           if (api.getSettings(true).injectIntoPrompt === false) {
             unregisterInjection();
@@ -179,32 +193,18 @@
             core.saveState(state);
           }
 
-          registerInjection(context);
+          await registerInjection(context);
           console.log(`[世界引擎] 注入完成 (round ${currentRound}, ${context.length} chars)${stateOverride ? ' [存档点]' : ''}`);
         } catch(e) {
           console.error('[世界引擎] 注入处理失败', e);
         }
       }
 
-      // 正文组装前直接比较注入当下的对话层数和当前状态记录的层数：
+      // 正文组装前比较注入当下的对话层数和当前状态记录的层数：
       // 对话层数更小 = 重 roll，注入存档点；否则注入当前状态。
-      function applyInjectionForCurrentRound() {
+      async function applyInjectionForCurrentRound() {
         const state = core.loadState();
         const chatLayer = core.getChatLayer();
-
-        // [FIX] 同层重 roll → 不注入：当前层 == 上次新轮次推演所在层（fingerprint）且该层已推演过，
-        //   说明这是对「已推演过的同一条 AI 正文」的重新生成（swipe/regenerate），
-        //   不该把「基于旧正文推演出的世界状态」注入进正在重写的新正文，否则新正文被旧世界状态带偏。
-        //   判据用 fingerprint（只在真正新轮次时更新）而非 state.chatLayer（redo 也会刷新），
-        //   故即使首次推演后无 checkpoint、即使 redo 不存 checkpoint，本守卫仍生效。
-        const fp = core.loadFingerprint();
-        const fpLayer = (fp !== '' && Number.isFinite(Number(fp))) ? Number(fp) : null;
-        if (fpLayer != null && fpLayer === chatLayer) {
-          unregisterInjection();
-          console.log('[世界引擎] 正文注入判定：同层重 roll（chatLayer ' + chatLayer + ' == fingerprint ' + fpLayer + '），不注入');
-          if (ui && ui.refresh) ui.refresh(true);
-          return;
-        }
 
         const stateLayer = Number.isFinite(Number(state.chatLayer)) ? Number(state.chatLayer) : chatLayer;
         let injectedScope = 'state';
@@ -213,14 +213,14 @@
           if (checkpoint) {
             injectedScope = 'checkpoint';
             console.log(`[世界引擎] 正文注入判定：对话层数 ${chatLayer} < 当前状态层数 ${stateLayer}，注入存档点`);
-            applyInjection(checkpoint);
+            await applyInjection(checkpoint);
           } else {
             console.warn(`[世界引擎] 正文注入判定：对话层数 ${chatLayer} < 当前状态层数 ${stateLayer}，但无存档点，回退到当前状态`);
-            applyInjection();
+            await applyInjection();
           }
         } else {
           console.log(`[世界引擎] 正文注入判定：对话层数 ${chatLayer} >= 当前状态层数 ${stateLayer}，注入当前状态`);
-          applyInjection();
+          await applyInjection();
         }
         // 注入正文后刷新面板，让「当前状态」跟随实际注入的那份：
         // 重 roll（对话层数 < 状态层数）→ 显示存档点；否则 → 显示当前状态。
@@ -335,10 +335,8 @@
             anchor = Number(cp.chatLayer);
           } else if (storedState && storedState.chatLayer != null && Number.isFinite(Number(storedState.chatLayer))) {
             anchor = Number(storedState.chatLayer);
-          } else if (core.loadFingerprint() !== '') {
-            anchor = Number(core.loadFingerprint());
           }
-          // [FIX] 三级回退全空 = 该聊天从未推演过（空壳 state + 无存档点 + 无指纹）。
+          // 两级回退全空 = 该聊天从未推演过。
           //   旧逻辑兜底 anchor=L 导致 c=0 永久死锁（见 onChatLoaded 对空壳 state 不再钉 chatLayer 的配套改动）；
           //   改为认定从未推演，anchor=-1 让 c>0 触发首次推演。推演成功后 evolution 正常写 fingerprint，后续轮次走正常锚点。
           if (!Number.isFinite(anchor)) anchor = -1;
@@ -396,7 +394,11 @@
             ledger.recordChanges(state);
             if (storyDay != null) { state.time = Number(storyDay); core.saveState(state); }
             // 重 roll 时正文已按楼层注入存档点，推演完成后不覆盖
-            if (isNewRound) applyInjection();
+            if (isNewRound) await applyInjection();
+            // 世界书注入刷新：推演完成后立即更新世界书条目
+            if (api.getSettings(true).injectIntoWorldbook !== false && window.WORLD_ENGINE_BOOKINJECT) {
+              try { window.WORLD_ENGINE_BOOKINJECT.refreshNow(); } catch (e) {}
+            }
             console.log('[世界引擎] ✅ 推演完成，当前第', state.round, '轮');
           } else {
             console.warn('[世界引擎] ⚠️ 推演失败或已中止');
@@ -467,7 +469,6 @@
         if (chat.length === 0) {
           core.clearState();
           core.clearCheckpoint();
-          core.saveFingerprint(String(currentLayer));
         }
         let storedState = null;
         if (core.hasState()) {
@@ -486,26 +487,16 @@
             : currentLayer;
           core.saveCheckpoint(checkpoint);
         }
-        // 迁移旧版 fingerprint（旧语义为 chat.length）到统一层数（chat.length - 1）。
-        const savedFingerprint = Number(core.loadFingerprint());
-        if (Number.isFinite(savedFingerprint) && savedFingerprint === currentLayer + 1 &&
-            (!storedState || Number(storedState.chatLayer) === currentLayer)) {
-          core.saveFingerprint(String(currentLayer));
-        }
-        // [FIX] fingerprint 补当前层 = 在此层建立锚点（已推演过的聊天在此建立，下次有新楼层才推）。
-        //   但空壳 state（round=0 且无 lastEvolveResult = 从未推演过）不能补成当前层——否则
-        //   runAutoEvolution 第三级命中 anchor=L、c=0、永久死锁。只有真推演过的 state 才补；
-        //   空壳 state 保留空指纹，让 auto 分支走「从未推演」兜底 anchor=-1 触发首次推演。
-        //   与上方空壳 state 不钉 chatLayer 同构（同以 round>0||lastEvolveResult 区分是否推演过）。
-        const reallyEvolved = storedState && (storedState.round > 0 || storedState.lastEvolveResult);
-        if (chat.length > 0 && !core.restoreCheckpoint() && reallyEvolved && core.loadFingerprint() === '') {
-          core.saveFingerprint(String(currentLayer));
-        }
         applyInjectionForCurrentRound();
         console.log('[世界引擎] 聊天已加载，注入已更新');
       }
 
       function onMessageSwiped() {
+        clearAutoEvolveTimer();
+        applyInjectionForCurrentRound();
+      }
+
+      function onMessageDeleted() {
         clearAutoEvolveTimer();
         applyInjectionForCurrentRound();
       }
@@ -522,6 +513,7 @@
         ctx.eventSource.on(autoEvolveEvent, onMessageReceived);
         ctx.eventSource.on(ctx.event_types?.CHAT_LOADED || 'chat_loaded', onChatLoaded);
         ctx.eventSource.on(ctx.event_types?.MESSAGE_SWIPED || 'message_swiped', onMessageSwiped);
+        ctx.eventSource.on(ctx.event_types?.MESSAGE_DELETED || 'message_deleted', onMessageDeleted);
         ctx.eventSource.on(ctx.event_types?.GENERATION_STARTED || 'generation_started', onGenerationStarted);
         console.log('[世界引擎] 事件绑定成功，自动推演事件:', autoEvolveEvent);
       } else {
@@ -529,7 +521,7 @@
       }
 
       // 初始化时立即按对话层数选择注入状态
-      applyInjectionForCurrentRound();
+      await applyInjectionForCurrentRound();
       // 暴露按对话层数选择的注入入口供手动调用
       window.WORLD_ENGINE = { applyInjection: applyInjectionForCurrentRound, manualTimeEvolve };
 

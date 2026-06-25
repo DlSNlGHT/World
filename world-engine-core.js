@@ -227,14 +227,6 @@ window.WORLD_ENGINE_CORE = (function() {
     return STORAGE_PREFIX + getChatId() + '_checkpoint';
   }
 
-  function getAnchorLayerKey() {
-    return STORAGE_PREFIX + getChatId() + '_anchorLayer';
-  }
-
-  function getFingerprintKey() {
-    return STORAGE_PREFIX + getChatId() + '_fingerprint';
-  }
-
   /** 保存存档点 a（完整复制当前 state） */
   function saveCheckpoint(state) {
     const key = getCheckpointKey();
@@ -261,17 +253,6 @@ window.WORLD_ENGINE_CORE = (function() {
     window.WORLD_ENGINE_STORE.removeItem(getCheckpointKey());
   }
 
-  /** 旧版独立锚点接口（层数语义统一为 chat.length - 1；当前计数不使用它）。 */
-  function getAnchorLayer() {
-    const saved = window.WORLD_ENGINE_STORE.getItem(getAnchorLayerKey());
-    return saved !== null ? Number(saved) : null;
-  }
-
-  /** 设置计数锚点 */
-  function setAnchorLayer(l) {
-    window.WORLD_ENGINE_STORE.setItem(getAnchorLayerKey(), String(l));
-  }
-
   /** 获取当前对话层数（从 0 开始计数） */
   function getChatLayer() {
     try {
@@ -281,27 +262,13 @@ window.WORLD_ENGINE_CORE = (function() {
     } catch(e) { return 0; }
   }
 
-  /** 获取当前对话的指纹（对话层数，用于判断是否重roll） */
-  function getChatFingerprint() {
-    return String(getChatLayer());
-  }
-
-  /** 保存指纹到 localStorage */
-  function saveFingerprint(fp) {
-    window.WORLD_ENGINE_STORE.setItem(getFingerprintKey(), fp);
-  }
-
-  /** 读取上次保存的指纹 */
-  function loadFingerprint() {
-    return window.WORLD_ENGINE_STORE.getItem(getFingerprintKey()) || '';
-  }
-
-  /** 判断是否为新对话轮次（指纹变了 → 新轮次；没变 → 重roll） */
+  /** 判断是否为新对话轮次：当前层 > 上次推演所在层则新轮次 */
   function isNewRound() {
-    const oldFp = loadFingerprint();
-    const newFp = getChatFingerprint();
-    if (!oldFp) return true;
-    return oldFp !== newFp;
+    const state = loadState();
+    const currentLayer = getChatLayer();
+    const stateLayer = Number.isFinite(Number(state.chatLayer)) ? Number(state.chatLayer) : null;
+    if (stateLayer == null) return true;
+    return currentLayer > stateLayer;
   }
 
   function addMemory(state, memory) {
@@ -618,8 +585,8 @@ window.WORLD_ENGINE_CORE = (function() {
     getDefaultState, getChatId, loadState, hasState, saveState, clearState, saveStateWithLayer,
     addMemory, addEvent, addFaction, addWorldTrend, addWind,
     ensureEventFields, getUserName, renderUserName,
-    saveCheckpoint, restoreCheckpoint, clearCheckpoint, getAnchorLayer, setAnchorLayer,
-    getChatLayer, getChatFingerprint, saveFingerprint, loadFingerprint, isNewRound,
+    saveCheckpoint, restoreCheckpoint, clearCheckpoint,
+    getChatLayer, isNewRound,
     getCleanExport, importState,
     cnToNum, parseStoryDay, getLastStoryDay, setLastStoryDay, filterDialogue,
     validateFilterRegex

@@ -70,120 +70,130 @@ window.WORLD_ENGINE_INJECT = (function() {
   function buildContext(worldState, tags) {
     const rulesLoader = window.WORLD_ENGINE_RULES;
     const rulesSummary = rulesLoader ? rulesLoader.getCoreRulesSummary() : '';
+    const L = (s) => (typeof s === 'string' ? s : '');
 
-    // 事件链：Lv3/4 全注入，Lv1/2 仅已爆发/已完成终局注入
+    // ── 事件链 ──
     const visibleEvents = (worldState.events || []).filter(e => {
       if (e.level >= 3) return true;
       return e.stage === '已爆发' || e.stage === '已完成';
     });
-    const eventsText = visibleEvents.map(e => {
-      const typeName = e.type === 'progress' ? '推进型' : '冲突型';
-      let txt = `${e.name}(${typeName}, Lv.${e.level}) ${e.stage} ${e.stageRound||1}/9`;
-      if (e.evolveResult) txt += ` [${e.evolveResult}]`;
-      return txt;
-    }).join('；') || '无';
+    const eventsLines = visibleEvents.map(e => {
+      const tn = e.type === 'progress' ? '推进型' : '冲突型';
+      let line = `  - 名称: ${e.name}\n    类型: ${tn} Lv.${e.level}\n    阶段: ${e.stage} ${e.stageRound||1}/9`;
+      if (e.desc) line += `\n    描述: ${L(e.desc)}`;
+      if (e.evolveResult) line += `\n    动向: ${e.evolveResult}`;
+      return line;
+    });
 
-    // 势力：全部7级关系都注入，渲染成自然语句，运势/关系各带判词
-    const formatPillars = (arr) => arr.length === 1
-      ? arr[0]
-      : arr.slice(0, -1).join('、') + '与' + arr[arr.length - 1];
-    const allFactions = worldState.factions || [];
-    const factionsText = allFactions.length
-      ? '\n' + allFactions.map(f => {
-          const statusDesc = STATUS_VERDICT[f.status] || (f.status ? `处于「${f.status}」之中` : '处境不明');
-          const relation = f.relation || '中立';
-          const relationDesc = RELATION_VERDICT[relation] || `对{{user}}的态度为「${relation}」`;
-          let s = `- ${f.name}眼下${statusDesc}；它对{{user}}的态度是${relation}——${relationDesc}。`;
-          if (f.scope) s += `其势力范围覆盖${f.scope}。`;
-          if (f.currentGoal) s += `当前正致力于${f.currentGoal}。`;
-          const tail = [];
-          if (f.core_person) tail.push(`核心人物是${f.core_person}`);
-          if (f.powerPillars?.length) tail.push(`赖以运转的根基是${formatPillars(f.powerPillars)}`);
-          if (tail.length) s += tail.join('，') + '。';
-          return s;
-        }).join('\n')
-      : '无';
+    // ── 势力 ──
+    const factionsLines = (worldState.factions || []).map(f => {
+      const sd = STATUS_VERDICT[f.status] || (f.status ? `处于「${f.status}」之中` : '处境不明');
+      const rel = f.relation || '中立';
+      const rd = RELATION_VERDICT[rel] || `对{{user}}的态度为「${rel}」`;
+      let line = `  - 名称: ${f.name}\n    运势: ${f.status || '稳固'} — ${sd}\n    关系: ${rel} — ${rd}`;
+      if (f.scope) line += `\n    范围: ${L(f.scope)}`;
+      if (f.currentGoal) line += `\n    目标: ${L(f.currentGoal)}`;
+      if (f.core_person) line += `\n    核心人物: ${f.core_person}`;
+      if (f.powerPillars?.length) line += `\n    权柱: ${f.powerPillars.join('、')}`;
+      return line;
+    });
 
-    // 风声：只注入 Lv3/4
+    // ── 风声：全部注入，不再卡 Lv3 ──
     const windTypeNames = { announcement: '公告', report: '消息', rumor: '流言', sentiment: '舆情' };
-    const visibleWinds = (worldState.winds || []).filter(w => (w.level || 0) >= 3);
-    const windsText = visibleWinds.map(w =>
-      `[${windTypeNames[w.type] || '风声'} Lv.${w.level || 1} ${w.scope || '?'}] ${w.content}`
-    ).join('；') || '无';
+    const windsLines = (worldState.winds || []).map(w => {
+      let line = `  - 标题: ${w.topic || '?'}\n    类型: ${windTypeNames[w.type]||'风声'} Lv.${w.level||1}`;
+      if (w.content) line += `\n    说法: ${L(w.content)}`;
+      if (w.scope) line += `\n    范围: ${L(w.scope)}`;
+      if (w.source && w.source !== '来源不明') line += `\n    来源: ${L(w.source)}`;
+      return line;
+    });
 
-    // 天下大势
-    const trendsText = (worldState.worldTrends || []).filter(t => t.status !== '已结束').map(t =>
-      `${t.name}（${t.scope || '天下'}）：${t.description}`
-    ).join('；') || '无';
+    // ── 天下大势 ──
+    const trendsLines = (worldState.worldTrends || []).filter(t => t.status !== '已结束').map(t =>
+      `  - 名称: ${t.name}\n    范围: ${t.scope || '天下'}\n    描述: ${L(t.description)}`
+    );
 
-    // 声誉：注入人话判词，而非光秃秃的等级标签
+    // ── 影响链 ──
+    const chainLines = (worldState.influenceChain || []).map((ic, i) =>
+      `  ${i + 1}. 触发: ${ic.trigger || '?'}\n     影响: ${ic.impact || '?'}${ic.fallout ? '\n     余波: ' + ic.fallout : ''}`
+    );
+
+    // ── 声誉 ──
     const rep = worldState.reputation || {};
-    const repText = ['authority', 'common', 'shadow', 'circuit'].map(k => {
+    const repLines = ['authority', 'common', 'shadow', 'circuit'].map(k => {
       const lv = REP_LEGACY[rep[k]] || rep[k];
-      const verdict = REP_VERDICT[k] && REP_VERDICT[k][lv];
-      if (!verdict) return '';
-      return `在${REP_DIM_NAME[k]}${lv}，${verdict}`;
-    }).filter(Boolean).join('。') + '。';
-    const repChange = rep.lastChange ? `（${rep.lastChange}）` : '';
+      const v = REP_VERDICT[k] && REP_VERDICT[k][lv];
+      return v ? `    ${REP_DIM_NAME[k]}: ${lv} — ${v}` : '';
+    }).filter(Boolean);
+    if (rep.lastChange) repLines.push(`    变动: ${rep.lastChange}`);
 
-    // 经济信号：全注入
+    // ── 仇敌 ──
+    const enemiesLines = (worldState.enemies || []).map(e =>
+      `  - ${e.name} | ${e.type==='blood'?'血仇':'恩怨'} | ${e.status} | ${L(e.reason)}`
+    );
+
+    // ── 经济 ──
     const econ = worldState.economy || {};
-    const signalsText = (econ.signals || []).map(s => `${s.summary}（${s.scope}）`).join('；');
     const climate = econ.climate || '平稳';
-    const climateText = `市面${climate}，${CLIMATE_VERDICT[climate] || CLIMATE_VERDICT['平稳']}`;
-    const econText = `${climateText}${signalsText ? '。信号:' + signalsText : ''}`;
+    const climateDesc = CLIMATE_VERDICT[climate] || CLIMATE_VERDICT['平稳'];
+    const signalsLines = (econ.signals || []).map(s => `    - ${L(s.summary)}（${L(s.scope)}）`);
 
-    // 仇敌录
-    let enemiesText = '无';
-    if (worldState.enemies && worldState.enemies.length) {
-      enemiesText = worldState.enemies.map(e =>
-        `${e.name}（${e.type==='blood'?'血仇':'恩怨'}，${e.status}，原因：${e.reason}）`
-      ).join('；');
-    }
-
-    // 区域突发事件
+    // ── 区域事件 ──
     const ri = worldState.regionalIncident || {};
-    let riText = '';
+    let riBlock = '';
     if (ri.active) {
-      riText = `⚠️ ${ri.title || '区域突发事件'}（${ri.type || '?'}，${ri.scope || '?'}）— ${ri.impact || ''}`;
-    } else {
-      riText = ri.title && ri.title.includes('重试') ? `⚠️ ${ri.title}` : '本轮无区域突发事件';
+      riBlock = `  - 标题: ⚠️ ${ri.title || '区域突发事件'}\n    类型: ${ri.type || '?'}\n    范围: ${ri.scope || '?'}\n    影响: ${L(ri.impact)}`;
+    } else if (ri.title && ri.title.includes('重试')) {
+      riBlock = `  - ⚠️ ${ri.title}`;
     }
 
-    // 信息黑盒：展示具体内容
-    const blackbox = worldState.blackbox || {};
-    const boxParts = [];
-    if (blackbox.secretActions?.length) {
-      const actionsText = blackbox.secretActions.map(a =>
-        `[行为] ${a.action || '?'}（目击:${a.witnesses || '无'}）`
-      ).join('；');
-      boxParts.push(`隐秘行为(${blackbox.secretActions.length}): ${actionsText}`);
-    }
-    if (blackbox.secretAssets?.length) {
-      const assetsText = blackbox.secretAssets.map(a =>
-        `[资产] ${a.name || '?'}（暴露:${a.exposure || 0}%，${a.status || '有效'}）`
-      ).join('；');
-      boxParts.push(`隐秘资产(${blackbox.secretAssets.length}): ${assetsText}`);
-    }
-    const blackboxText = boxParts.length ? boxParts.join(' | ') : '无暗面信息';
+    // ── 黑盒 ──
+    const bb = worldState.blackbox || {};
+    const bbActions = (bb.secretActions || []).map(a => `    - ${L(a.action)}（目击:${a.witnesses || '无'}）`);
+    const bbAssets = (bb.secretAssets || []).map(a => `    - ${L(a.name)}（暴露:${a.exposure||0}%，${a.status||'有效'}）`);
 
-    const context = `
-【世界状态】
-轮次：${worldState.round}
-摘要：${worldState.worldDigest}
-天下大势：${trendsText}
-事件链：${eventsText}
-势力：${factionsText}
-风声：${windsText}
-仇敌：${enemiesText}
-声誉：${repText}${repChange}
-经济：${econText}
-区域事件：${riText}
-黑盒：${blackboxText}
+    // ── 账本 ──
+    const ledgerText = ledger ? ledger.buildLedgerText(worldState) : '';
 
-${rulesSummary}
-    `.trim();
+    // ── 组装 ──
+    const sections = [];
+    sections.push(`轮次: ${worldState.round}`);
+    sections.push(`摘要: ${L(worldState.worldDigest)}`);
 
+    if (trendsLines.length) sections.push(`天下大势:\n${trendsLines.join('\n')}`);
+    else sections.push('天下大势: 无');
+
+    if (eventsLines.length) sections.push(`事件链:\n${eventsLines.join('\n')}`);
+    else sections.push('事件链: 无');
+
+    if (factionsLines.length) sections.push(`势力:\n${factionsLines.join('\n')}`);
+    else sections.push('势力: 无');
+
+    if (windsLines.length) sections.push(`风声:\n${windsLines.join('\n')}`);
+    else sections.push('风声: 无');
+
+    if (chainLines.length) sections.push(`影响链:\n${chainLines.join('\n')}`);
+    else sections.push('影响链: 无');
+
+    sections.push(`关系:`);
+    sections.push('  声誉:');
+    sections.push(repLines.join('\n'));
+    if (enemiesLines.length) sections.push(`  仇敌:\n${enemiesLines.join('\n')}`);
+    else sections.push('  仇敌: 无');
+
+    sections.push(`资源:`);
+    sections.push(`  经济气候: ${climate} — ${climateDesc}`);
+    if (signalsLines.length) sections.push(`  经济信号:\n${signalsLines.join('\n')}`);
+    if (riBlock) sections.push(`  区域事件:\n${riBlock}`);
+    else sections.push('  区域事件: 无');
+    sections.push(`  黑盒:`);
+    if (bbActions.length) sections.push(`    行为:\n${bbActions.join('\n')}`);
+    if (bbAssets.length) sections.push(`    资产:\n${bbAssets.join('\n')}`);
+    if (!bbActions.length && !bbAssets.length) sections.push('    无');
+
+    if (ledgerText) sections.push(`重大事件:\n${ledgerText}`);
+
+    const context = '【世界状态】\n' + sections.join('\n') + '\n\n' + rulesSummary;
     return context.substring(0, 5000);
   }
 
