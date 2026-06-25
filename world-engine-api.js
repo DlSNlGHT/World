@@ -34,7 +34,12 @@ window.WORLD_ENGINE_API = (function() {
       evolveTimeRe4: '', evolveTimeRe5: '', evolveTimeRe6: '',
       evolveTimeMul1: 360, evolveTimeMul2: 30, evolveTimeMul3: 1,
       evolveTimeThreshold: 1,
-      evolveTimeMaxRounds: 10
+      evolveTimeMaxRounds: 10,
+      // [FIX] API 请求超时（毫秒）。0 = 不超时（旧行为）。默认 120s：
+      //   推演请求若落入网络黑洞（代理无响应/上游不返回也不报错），fetch 会永久挂起，
+      //   evolve 的 _isRunning 永不复位，此后所有自动推演被 isRunning() 守卫静默跳过，
+      //   直到用户切一次聊天才解锁。超时让挂起请求按失败处理，finally 正常复位。
+      apiTimeoutMs: 120000
     };
     const raw = window.WORLD_ENGINE_STORE.getItem('world_engine_settings');
     if (raw) {
@@ -76,6 +81,37 @@ window.WORLD_ENGINE_API = (function() {
 
   // [FIX] 经酒馆服务端转发的推演调用：浏览器 → 同源酒馆后端（无 CORS）→ 服务端代发到第三方 API。
   // 走 OpenAI source + reverse_proxy 路线，这样可把我们自己的 URL/KEY 透传给上游。
+  // [FIX] 带超时的 fetch：把调用方传入的 signal（用户主动中止 / 切聊天）与内部超时计时器
+  //   合并到同一次请求。超时触发 → controller.abort()，但抛出的是普通 Error（带 __timeout 标记），
+  //   而非 AbortError——这样 evolve 的 catch 会按「推演失败」处理并复位 _isRunning，
+  //   且状态栏显示明确的超时原因；用户主动中止仍走外部 signal 的 AbortError，显示「已中止」。
+  //   timeoutMs <= 0 时不设超时（保留旧行为）。
+  async function fetchWithTimeout(url, options, signal, timeoutMs) {
+    if (!(timeoutMs > 0)) {
+      return fetch(url, { ...options, signal: signal || null });
+    }
+    const controller = new AbortController();
+    let timedOut = false;
+    const timer = setTimeout(() => { timedOut = true; controller.abort(); }, timeoutMs);
+    // 外部 signal 中止时一并中止本次请求
+    const onExternalAbort = () => controller.abort();
+    if (signal) {
+      if (signal.aborted) controller.abort();
+      else signal.addEventListener('abort', onExternalAbort, { once: true });
+    }
+    try {
+      return await fetch(url, { ...options, signal: controller.signal });
+    } catch (e) {
+      if (timedOut) {
+        throw new Error('API 请求超时（' + Math.round(timeoutMs / 1000) + 's 无响应），已中止本次推演');
+      }
+      throw e;   // 外部中止 → 原样抛 AbortError
+    } finally {
+      clearTimeout(timer);
+      if (signal) signal.removeEventListener('abort', onExternalAbort);
+    }
+  }
+
   async function callApiViaProxy(settings, body, signal) {
     const base = getProxyBase(settings);
     if (!base) throw new Error('未配置 API URL，请在设置中填写');
@@ -90,12 +126,11 @@ window.WORLD_ENGINE_API = (function() {
       stream: false
     };
     console.log('[世界引擎] 调用 API（经酒馆代理）:', base, payload.model);
-    const resp = await fetch('/api/backends/chat-completions/generate', {
+    const resp = await fetchWithTimeout('/api/backends/chat-completions/generate', {
       method: 'POST',
       headers: tavernHeaders(),
-      body: JSON.stringify(payload),
-      signal: signal || null
-    });
+      body: JSON.stringify(payload)
+    }, signal, settings.apiTimeoutMs);
     if (!resp.ok) {
       let detail = '';
       try { const err = await resp.json(); detail = err.error?.message || JSON.stringify(err); } catch(e) {}
@@ -143,12 +178,11 @@ window.WORLD_ENGINE_API = (function() {
 
     console.log('[世界引擎] 调用 API:', url, body.model);
 
-    const resp = await fetch(url, {
+    const resp = await fetchWithTimeout(url, {
       method: 'POST',
       headers: headers,
-      body: JSON.stringify(body),
-      signal: signal || null
-    });
+      body: JSON.stringify(body)
+    }, signal, settings.apiTimeoutMs);
 
     if (!resp.ok) {
       let detail = '';
