@@ -125,15 +125,13 @@ window.WORLD_ENGINE_DIAG = (function() {
       return { exists: true, round: cp.round, chatLayer: cp.chatLayer };
     });
 
-    // —— 指纹 / 层数 ——
-    diag.fingerprint = safe(function () {
+    // —— 层数 ——
+    diag.layers = safe(function () {
       if (!core) return { error: 'core 模块不可用' };
       return {
-        fingerprint: core.loadFingerprint ? core.loadFingerprint() : null,
         chatLayer: core.getChatLayer ? core.getChatLayer() : null,
         isNewRound: core.isNewRound ? core.isNewRound() : null,
-        lastStoryDay: core.getLastStoryDay ? core.getLastStoryDay() : null,
-        anchorLayer: core.getAnchorLayer ? core.getAnchorLayer() : null
+        lastStoryDay: core.getLastStoryDay ? core.getLastStoryDay() : null
       };
     });
 

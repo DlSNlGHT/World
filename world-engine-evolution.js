@@ -953,16 +953,9 @@ type：${picked.type}
 
       state.lastEvolveResult = update;
 
-      // [FIX] round 只在新轮次（isNew=true，即 forward / 自动楼层推进）时 +1；
-      //   redo / 同层重 roll 推演（isNew=false）不该涨轮次——注释（上方 line 742、本块 else
-      //   日志）明说 redo「轮次不变」，旧版 line 945 的 round++ 无条件放在 if(isNew) 之前，
-      //   导致 redo 也 +1、round 与 chatLayer/fingerprint 脱钩。现移进 if(isNew) 块。
-      //   连带：redo 不存 checkpoint、不更新 fingerprint（现状已在此块外，符合 redo 语义，不动）。
       if (isNew) {
-        // 首次推演不创建空白存档点；后续旧当前状态成为存档点并保留原层数。
-        state.round++;                             // [FIX] 只在新轮次涨
+        state.round++;
         if (hadStoredState) core.saveCheckpoint(backup);
-        core.saveFingerprint(core.getChatFingerprint());
         console.log('[世界引擎] ✅ 推演完成，新轮次第', state.round, '轮，存档点已推进');
       } else {
         console.log('[世界引擎] ✅ 推演完成（重roll/redo），轮次不变：第', state.round, '轮');

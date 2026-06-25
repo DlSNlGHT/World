@@ -3108,7 +3108,6 @@ window.WORLD_ENGINE_UI = (function() {
         if (confirm('重置当前聊天所有世界状态和记忆？不可恢复！')) {
           core.clearState();
           core.clearCheckpoint();
-          core.saveFingerprint(String(core.getChatLayer()));
           showToast('世界已重置');
           refresh();
         }
@@ -3191,8 +3190,7 @@ window.WORLD_ENGINE_UI = (function() {
           exportedAt: new Date().toISOString(),
           chatId: core.getChatId(),
           state: clean,
-          checkpoint: cleanCheckpoint,
-          fingerprint: core.loadFingerprint()
+          checkpoint: cleanCheckpoint
         };
         const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: 'application/json' });
         const url = URL.createObjectURL(blob);
@@ -3249,7 +3247,6 @@ window.WORLD_ENGINE_UI = (function() {
               }
               else core.clearCheckpoint();
             }
-            core.saveFingerprint(String(core.getChatLayer()));
             showToast('导入成功！第' + s.round + '轮，' + (s.memories||[]).filter(m=>m.type==='ledger').length + '轮账本');
             refresh();
           } catch(err) {

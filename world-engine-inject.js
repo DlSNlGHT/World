@@ -79,6 +79,7 @@ window.WORLD_ENGINE_INJECT = (function() {
     const eventsText = visibleEvents.map(e => {
       const typeName = e.type === 'progress' ? '推进型' : '冲突型';
       let txt = `${e.name}(${typeName}, Lv.${e.level}) ${e.stage} ${e.stageRound||1}/9`;
+      if (e.desc) txt += ` — ${e.desc}`;
       if (e.evolveResult) txt += ` [${e.evolveResult}]`;
       return txt;
     }).join('；') || '无';
@@ -107,9 +108,13 @@ window.WORLD_ENGINE_INJECT = (function() {
     // 风声：只注入 Lv3/4
     const windTypeNames = { announcement: '公告', report: '消息', rumor: '流言', sentiment: '舆情' };
     const visibleWinds = (worldState.winds || []).filter(w => (w.level || 0) >= 3);
-    const windsText = visibleWinds.map(w =>
-      `[${windTypeNames[w.type] || '风声'} Lv.${w.level || 1} ${w.scope || '?'}] ${w.content}`
-    ).join('；') || '无';
+    const windsText = visibleWinds.map(w => {
+      let txt = `[${windTypeNames[w.type] || '风声'} Lv.${w.level || 1}`;
+      if (w.topic && w.topic !== w.content) txt += `「${w.topic}」`;
+      txt += ` ${w.scope || '?'}] ${w.content}`;
+      if (w.source && w.source !== '来源不明') txt += `（来源：${w.source}）`;
+      return txt;
+    }).join('；') || '无';
 
     // 天下大势
     const trendsText = (worldState.worldTrends || []).filter(t => t.status !== '已结束').map(t =>
@@ -167,6 +172,18 @@ window.WORLD_ENGINE_INJECT = (function() {
     }
     const blackboxText = boxParts.length ? boxParts.join(' | ') : '无暗面信息';
 
+    // 影响链：事件之间的因果传导
+    let influenceText = '无';
+    const chain = worldState.influenceChain || [];
+    if (chain.length) {
+      influenceText = chain.map(ic =>
+        `[${ic.trigger || '?'} → ${ic.impact || '?'}${ic.fallout ? ' → ' + ic.fallout : ''}]`
+      ).join('；');
+    }
+
+    // 账本：本轮重大变化
+    const ledgerText = ledger ? ledger.buildLedgerText(worldState) : '';
+
     const context = `
 【世界状态】
 轮次：${worldState.round}
@@ -175,11 +192,13 @@ window.WORLD_ENGINE_INJECT = (function() {
 事件链：${eventsText}
 势力：${factionsText}
 风声：${windsText}
+影响链：${influenceText}
 仇敌：${enemiesText}
 声誉：${repText}${repChange}
 经济：${econText}
 区域事件：${riText}
 黑盒：${blackboxText}
+${ledgerText ? '\n【重大事件记录】\n' + ledgerText : ''}
 
 ${rulesSummary}
     `.trim();
