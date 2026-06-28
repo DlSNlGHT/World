@@ -65,6 +65,8 @@ window.WORLD_ENGINE_INJECT_INSPECTOR = (function() {
   }
 
   // —— 对话补全：从真·最终 chat 数组采 role 分好的链（克隆，不持有 live 引用） ——
+  //   每条都克隆完整 content 供 UI 只读展开（用户需要核对全部 role 的实际内容，不只是我们注入那条）。
+  //   仅留最后一份快照、内存有界；diag 导出侧不带 content（隐私：含角色卡/世界书/聊天历史原文）。
   function snapChat(chat, env) {
     const messages = [];
     let landed = false, ourContent = '', ourIndex = -1;
@@ -72,11 +74,11 @@ window.WORLD_ENGINE_INJECT_INSPECTOR = (function() {
       const m = chat[i] || {};
       const content = (m.content != null) ? String(m.content) : '';
       const isOurs = content.indexOf(SENTINEL) >= 0;
-      messages.push({ role: m.role || '?', length: content.length, isOurs: isOurs });
+      messages.push({ role: m.role || '?', length: content.length, isOurs: isOurs, content: content });
       if (isOurs && !landed) {
         landed = true;
         ourIndex = i;
-        ourContent = content.length > 5000 ? content.slice(0, 5000) : content; // 本就是我们自己的世界状态数据
+        ourContent = content; // 我们自己的世界状态数据，完整保留
       }
     }
     return {

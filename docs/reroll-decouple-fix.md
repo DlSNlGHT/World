@@ -40,24 +40,40 @@
 
 `if(isForward)` 内 `round++ / saveCheckpoint(backup) / saveFingerprint` 不变；else 分支日志区分 redo/自动重roll，轮次不变。
 
-### 3. world-engine.js：注入判据换纯数值 + 删 _pendingReroll
+### 3. world-engine.js：注入判据换酒馆原生 type + 删 _pendingReroll
 
-判据从 `_pendingReroll && fpLayer===chatLayer` → `Number.isFinite(state.chatLayer) && state.chatLayer === chatLayer`。
+> ⚠️ **v2.3.18 的数值判据 `state.chatLayer===chatLayer` 经真机探针证伪，v2.3.19 改用酒馆原生 type。**
 
-**为何 `state.chatLayer===chatLayer` 能可靠区分同层重roll与新轮次首次生成：**
+**v2.3.18（已废弃的中间方案）**：判据 `Number.isFinite(state.chatLayer) && state.chatLayer === chatLayer`。
+理论上「新轮次首次生成时 evolve 未跑、state.chatLayer 仍是上一轮 → chatLayer > state.chatLayer 不命中」。
 
-`state.chatLayer` 只在 evolve 完成时由 `saveStateWithLayer`（core.js:218）写。新轮次首次生成时 evolve 尚未跑（1.5s 延迟）→ state.chatLayer 仍是上一轮的值 → `chatLayer > state.chatLayer` → 不命中重roll分支 → 走 `>=` 注入当前状态 ✓。重roll 时 evolve 已完成 → state.chatLayer == chatLayer → 命中 → 注入存档点 ✓。
+**真机探针证伪（2026-06-29，叠加「蚀心入魔·数据库」插件）**：酒馆 `GENERATION_STARTED` 在用户楼 push 进 chat **之前** emit（探针实测：GEN_STARTED 时 chatLen=23，下一事件 MSG_SENT 才 chatLen=24）。所以**新一轮发消息**时 chatLayer 仍 == 上一轮 state.chatLayer → 数值判据误判成重 roll → 注入了上一轮存档点。用户「没重 roll 却注入旧状态」即此。
 
-### 边界场景表
+**v2.3.19（最终方案）**：重 roll 判据改用**酒馆原生 type**（不靠楼层数值推断）：
 
-| # | 场景 | chatLayer | state.chatLayer | 命中? | 注入 | 正确? |
+```js
+// onGenerationStarted(type, _opts, dryRun)
+if (dryRun) return;                                  // 预热/算token轮跳过，杜绝「生成完又注入」
+const isReroll = (type === 'swipe' || type === 'regenerate');
+applyInjectionForCurrentRound({ isReroll });
+// onMessageSwiped → applyInjectionForCurrentRound({ isReroll: true })
+```
+
+`applyInjectionForCurrentRound(opts)`：`opts.isReroll` → 注入存档点（无 cp 则不注入）；否则走原 `chatLayer < stateLayer`（往前删旧层注存档点）/ `>=`（注当前状态）兜底。
+
+**为何 type 可靠**：`swipe`（消息下箭头，script.js:9986）/ `regenerate`（底部重新生成，script.js:11304）是酒馆对「重写同一楼正文」的原生标记，与楼层/事件时序无关，对任何插件通用。`normal`/`continue`/`impersonate`/`quiet` 都不是重 roll。
+
+### 边界场景表（v2.3.19 type 判据）
+
+| # | 场景 | type | dryRun | isReroll | 注入 | 正确? |
 |---|---|---|---|---|---|---|
-| 1 | 首次推演前(fp空) | 任意 | undefined | No (isFinite=false) | 当前状态(默认) | ✓ |
-| 2 | 新轮次首次生成 | 20 | 18(上一轮) | No (>不等) | 当前状态(第6轮) | ✓ |
-| 3 | 同层重roll | 18 | 18(第6轮) | **Yes** | 存档点(第5轮) | ✓ |
-| 4 | 同层重roll无cp | 18 | 18 | Yes | unregister | ✓ |
-| 5 | 往前删到旧层有cp | 15 | 18 | No (<不等)→走`<`分支 | 存档点 | ✓ |
-| 6 | 双生成插件扰动 | 22 | 18 | No (>不等) | 当前状态 | ✓ |
+| 1 | 新轮发消息（chatLayer 暂==state.chatLayer） | normal | false | false | 当前状态 | ✓（治 v2.3.18 回归）|
+| 2 | swipe 箭头重 roll | swipe | false | true | 存档点 | ✓ |
+| 3 | 底部重新生成（用户实测路径） | regenerate | false | true | 存档点 | ✓ |
+| 4 | 数据库插件预热/算 token | * | true | — | 不动注入 | ✓（不再重复注入）|
+| 5 | 续写 | continue | false | false | 当前状态 | ✓ |
+| 6 | 往前删到旧层（chatLayer<state.chatLayer） | normal | false | false | 走`<`分支注存档点 | ✓ |
+| 7 | 真重 roll 无 cp | swipe/regenerate | false | true | unregister | ✓ |
 
 ## 不改的部分
 
