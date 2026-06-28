@@ -97,6 +97,12 @@
       let lastProcessedMessageKey = '';
       const AUTO_EVOLVE_DELAY = 1500;
 
+      // [FIX] 真 swipe/重生成闸门：只在确实收到酒馆原生 MESSAGE_SWIPED 事件后置 true，
+      //   在「确认是普通新生成/新发言」时清 false。同层重 roll 守卫只在本标志为 true 时才有资格触发，
+      //   以免「新轮次第①次生成时 chatLayer 恰好 == fingerprint」被误判成重 roll 而撤注入
+      //   （叠加会双生成/扰动楼层的插件时每轮必现）。解耦：判据是酒馆原生事件，对任何插件通用。
+      let _pendingReroll = false;
+
       // ========== 注入管理 ==========
       const INJECTION_NAME = 'world-engine-world';
 
@@ -198,16 +204,26 @@
         const state = core.loadState();
         const chatLayer = core.getChatLayer();
 
-        // [FIX] 同层重 roll → 不注入：当前层 == 上次新轮次推演所在层（fingerprint）且该层已推演过，
-        //   说明这是对「已推演过的同一条 AI 正文」的重新生成（swipe/regenerate），
-        //   不该把「基于旧正文推演出的世界状态」注入进正在重写的新正文，否则新正文被旧世界状态带偏。
-        //   判据用 fingerprint（只在真正新轮次时更新）而非 state.chatLayer（redo 也会刷新），
-        //   故即使首次推演后无 checkpoint、即使 redo 不存 checkpoint，本守卫仍生效。
+        // [FIX] 同层重 roll → 注入存档点（而非完全不注入）：
+        //   仅当「确实刚发生过 swipe/重生成」(_pendingReroll) 且当前层 == 上次新轮次推演所在层（fingerprint）时，
+        //   才认定这是对「已推演过的同一条 AI 正文」的重新生成，应注入「这层正文产生前的世界状态」=存档点，
+        //   使新正文不被「基于待重写旧正文推演出的新状态」带偏；无存档点才退回不注入（首次推演后即 swipe 的少数场景）。
+        //   关键修正：守卫加 _pendingReroll 闸门——新轮次第①次生成不带 swipe 事件，即便此刻 chatLayer 恰好 == fingerprint
+        //   （fingerprint 在推演那刻被钉到当层、新用户楼尚未落地时）也不再被误判为重 roll，照常注入当前状态。
+        //   标志在生成结束（GENERATION_ENDED→onMessageReceived）时清，故同一次 swipe 的 MESSAGE_SWIPED 与随后的
+        //   GENERATION_STARTED 两次注入判定都走存档点分支、保持一致，不会被第二次调用覆盖回当前状态。
         const fp = core.loadFingerprint();
         const fpLayer = (fp !== '' && Number.isFinite(Number(fp))) ? Number(fp) : null;
-        if (fpLayer != null && fpLayer === chatLayer) {
-          unregisterInjection();
-          console.log('[世界引擎] 正文注入判定：同层重 roll（chatLayer ' + chatLayer + ' == fingerprint ' + fpLayer + '），不注入');
+        if (_pendingReroll && fpLayer != null && fpLayer === chatLayer) {
+          const checkpoint = core.restoreCheckpoint();
+          if (checkpoint) {
+            console.log('[世界引擎] 正文注入判定：同层重 roll（chatLayer ' + chatLayer + ' == fingerprint ' + fpLayer + '），注入存档点');
+            applyInjection(checkpoint);
+            if (ui && ui.setInjectedScope) ui.setInjectedScope('checkpoint');
+          } else {
+            console.log('[世界引擎] 正文注入判定：同层重 roll（chatLayer ' + chatLayer + ' == fingerprint ' + fpLayer + '），无存档点，不注入');
+            unregisterInjection();
+          }
           if (ui && ui.refresh) ui.refresh(true);
           return;
         }
@@ -250,6 +266,8 @@
 
       function onMessageReceived() {
         clearAutoEvolveTimer();
+        // 一次生成已完成 → 重 roll 窗口结束，清闸门（普通新生成自始至终为 false，这里是 swipe 后的归位）。
+        _pendingReroll = false;
 
         const ctx = SillyTavern.getContext();
         const chat = ctx?.chat || [];
@@ -513,6 +531,8 @@
 
       function onMessageSwiped() {
         clearAutoEvolveTimer();
+        // 真 swipe/重生成：开启重 roll 窗口，使紧接着的同层注入判定走「注入存档点」分支。
+        _pendingReroll = true;
         applyInjectionForCurrentRound();
       }
 
