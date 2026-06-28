@@ -427,6 +427,10 @@ window.WORLD_ENGINE_UI = (function() {
   //   date    —— 可选，日期不确定的留月份/年份；
   //   items   —— 该版本改动条目（每条一行，渲染时走 h() 转义）。
   const CHANGELOG = [
+    { version: '2.3.19', date: '2026-06-29', items: ['修复「没重 roll 却注入了存档点（旧轮次世界状态）」：v2.3.18 用纯数值 state.chatLayer===chatLayer 判重 roll，但酒馆 GENERATION_STARTED 在用户楼 push 进 chat **之前** emit——新一轮发消息时 chatLayer 仍 == 上一轮 state.chatLayer，被误判成重 roll、注入了上一轮存档点（与「蚀心入魔·数据库」等双生成插件叠加时每轮必现）。现重 roll 判据改用酒馆原生 type（GENERATION_STARTED 的 type=swipe/regenerate 才是真重 roll），不再靠楼层数值推断；dryRun（数据库类插件的预热/算 token 生成）一律跳过，杜绝「正文生成完又注入一遍」。', '注入自检查看器增强（只读）：「实际发出的消息链」现在每一条（system/user/assistant 全部）都可点击展开看完整内容，不再只显示字数；方便核对发给大模型的完整 prompt。诊断包仍只导 role+长度（不含正文，避免体积膨胀与泄露聊天上下文）。'] },
+    { version: '2.3.18', date: '2026-06-29', items: ['修复重 roll 推演轮次回退（解耦重 roll 与 redo）：自动推演把「重 roll（同楼 swipe 重新生成）」混为 redo（从存档点恢复基底重推）→ 重 roll 后推演轮次卡在存档点轮次而非当前轮。现 evolve 基底选择三分——forward（新轮次/从当前推）/ redo（手动卫星按钮回存档点）/ 自动重 roll（mode 未传且非新轮次→不恢复存档点，直接在当前 state 上推，轮次保持当前轮）。', '修复重 roll 注入走错分支（解耦注入判据与事件时序）：v2.3.17 的 _pendingReroll 闸门依赖酒馆 swipe 事件时序，易被 GENERATION_ENDED 提前清零 / 双生成插件撞窗口 → 重 roll 时注入了当前轮状态而非存档点。（注：v2.3.18 换的纯数值判据有新回归，已由 v2.3.19 的 type 判据彻底修正。）', '移除 _pendingReroll 闸门（v2.3.17 引入，现完全不需要），代码更简单'] },
+    { version: '2.3.17', date: '2026-06-28', items: ['修复与「会扰动楼层/双生成」类插件（如数据库类酒馆助手脚本）叠加时世界状态注入「时灵时不灵」：根因是 v2.3.14 的「同层重 roll 不注入」守卫判据 fingerprint==chatLayer 过于激进——fingerprint 在推演那刻被钉到当层，新一轮第①次生成（真正产出剧情正文那次）刚开始、新用户楼尚未落地时 chatLayer 恰好仍 == fingerprint，被误判成重 roll 而撤掉注入，导致真实正文拿不到世界状态。现给守卫加「真 swipe 闸门」：只在确实收到酒馆原生 MESSAGE_SWIPED 事件后（_pendingReroll=true）守卫才有资格触发，普通新生成不带 swipe 事件故照常注入当前状态；且触发时改为注入存档点（这层正文产生前的世界状态）而非完全不注入，更贴合「重 roll 注入存档点」本意（无存档点才退回不注入）。判据是酒馆原生事件，对任何插件通用、不含任何插件特判'] },
+    { version: '2.3.16', date: '2026-06-28', items: ['新增「注入自检」（调试卡顶部，只读）：很多客户反馈「注入不成功」却无从判断——根因是 registerInjection 的成功只代表「调酒馆接口没报错」，从不证明世界状态真进了发给大模型的正文。现订阅酒馆 prompt 组装完成事件（对话补全 chat_completion_prompt_ready / 文本补全 generate_after_combine_prompts），读取注入之后酒馆真正拼好的 prompt 链并按 role 分好展示，用大白话判定本轮：✅已进正文 / ❌注册了却没进正文(真失败) / ⏸按设计跳过(关了注入或同层重 roll) / —还没生成；纯只读、解耦成独立模块，不改注入逻辑、不动 eventData、忽略算 token 的预热轮，对推演零影响；诊断包同步补采该快照'] },
     { version: '2.3.15', date: '2026-06-25', items: ['修复自动推演静默瘫痪：API 推演请求无超时，若落入网络黑洞（代理无响应/上游不返回也不报错）fetch 会永久挂起，evolution 的 _isRunning 永不复位，此后所有 GENERATION_ENDED 触发的自动推演被 isRunning() 守卫静默跳过、直到用户切一次聊天才解锁；现新增 apiTimeoutMs（默认 120s，0=不超时），超时按推演失败处理让 finally 正常复位并在状态栏报明确超时原因（用户主动中止/切聊天仍走原 AbortError 显示「已中止」）'] },
     { version: '2.3.14', date: '2026-06-23', items: ['修复 redo 轮次虚增：点「重新推进」卫星按钮时 round 无条件 +1（在 isNew 判定之前）导致 redo 也涨轮次，与注释「redo 轮次不变」不符；现 round++ 移进 if(isNew)，只 forward / 自动新轮次涨', '修复 redo 无存档点静默退化：首次推演后无 checkpoint，点 redo 旧版整块跳过→无声退化为「在当前 state 上推」+ round++ 的伪 redo（白涨一轮无提示）；现 mode==="redo" 且无 cp 时 return false 并报错「无存档点，无法重新推进（redo）；请先『向前推进』至少一轮」，不再伪 forward', '修复重 roll 同层注入旧世界状态：重 roll 同层（chatLayer==stateLayer）旧版走 else 注入「基于旧正文推演出的当前状态」，干扰正在重写的新正文；现 applyInjectionForCurrentRound 加「同层已推演→不注入」分支，判据用 fingerprint（只在真正新轮次时更新，比 chatLayer 忠实）命中 unregisterInjection，避免新正文被旧世界状态带偏', '新增小地球（悬浮球）左侧第四卫星「插头」总开关：一键关闭/开启 推演与注入（联动 evolveMode + injectIntoPrompt 两个现有设置字段，不新增字段；关闭=切手动推演+关注入，开启=切自动推演+开注入；manual 模式自带拦 pending autoEvolveTimer，无需额外总开关注解）'] },
     { version: '2.3.13', date: '2026-06-22', items: ['修复自动推演死锁：开了 syncToChat 的空壳聊天（从未推演过）首次 AI 楼层后状态行卡在「第 0/1 轮」永不自动推演', '修复火山方舟等自定义版本前缀（/api/v3、/api/coding/v3）API 无法拉取模型：URL 规整不再硬塞 /v1，版本前缀由用户填到完整，URL 框旁加格式提示', 'chatcache 跨设备同步护栏：云端缺少 checkpoint/fingerprint 时不随 exact 删除本地锚点，避免再次掉进死锁'] },
@@ -1645,14 +1649,118 @@ window.WORLD_ENGINE_UI = (function() {
   }
 
 
+  // ── 注入自检卡（只读）：读 WORLD_ENGINE_INJECT_INSPECTOR 最后一份快照，
+  //    用大白话+role 分好的消息链回答「世界状态到底有没有真进发给大模型的 prompt」。
+  //    数据全来自 inspector 只读快照；本函数纯拼 HTML，不触发任何副作用。
+  //    返回的是 .we-prompt-debug 内部片段（折叠头复用 data-we-seg-toggle，由 bindPromptSegToggle 统一接管）。
+  function renderInjectInspector() {
+    const insp = window.WORLD_ENGINE_INJECT_INSPECTOR;
+    if (!insp || !insp.getLastSnapshot) return '';
+    const snap = insp.getLastSnapshot();
+    const status = snap ? snap.status : 'NOT_YET';
+    const text = insp.statusText ? insp.statusText(status) : '';
+
+    const palette = {
+      SUCCESS:          { icon: '✅', color: '#3fb950', bg: 'rgba(63,185,80,0.10)' },
+      MISSING:          { icon: '❌', color: '#f85149', bg: 'rgba(248,81,73,0.10)' },
+      SKIPPED_DISABLED: { icon: '⏸', color: 'var(--we-text3)', bg: 'rgba(128,128,128,0.08)' },
+      SKIPPED_REROLL:   { icon: '⏸', color: 'var(--we-text3)', bg: 'rgba(128,128,128,0.08)' },
+      SKIPPED_OTHER:    { icon: '⏸', color: 'var(--we-text3)', bg: 'rgba(128,128,128,0.08)' },
+      NOT_YET:          { icon: '—', color: 'var(--we-text3)', bg: 'rgba(128,128,128,0.08)' },
+    };
+    const p = palette[status] || palette.NOT_YET;
+
+    let html = '<div class="we-inject-inspector" style="border:1px solid var(--we-border);border-radius:8px;padding:10px;margin-bottom:12px;background:' + p.bg + ';">';
+    html += '<div style="font-weight:600;color:' + p.color + ';margin-bottom:4px;">' + p.icon + ' 注入自检 · ' + h(text) + '</div>';
+
+    if (!snap) {
+      html += '<div style="font-size:11px;color:var(--we-text3);">发一条消息触发生成后，这里会显示「世界状态」有没有真正进入发给大模型的正文 prompt（与上方推演 prompt 不是一回事）。</div>';
+      return html + '</div>';
+    }
+
+    // 元信息行
+    const apiLabel = snap.apiType === 'chat' ? '对话补全' : '文本补全';
+    let when = '';
+    try { when = snap.ts ? new Date(snap.ts).toLocaleTimeString() : ''; } catch (e) {}
+    html += '<div style="font-size:11px;color:var(--we-text3);margin-bottom:6px;">'
+      + 'API：' + apiLabel + ' · 轮次：' + (snap.round != null ? h(String(snap.round)) : '?')
+      + ' · 已注册：' + (snap.registeredAtSend ? '是' : '否')
+      + ' · 进正文：' + (snap.landed ? '是' : '否')
+      + (when ? ' · ' + h(when) : '')
+      + '</div>';
+
+    // role 徽标
+    const roleColor = { system: '#a371f7', user: '#58a6ff', assistant: '#3fb950', tool: '#d29922' };
+    const roleBadge = (role) => {
+      const c = roleColor[role] || 'var(--we-text3)';
+      return '<span style="display:inline-block;min-width:62px;text-align:center;font-size:10px;padding:1px 6px;border-radius:4px;border:1px solid ' + c + ';color:' + c + ';">' + h(role || '?') + '</span>';
+    };
+
+    if (snap.apiType === 'chat' && Array.isArray(snap.messages)) {
+      html += '<div style="font-size:11px;color:var(--we-text2);margin-bottom:4px;">实际发出的消息链（共 ' + h(String(snap.messageCount)) + ' 条，按 role 分；点击任意条展开看完整内容）：</div>';
+      html += snap.messages.map((m) => {
+        const meta = (m.length != null ? m.length + ' 字' : '');
+        const hasBody = (m.content != null && m.content.length > 0);
+        if (m.isOurs) {
+          // 本扩展注入那条：可折叠，展开看完整世界状态（证明确实在 prompt 里）
+          const body = '<pre class="we-prompt-seg-pre">' + u(m.content || snap.ourContent || '') + '</pre>';
+          return '<div class="we-prompt-seg-card" style="margin:3px 0;">'
+            + '<div class="we-prompt-seg-head" data-we-seg-toggle style="display:flex;align-items:center;gap:6px;">'
+            + '<span class="we-prompt-seg-arrow">▶</span>'
+            + roleBadge(m.role)
+            + '<span class="we-prompt-seg-label" style="color:#3fb950;">✅ 含本扩展注入</span>'
+            + '<span class="we-prompt-seg-meta">' + meta + '</span>'
+            + '</div>'
+            + '<div class="we-prompt-seg-body" style="display:none;">' + body + '</div>'
+            + '</div>';
+        }
+        // 其它消息：也可折叠展开看完整内容（只读，不写任何存储）
+        if (hasBody) {
+          const body = '<pre class="we-prompt-seg-pre">' + u(m.content) + '</pre>';
+          return '<div class="we-prompt-seg-card" style="margin:3px 0;">'
+            + '<div class="we-prompt-seg-head" data-we-seg-toggle style="display:flex;align-items:center;gap:6px;">'
+            + '<span class="we-prompt-seg-arrow">▶</span>'
+            + roleBadge(m.role)
+            + '<span class="we-prompt-seg-meta">' + meta + '</span>'
+            + '</div>'
+            + '<div class="we-prompt-seg-body" style="display:none;">' + body + '</div>'
+            + '</div>';
+        }
+        // 空内容：只读一行
+        return '<div style="display:flex;align-items:center;gap:6px;padding:2px 0;font-size:11px;color:var(--we-text3);">'
+          + roleBadge(m.role)
+          + '<span>' + meta + '</span>'
+          + '</div>';
+      }).join('');
+    } else if (snap.apiType === 'text') {
+      html += '<div style="font-size:11px;color:var(--we-text2);margin-bottom:4px;">文本补全 prompt 共 ' + h(String(snap.promptLength || 0)) + ' 字（已 flatten 成单串，无 role 之分）：</div>';
+      if (snap.landed && snap.ourExcerpt) {
+        const body = '<pre class="we-prompt-seg-pre">' + u(snap.ourExcerpt) + '</pre>';
+        html += '<div class="we-prompt-seg-card" style="margin:3px 0;">'
+          + '<div class="we-prompt-seg-head" data-we-seg-toggle style="display:flex;align-items:center;gap:6px;">'
+          + '<span class="we-prompt-seg-arrow">▶</span>'
+          + '<span class="we-prompt-seg-label" style="color:#3fb950;">✅ 哨兵命中处摘录</span>'
+          + '</div>'
+          + '<div class="we-prompt-seg-body" style="display:none;">' + body + '</div>'
+          + '</div>';
+      }
+    }
+
+    return html + '</div>';
+  }
+
   // [FIX] renderDebug：推演 prompt 全透明分段展示（只读，不改可编辑）。
   // 把推演 API 收到的整块 prompt 按 10 段拆开折叠展示 + AI 返回 JSON 高亮，只看最新一轮。
   // 数据源 evo.getLastDebug().segments（evolution.js 拼装侧镜像，与实际发出 prompt 字节级一致）。
   function renderDebug() {
+    // 注入自检卡独立于推演数据：每次生成都会更新，故即便尚未推演也要先展示它。
+    //   整块仍包在 .we-prompt-debug 里，复用 bindPromptSegToggle 的单一委托接管折叠。
+    const injectCard = renderInjectInspector();
     const evo = window.WORLD_ENGINE_EVOLUTION;
-    if (!evo || !evo.getLastDebug) return '<div class="we-empty">调试数据不可用</div>';
+    const wrap = (inner) => '<div class="we-prompt-debug">' + injectCard + inner + '</div>';
+    if (!evo || !evo.getLastDebug) return wrap('<div class="we-empty">调试数据不可用</div>');
     const dbg = evo.getLastDebug();
-    if (!dbg || !dbg.prompt) return '<div class="we-empty">尚未推演，暂无调试数据</div>';
+    if (!dbg || !dbg.prompt) return wrap('<div class="we-empty">尚未推演，暂无调试数据</div>');
 
     const segments = Array.isArray(dbg.segments) ? dbg.segments : [];
     const totalLen = dbg.prompt.length || 0;
@@ -1723,6 +1831,7 @@ window.WORLD_ENGINE_UI = (function() {
 
     return ''
       + '<div class="we-prompt-debug">'
+      + injectCard
       + '<div class="we-prompt-debug-summary">发送给推演 API 的 Prompt 共 ' + totalLen + ' 字，分 ' + segments.length + ' 段（只读展示，与实际发出字节一致）</div>'
       + barHtml
       + '<div class="we-prompt-seg-list">' + segments.map((seg, i) => segCard(i, seg)).join('') + '</div>'

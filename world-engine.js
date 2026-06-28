@@ -14,6 +14,7 @@
     'world-engine-ledger.js',
     'world-engine-evolution.js',
     'world-engine-inject.js',
+    'world-engine-inject-inspector.js', // ← 新增：注入自检查看器（解耦/只读，订阅 prompt-ready 事件核对注入是否真进正文）
     'world-engine-diag.js',
     'world-engine-ui.js'
   ];
@@ -66,6 +67,11 @@
       // 酒馆缓存：装好同步槽并对当前聊天做一次恢复/收敛（须在首次注入正文之前，注入才用上同步到的状态）
       if (window.WORLD_ENGINE_CHATCACHE) {
         window.WORLD_ENGINE_CHATCACHE.init();
+      }
+
+      // 注入自检查看器：只读订阅 ST prompt-ready 事件，核对世界状态是否真进了最终 prompt（解耦，订阅失败不阻断启动）
+      if (window.WORLD_ENGINE_INJECT_INSPECTOR) {
+        try { window.WORLD_ENGINE_INJECT_INSPECTOR.init(); } catch (e) { console.warn('[世界引擎] 注入自检初始化失败（非致命）', e); }
       }
 
       const core = window.WORLD_ENGINE_CORE;
@@ -186,22 +192,29 @@
         }
       }
 
-      // 正文组装前直接比较注入当下的对话层数和当前状态记录的层数：
-      // 对话层数更小 = 重 roll，注入存档点；否则注入当前状态。
-      function applyInjectionForCurrentRound() {
+      // 正文组装前选择注入哪份世界状态：
+      //   重 roll（酒馆 type=swipe/regenerate，由调用方传 opts.isReroll）→ 注入存档点（这层正文产生前的状态）；
+      //   往前删到旧层（chatLayer < state.chatLayer）→ 注入存档点；
+      //   否则（新生成/新轮次/续写）→ 注入当前状态。
+      function applyInjectionForCurrentRound(opts) {
         const state = core.loadState();
         const chatLayer = core.getChatLayer();
+        const isReroll = !!(opts && opts.isReroll);
 
-        // [FIX] 同层重 roll → 不注入：当前层 == 上次新轮次推演所在层（fingerprint）且该层已推演过，
-        //   说明这是对「已推演过的同一条 AI 正文」的重新生成（swipe/regenerate），
-        //   不该把「基于旧正文推演出的世界状态」注入进正在重写的新正文，否则新正文被旧世界状态带偏。
-        //   判据用 fingerprint（只在真正新轮次时更新）而非 state.chatLayer（redo 也会刷新），
-        //   故即使首次推演后无 checkpoint、即使 redo 不存 checkpoint，本守卫仍生效。
-        const fp = core.loadFingerprint();
-        const fpLayer = (fp !== '' && Number.isFinite(Number(fp))) ? Number(fp) : null;
-        if (fpLayer != null && fpLayer === chatLayer) {
-          unregisterInjection();
-          console.log('[世界引擎] 正文注入判定：同层重 roll（chatLayer ' + chatLayer + ' == fingerprint ' + fpLayer + '），不注入');
+        // [FIX v2.3.19] 重 roll 判据改用酒馆原生 type（swipe/regenerate），不再用 chatLayer===state.chatLayer 数值。
+        //   v2.3.18 的纯数值判据有回归：GENERATION_STARTED 在用户楼 push 进 chat **之前** emit，新一轮发消息时
+        //   chatLayer 仍 == 上一轮 state.chatLayer，被误判成重 roll、注入了存档点（用户「没重 roll 却注入旧状态」）。
+        //   真正可靠的重 roll 信号是酒馆 GENERATION_STARTED 的 type 参数（swipe/regenerate），见 onGenerationStarted。
+        if (isReroll) {
+          const checkpoint = core.restoreCheckpoint();
+          if (checkpoint) {
+            console.log('[世界引擎] 正文注入判定：重 roll（type=swipe/regenerate），注入存档点');
+            applyInjection(checkpoint);
+            if (ui && ui.setInjectedScope) ui.setInjectedScope('checkpoint');
+          } else {
+            console.log('[世界引擎] 正文注入判定：重 roll（type=swipe/regenerate），无存档点，不注入');
+            unregisterInjection();
+          }
           if (ui && ui.refresh) ui.refresh(true);
           return;
         }
@@ -223,7 +236,7 @@
           applyInjection();
         }
         // 注入正文后刷新面板，让「当前状态」跟随实际注入的那份：
-        // 重 roll（对话层数 < 状态层数）→ 显示存档点；否则 → 显示当前状态。
+        // 重 roll / 往前删旧层 → 显示存档点；否则 → 显示当前状态。
         if (ui && ui.setInjectedScope) ui.setInjectedScope(injectedScope);
         if (ui && ui.refresh) ui.refresh(true);
       }
@@ -507,12 +520,19 @@
 
       function onMessageSwiped() {
         clearAutoEvolveTimer();
-        applyInjectionForCurrentRound();
+        // swipe（消息下方左右箭头）：明确的重 roll，注入存档点。
+        applyInjectionForCurrentRound({ isReroll: true });
       }
 
-      // 只借用生成开始事件作为正文组装时机；注入哪份状态仍完全由楼层数判断。
-      function onGenerationStarted() {
-        applyInjectionForCurrentRound();
+      // 借用生成开始事件作为正文组装时机。重 roll 判据用酒馆原生 type（swipe/regenerate），
+      // 不再用 chatLayer 数值——因为 GENERATION_STARTED 在用户/AI 楼 push 进 chat 之前 emit，
+      // 新一轮发消息时 chatLayer 仍 == 上一轮 state.chatLayer，纯数值判据会把新轮首生成误判成重 roll（v2.3.18 回归）。
+      //   type==='swipe'|'regenerate' → 重 roll，注入存档点（这层正文产生前的世界状态）。
+      //   dryRun（数据库类插件的预热/算 token 生成）→ 不动注入，避免「生成完又注入一遍」。
+      function onGenerationStarted(type, _opts, dryRun) {
+        if (dryRun) return; // 预热轮不重判注入
+        const isReroll = (type === 'swipe' || type === 'regenerate');
+        applyInjectionForCurrentRound({ isReroll });
       }
 
       // ========== 事件绑定 ==========
