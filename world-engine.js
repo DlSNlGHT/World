@@ -192,31 +192,27 @@
         }
       }
 
-      // 正文组装前直接比较注入当下的对话层数和当前状态记录的层数：
-      // 对话层数更小 = 重 roll，注入存档点；否则注入当前状态。
-      function applyInjectionForCurrentRound() {
+      // 正文组装前选择注入哪份世界状态：
+      //   重 roll（酒馆 type=swipe/regenerate，由调用方传 opts.isReroll）→ 注入存档点（这层正文产生前的状态）；
+      //   往前删到旧层（chatLayer < state.chatLayer）→ 注入存档点；
+      //   否则（新生成/新轮次/续写）→ 注入当前状态。
+      function applyInjectionForCurrentRound(opts) {
         const state = core.loadState();
         const chatLayer = core.getChatLayer();
+        const isReroll = !!(opts && opts.isReroll);
 
-        // [FIX] 同层重 roll → 注入存档点（这层正文产生前的世界状态）：
-        //   判据用纯数值 chatLayer === state.chatLayer，不依赖任何事件时序/swipe 闸门。
-        //   区分「同层重 roll」(注入存档点) vs「新轮次首次生成」(注入当前状态) 的本质是**楼层是否已前进过**：
-        //     - 重 roll 同楼 swipe：chatLayer == state.chatLayer（forward 推演写过的当前轮所在层），→ 命中 → 注入存档点。
-        //     - 新轮次首次生成：新 AI 楼已落地 chatLayer > state.chatLayer（evolve 尚未跑、state.chatLayer 还是上一轮）→ 不命中 → 走 >= 注入当前状态。
-        //   为何不用 v2.3.17 的 _pendingReroll && fpLayer===chatLayer：_pendingReroll 依赖酒馆 swipe 事件时序，易被
-        //     GENERATION_ENDED 提前清零 / 双生成插件撞窗口；纯 fpLayer===chatLayer 又分不开「同层已推演后重 roll」与
-        //     「同层已推演后新轮首次生成」。state.chatLayer 只在 evolve 完成时由 saveStateWithLayer 写，新轮首次生成时
-        //     evolve 未跑、仍是上一轮的值，天然区分两者。护栏 Number.isFinite(stateSL) 排除首推演前空 state（其
-        //     state.chatLayer 无值，走下方 >= 兜底注入当前状态，不误命中）。
-        const stateSL = Number(state.chatLayer);
-        if (Number.isFinite(stateSL) && stateSL === chatLayer) {
+        // [FIX v2.3.19] 重 roll 判据改用酒馆原生 type（swipe/regenerate），不再用 chatLayer===state.chatLayer 数值。
+        //   v2.3.18 的纯数值判据有回归：GENERATION_STARTED 在用户楼 push 进 chat **之前** emit，新一轮发消息时
+        //   chatLayer 仍 == 上一轮 state.chatLayer，被误判成重 roll、注入了存档点（用户「没重 roll 却注入旧状态」）。
+        //   真正可靠的重 roll 信号是酒馆 GENERATION_STARTED 的 type 参数（swipe/regenerate），见 onGenerationStarted。
+        if (isReroll) {
           const checkpoint = core.restoreCheckpoint();
           if (checkpoint) {
-            console.log('[世界引擎] 正文注入判定：同层重 roll（chatLayer ' + chatLayer + ' == state.chatLayer ' + stateSL + '），注入存档点');
+            console.log('[世界引擎] 正文注入判定：重 roll（type=swipe/regenerate），注入存档点');
             applyInjection(checkpoint);
             if (ui && ui.setInjectedScope) ui.setInjectedScope('checkpoint');
           } else {
-            console.log('[世界引擎] 正文注入判定：同层重 roll（chatLayer ' + chatLayer + ' == state.chatLayer ' + stateSL + '），无存档点，不注入');
+            console.log('[世界引擎] 正文注入判定：重 roll（type=swipe/regenerate），无存档点，不注入');
             unregisterInjection();
           }
           if (ui && ui.refresh) ui.refresh(true);
@@ -240,7 +236,7 @@
           applyInjection();
         }
         // 注入正文后刷新面板，让「当前状态」跟随实际注入的那份：
-        // 重 roll（对话层数 < 状态层数）→ 显示存档点；否则 → 显示当前状态。
+        // 重 roll / 往前删旧层 → 显示存档点；否则 → 显示当前状态。
         if (ui && ui.setInjectedScope) ui.setInjectedScope(injectedScope);
         if (ui && ui.refresh) ui.refresh(true);
       }
@@ -524,14 +520,19 @@
 
       function onMessageSwiped() {
         clearAutoEvolveTimer();
-        // swipe/重生成：触发一次注入重判。注入哪份状态完全由 chatLayer vs state.chatLayer 数值判定，
-        // 不再依赖任何 swipe 闸门/事件时序（v2.3.17 的 _pendingReroll 闸门因时序不可靠已移除）。
-        applyInjectionForCurrentRound();
+        // swipe（消息下方左右箭头）：明确的重 roll，注入存档点。
+        applyInjectionForCurrentRound({ isReroll: true });
       }
 
-      // 只借用生成开始事件作为正文组装时机；注入哪份状态仍完全由楼层数判断。
-      function onGenerationStarted() {
-        applyInjectionForCurrentRound();
+      // 借用生成开始事件作为正文组装时机。重 roll 判据用酒馆原生 type（swipe/regenerate），
+      // 不再用 chatLayer 数值——因为 GENERATION_STARTED 在用户/AI 楼 push 进 chat 之前 emit，
+      // 新一轮发消息时 chatLayer 仍 == 上一轮 state.chatLayer，纯数值判据会把新轮首生成误判成重 roll（v2.3.18 回归）。
+      //   type==='swipe'|'regenerate' → 重 roll，注入存档点（这层正文产生前的世界状态）。
+      //   dryRun（数据库类插件的预热/算 token 生成）→ 不动注入，避免「生成完又注入一遍」。
+      function onGenerationStarted(type, _opts, dryRun) {
+        if (dryRun) return; // 预热轮不重判注入
+        const isReroll = (type === 'swipe' || type === 'regenerate');
+        applyInjectionForCurrentRound({ isReroll });
       }
 
       // ========== 事件绑定 ==========
