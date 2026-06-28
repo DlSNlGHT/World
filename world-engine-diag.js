@@ -51,6 +51,7 @@ window.WORLD_ENGINE_DIAG = (function() {
     const worldbook = window.WORLD_ENGINE_WORLDBOOK;
     const rules = window.WORLD_ENGINE_RULES;
     const preset = window.WORLD_ENGINE_PRESET;
+    const inspector = window.WORLD_ENGINE_INJECT_INSPECTOR;
 
     const diag = {};
 
@@ -215,6 +216,39 @@ window.WORLD_ENGINE_DIAG = (function() {
           return { id: (p && p.id) || null, name: (p && p.name) || null, builtin: !!(p && p.builtin) };
         }) : []
       };
+    });
+
+    // —— 注入自检快照（解耦只读模块；排错时直接看上轮世界状态有没有真进最终 prompt）——
+    //   客户报「注入失败」时，这里能区分 SUCCESS / MISSING（真失败）/ SKIPPED_*（按设计跳过/自己关了）。
+    diag.injectInspector = safe(function () {
+      if (!inspector || !inspector.getLastSnapshot) return { error: 'inspector 模块不可用' };
+      const snap = inspector.getLastSnapshot();
+      if (!snap) return { hasSnapshot: false, status: 'NOT_YET' };
+      const out = {
+        hasSnapshot: true,
+        status: snap.status,
+        statusText: inspector.statusText ? inspector.statusText(snap.status) : null,
+        apiType: snap.apiType,
+        round: snap.round,
+        ts: snap.ts,
+        injectEnabled: snap.injectEnabled,
+        registeredAtSend: snap.registeredAtSend,
+        sameLayerReroll: snap.sameLayerReroll,
+        landed: snap.landed
+      };
+      if (snap.apiType === 'chat') {
+        out.messageCount = snap.messageCount;
+        out.ourIndex = snap.ourIndex;
+        out.ourContentLen = (snap.ourContent || '').length;
+        // role 链只报 role+长度+isOurs，不导正文（避免体积膨胀与泄露聊天上下文）
+        out.roleChain = Array.isArray(snap.messages)
+          ? snap.messages.map(function (m) { return { role: m.role, length: m.length, isOurs: !!m.isOurs }; })
+          : [];
+      } else {
+        out.promptLength = snap.promptLength;
+        out.ourExcerptLen = (snap.ourExcerpt || '').length;
+      }
+      return out;
     });
 
     // —— 过滤正则诊断（复用 core.validateFilterRegex：支持 /pat/flags 与纯 pattern 两种写法）——

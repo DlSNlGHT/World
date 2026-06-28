@@ -14,6 +14,7 @@
     'world-engine-ledger.js',
     'world-engine-evolution.js',
     'world-engine-inject.js',
+    'world-engine-inject-inspector.js', // ← 新增：注入自检查看器（解耦/只读，订阅 prompt-ready 事件核对注入是否真进正文）
     'world-engine-diag.js',
     'world-engine-ui.js'
   ];
@@ -66,6 +67,11 @@
       // 酒馆缓存：装好同步槽并对当前聊天做一次恢复/收敛（须在首次注入正文之前，注入才用上同步到的状态）
       if (window.WORLD_ENGINE_CHATCACHE) {
         window.WORLD_ENGINE_CHATCACHE.init();
+      }
+
+      // 注入自检查看器：只读订阅 ST prompt-ready 事件，核对世界状态是否真进了最终 prompt（解耦，订阅失败不阻断启动）
+      if (window.WORLD_ENGINE_INJECT_INSPECTOR) {
+        try { window.WORLD_ENGINE_INJECT_INSPECTOR.init(); } catch (e) { console.warn('[世界引擎] 注入自检初始化失败（非致命）', e); }
       }
 
       const core = window.WORLD_ENGINE_CORE;
