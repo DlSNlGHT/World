@@ -745,11 +745,20 @@ type：${picked.type}
     const isNew = mode === 'forward' ? true
                 : mode === 'redo'    ? false
                 : core.isNewRound();
+    // [FIX] 基底选择三分，解耦「重 roll」与「redo」：
+    //   isForward  = mode==='forward' 或自动新轮次（isNew=true） —— 接着当前往前推、round++、存档点前移、刷新指纹。
+    //   isRedo     = mode==='redo'（手动卫星「重新推进」）        —— 从存档点恢复基底重推、轮次=存档点轮次、不动存档点/指纹。
+    //   自动重 roll = 否则（mode=undefined 且 !isNew）              —— 对同一楼正文重新生成触发的重推，**不从存档点恢复**，
+    //                 直接在当前 state 上推、轮次保持当前轮、不动存档点/指纹。
+    //   旧代码把「自动重 roll」也走 else 的 Object.assign(state,cp)，把 state 整份恢复成存档点（上一轮）再推→轮次回退成
+    //   存档点轮次（症状B：第6轮重 roll 推演后停在5）。现纠正：只有 isRedo 才回存档点；自动重 roll 在当前 state 推
+    //   （PR#27 修法2 注释 line768 明说的「基于当前状态推的正道」，旧实现与注释不符，此处对齐）。
+    const isForward = isNew;
 
-    if (isNew) {
-      console.log('[世界引擎] 📌 新轮次');
-    } else {
-      // 重roll/手动 → 从存档点 a 恢复
+    if (isForward) {
+      console.log('[世界引擎] 📌 新轮次 forward');
+    } else if (mode === 'redo') {
+      // redo（手动「重新推进」）：从存档点 a 恢复基底重推，轮次=存档点轮次
       const cp = core.restoreCheckpoint();
       if (cp) {
         Object.assign(state, cp);
@@ -760,17 +769,20 @@ type：${picked.type}
         state.winds = cp.winds || [];
         state.enemies = cp.enemies || [];
         state.influenceChain = cp.influenceChain || [];
-        console.log('[世界引擎] 🔄 检测到重roll，从存档点恢复');
-      } else if (mode === 'redo') {
-        // [FIX] redo（卫星按钮「重新推进」）必须有存档点作为基底。无存档点时（首次推演后、
-        //   或仅做过 redo 从未 forward 过）拒绝执行，避免无声退化成「在当前 state 上推」+ round++
-        //   的伪 redo（旧版 line 753 拿到 null 后整块跳过，后续在 state 上推并 line 945 round++）。
-        //   自动推演（mode 为 undefined）即便 isNew=false 也允许在当前 state 上推——那是
-        //   「基于当前状态推」的正道，不是「从存档点恢复」，不在本守卫范围。
+        console.log('[世界引擎] 🔄 redo 从存档点恢复重推');
+      } else {
+        // [FIX 守卫] redo 必须有存档点作为基底。无存档点时（首次推演后、或仅做过 redo 从未 forward 过）拒绝执行，
+        //   避免无声退化成「在当前 state 上推」+ round++ 的伪 redo。自动重 roll 不在本守卫范围（见下分支）。
         _lastError = '无存档点，无法重新推进（redo）；请先「向前推进」至少一轮再使用「重新推进」';
         console.warn('[世界引擎] ⚠️ redo 无存档点，已拒绝（不退化成伪 forward）');
         return false;
       }
+    } else {
+      // 自动重 roll（mode=undefined 且非新轮次）：对同一楼正文重新生成触发的重推。
+      //   不从存档点恢复基底（存档点是「这层正文产生前」的状态，留作注入用，推演基底用当前 state）；
+      //   轮次保持当前轮（forward 已 round++ 到当前轮，这里不动）；不动存档点/指纹。
+      //   无存档点时（首层场景）也不报错——直接在当前 state 上推，首层本就无 cp。
+      console.log('[世界引擎] 🔄 当前轮重新推演（自动重 roll，轮次不变）');
     }
 
     _isRunning = true;
@@ -953,19 +965,24 @@ type：${picked.type}
 
       state.lastEvolveResult = update;
 
-      // [FIX] round 只在新轮次（isNew=true，即 forward / 自动楼层推进）时 +1；
-      //   redo / 同层重 roll 推演（isNew=false）不该涨轮次——注释（上方 line 742、本块 else
-      //   日志）明说 redo「轮次不变」，旧版 line 945 的 round++ 无条件放在 if(isNew) 之前，
-      //   导致 redo 也 +1、round 与 chatLayer/fingerprint 脱钩。现移进 if(isNew) 块。
-      //   连带：redo 不存 checkpoint、不更新 fingerprint（现状已在此块外，符合 redo 语义，不动）。
-      if (isNew) {
+      // [FIX] 轮次块三分，对齐基底选择三分（见上方 isForward/isRedo/自动重roll）：
+      //   isForward        → round++ + 存档点前移(saveCheckpoint(backup)) + 刷新指纹(saveFingerprint)。
+      //   isRedo           → 轮次不变(=存档点轮次)；不存 checkpoint、不更新 fingerprint（redo 基底就是存档点，不动它）。
+      //   自动重 roll       → 轮次不变(=当前轮)；不存 checkpoint、不更新 fingerprint。
+      //     关键：自动重 roll **不 saveCheckpoint** —— 存档点保持 forward 时存的「上一轮」状态，
+      //     这是注入侧后续能取「这层正文产生前的世界状态」=存档点的前提。若在此前移存档点，
+      //     重 roll 后注入将拿到「重 roll 推演前」的状态而非「这层正文产生前」的，语义错位。
+      //   旧代码无差别在 isNew=false 时打印「重roll/redo 轮次不变」，但上方基底选择已把自动重 roll
+      //   错误 Object.assign(cp) 回存档点（症状B），现基底已纠正为不回存档点，此处轮次保持当前轮。
+      if (isForward) {
         // 首次推演不创建空白存档点；后续旧当前状态成为存档点并保留原层数。
-        state.round++;                             // [FIX] 只在新轮次涨
+        state.round++;                             // 只在 forward 涨轮次
         if (hadStoredState) core.saveCheckpoint(backup);
         core.saveFingerprint(core.getChatFingerprint());
         console.log('[世界引擎] ✅ 推演完成，新轮次第', state.round, '轮，存档点已推进');
       } else {
-        console.log('[世界引擎] ✅ 推演完成（重roll/redo），轮次不变：第', state.round, '轮');
+        const label = (mode === 'redo') ? 'redo' : '自动重roll';
+        console.log('[世界引擎] ✅ 推演完成（' + label + '），轮次不变：第', state.round, '轮');
       }
       core.saveStateWithLayer(state);
       return true;
