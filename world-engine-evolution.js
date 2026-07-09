@@ -687,7 +687,7 @@ type：${picked.type}
       { key: 'tone',           label: '⑩ 附加提示词（用户自定义）', content: segToneSection }
     ];
 
-    const rawResult = await api.callApi(prompt, 8000, 0.7, _abortController.signal);
+    const rawResult = await api.callApi(prompt, undefined, undefined, _abortController.signal);
     _lastPrompt = prompt;
     _lastRawResult = rawResult;
     const update = api.parseJSON(rawResult);
