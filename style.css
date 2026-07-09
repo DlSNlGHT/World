@@ -738,6 +738,19 @@
   line-height: 1.7;
 }
 
+.we-digest-card {
+  position: relative;
+}
+
+.we-digest-editor {
+  margin-top: 0;
+}
+
+.we-digest-editor .we-digest-edit-text {
+  min-height: 120px;
+  line-height: 1.7;
+}
+
 /* ===== 事件链 ===== */
 .we-event-item {
   background: var(--we-bg);
@@ -2409,12 +2422,17 @@
 
 /* ===== 分页顶栏 ===== */
 .we-sub-topbar {
+  position: sticky;
+  top: -12px;
+  z-index: 5;
   display: flex;
   align-items: center;
   gap: 8px;
   margin-bottom: 10px;
-  padding-bottom: 8px;
+  padding: 12px 0 8px;
+  background: #182028;
   border-bottom: 1px solid var(--we-border);
+  box-shadow: 0 6px 10px rgba(0, 0, 0, 0.16);
 }
 .we-sub-title {
   font-size: 14px;

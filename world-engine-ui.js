@@ -11,6 +11,7 @@ window.WORLD_ENGINE_UI = (function() {
   let editingFaction = null;
   let editingWind = null;
   let editingTrend = null;
+  let editingDigest = null;
   let editingEnemy = null;
   let editingInfluence = null;
   let editingRI = null;
@@ -345,6 +346,24 @@ window.WORLD_ENGINE_UI = (function() {
     return '<div class="we-section" id="we-sec-' + id + '"><div class="we-section-title">' + sectionHeader(title, id) + '</div>' + sectionBody(id, content) + '</div>';
   }
 
+  function renderWorldDigest(s, scope) {
+    const isEditing = editingDigest?.scope === scope;
+    const editor = isEditing
+      ? '<div class="we-event-editor we-digest-editor" data-digest-scope="' + h(scope) + '">'
+        + '<button class="we-event-editor-close we-digest-editor-close" title="取消">✕</button>'
+        + '<textarea class="we-digest-edit-text" rows="6">' + h(s.worldDigest || '') + '</textarea>'
+        + '<div class="we-event-editor-footer"><button class="we-btn we-btn-primary we-digest-editor-save">保存</button></div>'
+        + '</div>'
+      : '<div class="we-digest">' + u(s.worldDigest) + '</div>';
+
+    return '<div class="we-section we-digest-card" id="we-sec-digest">'
+      + '<div class="we-section-title">世界摘要</div>'
+      + editor
+      + '<div class="we-event-actions">'
+      + '<button class="we-icon-btn we-digest-edit" data-digest-scope="' + h(scope) + '" title="编辑"><i class="fa-solid fa-pen"></i></button>'
+      + '</div></div>';
+  }
+
   function renderHomeView(s, layer, scope) {
     const stab = computeWorldStability(s);
     const tierColor = STABILITY_TIER_COLOR[stab.tier] || '#58b8a9';
@@ -370,13 +389,13 @@ window.WORLD_ENGINE_UI = (function() {
 
     return renderWorldCore(s)
       + '<div class="we-nav-list" style="--we-tier-color:' + tierColor + ';">' + navRows + '</div>'
-      + '<div class="we-section" id="we-sec-digest"><div class="we-section-title">世界摘要</div><div class="we-digest">' + u(s.worldDigest) + '</div></div>';
+      + renderWorldDigest(s, scope);
   }
 
   /** 展开模式主页：世界核心 + 世界摘要 + 所有 section 平铺（如存档点） */
   function renderHomeViewExpanded(s, layer, scope) {
     return renderWorldCore(s)
-      + '<div class="we-section" id="we-sec-digest"><div class="we-section-title">世界摘要</div><div class="we-digest">' + u(s.worldDigest) + '</div></div>'
+      + renderWorldDigest(s, scope)
       + renderSection('天下大势', 'trends', renderWorldTrends(s.worldTrends, scope))
       + renderSection('区域事件', 'regional', renderRegionalIncident(s.regionalIncident, scope))
       + renderSection('事件链', 'events', renderEventList(s.events, scope))
@@ -2663,6 +2682,31 @@ window.WORLD_ENGINE_UI = (function() {
         arr.splice(index + 1, 0, JSON.parse(JSON.stringify(arr[index])));  // 就近插入
         saveScopedState(scope, state);
         showToast('已复制');
+        refresh();
+      };
+    });
+
+    // ===== 世界摘要编辑器事件（仅编辑，不提供复制或删除） =====
+    document.querySelectorAll('.we-digest-edit').forEach(button => {
+      button.onclick = () => {
+        editingDigest = { scope: button.dataset.digestScope || 'state' };
+        refresh();
+      };
+    });
+    document.querySelectorAll('.we-digest-editor-close').forEach(button => {
+      button.onclick = () => { editingDigest = null; refresh(); };
+    });
+    document.querySelectorAll('.we-digest-editor-save').forEach(button => {
+      button.onclick = () => {
+        const editor = button.closest('.we-digest-editor');
+        if (!editor) return;
+        const scope = editor.dataset.digestScope || 'state';
+        const scopedState = loadScopedState(scope);
+        const value = editor.querySelector('.we-digest-edit-text')?.value.trim() || '';
+        scopedState.worldDigest = value;
+        saveScopedState(scope, scopedState);
+        editingDigest = null;
+        showToast('世界摘要已保存');
         refresh();
       };
     });
