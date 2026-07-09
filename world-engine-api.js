@@ -84,6 +84,30 @@ window.WORLD_ENGINE_API = (function() {
     return new Error('API 请求超时（' + Math.max(1, Math.ceil(timeoutMs / 1000)) + 's 无响应），已中止本次请求');
   }
 
+  function timeoutSeconds(timeoutMs) {
+    timeoutMs = Number(timeoutMs) || 0;
+    return timeoutMs > 0 ? Math.max(1, Math.ceil(timeoutMs / 1000)) : 0;
+  }
+
+  function messageChars(messages) {
+    return (messages || []).reduce((total, msg) => total + String(msg && msg.content || '').length, 0);
+  }
+
+  function logRequestParams(label, target, settings, body) {
+    console.log('[世界引擎] API 请求参数:', {
+      connectionMode: settings.connectionMode === 'proxy' ? 'proxy' : 'direct',
+      transport: label,
+      target,
+      model: body.model,
+      temperature: body.temperature,
+      max_tokens: body.max_tokens,
+      timeout_sec: timeoutSeconds(settings.apiTimeoutMs),
+      message_count: Array.isArray(body.messages) ? body.messages.length : 0,
+      prompt_chars: messageChars(body.messages),
+      stream: false
+    });
+  }
+
   async function readResponseBody(resp) {
     const text = await resp.text();
     let data = null;
@@ -151,7 +175,7 @@ window.WORLD_ENGINE_API = (function() {
       max_tokens: body.max_tokens,
       stream: false
     };
-    console.log('[世界引擎] 调用 API（经酒馆代理）:', base, payload.model);
+    logRequestParams('tavern-proxy', base, settings, payload);
     const result = await fetchResponseWithTimeout('/api/backends/chat-completions/generate', {
       method: 'POST',
       headers: tavernHeaders(),
@@ -203,7 +227,7 @@ window.WORLD_ENGINE_API = (function() {
       headers['Authorization'] = 'Bearer ' + settings.apiKey;
     }
 
-    console.log('[世界引擎] 调用 API:', url, body.model);
+    logRequestParams('direct', url, settings, body);
 
     const result = await fetchResponseWithTimeout(url, {
       method: 'POST',
