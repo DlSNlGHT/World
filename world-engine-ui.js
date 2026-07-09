@@ -192,10 +192,21 @@ window.WORLD_ENGINE_UI = (function() {
     else core.saveState(scopedState);
   }
 
+  function isEditingPanelContent() {
+    if (editingEvent || editingFaction || editingWind || editingTrend || editingDigest ||
+        editingEnemy || editingInfluence || editingRI || editingSecret) return true;
+
+    // 经济信号等少数内容使用 contentEditable 行内编辑，不经过上面的编辑状态变量。
+    const active = document.activeElement;
+    return !!(active && panelBodyElement && panelBodyElement.contains(active) && active.isContentEditable);
+  }
+
   function refresh(auto) {
     if (!panelElement || !panelVisible) return;
-    // 设置页是静态表单，后台自动刷新会清掉正在输入的内容
-    if (auto && _currentView === 'settings') return;
+    // 后台自动刷新会整块重建 DOM：设置页或任何编辑器正在输入时必须暂缓，
+    // 否则未保存内容会被持久化数据覆盖，表现为输入框不断“回弹”。
+    // 保存、取消等主动调用 refresh()（auto=false）仍会正常刷新。
+    if (auto && (_currentView === 'settings' || isEditingPanelContent())) return;
     const body = panelBodyElement;
     if (!body) return;
     listPagerCounter = 0;
