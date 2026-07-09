@@ -457,6 +457,8 @@ window.WORLD_ENGINE_UI = (function() {
   //   date    —— 可选，日期不确定的留月份/年份；
   //   items   —— 该版本改动条目（每条一行，渲染时走 h() 转义）。
   const CHANGELOG = [
+    { version: '2.3.22', date: '2026-07-10', items: ['控制台新增「API 请求参数」结构化日志：每次推演会打印连接方式、目标地址、模型、temperature、max_tokens、timeout 秒数、消息数量与 prompt 字符数，方便核对实际请求参数；日志不输出 API Key，也不展开完整 prompt 正文。'] },
+    { version: '2.3.21', date: '2026-07-10', items: ['API 设置页新增温度、最大输出 token、请求超时（秒）三个选项；推演请求不再硬编码 0.7 / 8000，而是读取用户设置。', '增强 API 无响应保护：超时覆盖请求响应头与响应正文读取全过程，避免服务端半开响应或正文卡住时一直停在「推演中」；获取模型列表也会按同一超时中止。'] },
     { version: '2.3.20', date: '2026-07-09', items: ['二级页面的返回栏与分级标题改为顶部吸附，长列表滚动到任意位置都能直接返回。', '世界摘要新增行内编辑入口：点击摘要卡片后显示编辑按钮，可修改并保存；不提供复制或删除操作。', '修复编辑事件、势力、风声、大势、世界摘要等信息时内容不断回弹：编辑期间暂停后台自动刷新，避免面板重建覆盖尚未保存的输入；保存或取消后仍正常刷新。'] },
     { version: '2.3.19', date: '2026-06-29', items: ['修复「没重 roll 却注入了存档点（旧轮次世界状态）」：v2.3.18 用纯数值 state.chatLayer===chatLayer 判重 roll，但酒馆 GENERATION_STARTED 在用户楼 push 进 chat **之前** emit——新一轮发消息时 chatLayer 仍 == 上一轮 state.chatLayer，被误判成重 roll、注入了上一轮存档点（与「蚀心入魔·数据库」等双生成插件叠加时每轮必现）。现重 roll 判据改用酒馆原生 type（GENERATION_STARTED 的 type=swipe/regenerate 才是真重 roll），不再靠楼层数值推断；dryRun（数据库类插件的预热/算 token 生成）一律跳过，杜绝「正文生成完又注入一遍」。', '注入自检查看器增强（只读）：「实际发出的消息链」现在每一条（system/user/assistant 全部）都可点击展开看完整内容，不再只显示字数；方便核对发给大模型的完整 prompt。诊断包仍只导 role+长度（不含正文，避免体积膨胀与泄露聊天上下文）。'] },
     { version: '2.3.18', date: '2026-06-29', items: ['修复重 roll 推演轮次回退（解耦重 roll 与 redo）：自动推演把「重 roll（同楼 swipe 重新生成）」混为 redo（从存档点恢复基底重推）→ 重 roll 后推演轮次卡在存档点轮次而非当前轮。现 evolve 基底选择三分——forward（新轮次/从当前推）/ redo（手动卫星按钮回存档点）/ 自动重 roll（mode 未传且非新轮次→不恢复存档点，直接在当前 state 上推，轮次保持当前轮）。', '修复重 roll 注入走错分支（解耦注入判据与事件时序）：v2.3.17 的 _pendingReroll 闸门依赖酒馆 swipe 事件时序，易被 GENERATION_ENDED 提前清零 / 双生成插件撞窗口 → 重 roll 时注入了当前轮状态而非存档点。（注：v2.3.18 换的纯数值判据有新回归，已由 v2.3.19 的 type 判据彻底修正。）', '移除 _pendingReroll 闸门（v2.3.17 引入，现完全不需要），代码更简单'] },
@@ -1889,6 +1891,10 @@ window.WORLD_ENGINE_UI = (function() {
     const cpTimeVal = (_cpForTime && _cpForTime.time != null) ? _cpForTime.time : '';
     const lastDayVal = (core.getLastStoryDay && core.getLastStoryDay() != null) ? core.getLastStoryDay() : '';
     const tv = (k, d) => (settings[k] != null && settings[k] !== '') ? settings[k] : d;
+    const apiTemperature = Number.isFinite(Number(settings.temperature)) ? Math.max(0, Number(settings.temperature)) : 0.7;
+    const apiMaxTokens = Math.max(1, parseInt(settings.maxTokens) || 2000);
+    const apiTimeoutMs = Number.isFinite(Number(settings.apiTimeoutMs)) ? Number(settings.apiTimeoutMs) : 120000;
+    const apiTimeoutSec = Math.max(0, Math.round(apiTimeoutMs / 1000));
 
     const sec = (id, title, body) =>
       '<div class="we-section"><div class="we-section-title">' + sectionHeader(title, id) + '</div>' +
@@ -1923,6 +1929,21 @@ window.WORLD_ENGINE_UI = (function() {
         <select id="we-model-list" style="display:none;width:100%;margin-top:4px;">
           <option value="">-- 选择模型 --</option>
         </select>
+      </div>
+      <div class="we-input-group" style="display:flex;gap:6px;">
+        <div style="flex:1;">
+          <label>温度</label>
+          <input type="number" id="we-temperature" min="0" step="0.1" value="${apiTemperature}" style="width:100%;">
+        </div>
+        <div style="flex:1;">
+          <label>最大输出 token</label>
+          <input type="number" id="we-max-tokens" min="1" step="1" value="${apiMaxTokens}" style="width:100%;">
+        </div>
+      </div>
+      <div class="we-input-group">
+        <label>请求超时（秒）</label>
+        <input type="number" id="we-api-timeout-sec" min="0" step="1" value="${apiTimeoutSec}" style="width:100%;">
+        <div style="font-size:11px;color:var(--we-text3);margin-top:3px;">超过该时间仍未收到完整响应会自动中止并解除「推演中」状态。0 = 不超时。</div>
       </div>`;
 
     const evolveBody = `
@@ -2989,11 +3010,16 @@ window.WORLD_ENGINE_UI = (function() {
       saveBtn.onclick = () => {
         const _modeRaw = document.getElementById('we-evolve-mode')?.value;
         const gv = id => document.getElementById(id)?.value;
+        const temperatureRaw = parseFloat(gv('we-temperature'));
+        const timeoutSecRaw = parseFloat(gv('we-api-timeout-sec'));
         const ns = {
           ...(window.WORLD_ENGINE_API ? window.WORLD_ENGINE_API.getSettings(true) : {}),
           apiUrl: document.getElementById('we-api-url')?.value || '',
           apiKey: document.getElementById('we-api-key')?.value || '',
           model: document.getElementById('we-model')?.value || 'gpt-3.5-turbo',
+          temperature: Number.isFinite(temperatureRaw) ? Math.max(0, temperatureRaw) : 0.7,
+          maxTokens: Math.max(1, parseInt(gv('we-max-tokens')) || 2000),
+          apiTimeoutMs: Number.isFinite(timeoutSecRaw) ? Math.max(0, Math.round(timeoutSecRaw * 1000)) : 120000,
           connectionMode: document.getElementById('we-connection-mode')?.value === 'proxy' ? 'proxy' : 'direct',
           injectIntoPrompt: document.getElementById('we-inject-into-prompt')?.checked !== false,
           syncToChat: document.getElementById('we-sync-to-chat')?.checked === true,
@@ -3328,6 +3354,9 @@ window.WORLD_ENGINE_UI = (function() {
           apiUrl: document.getElementById('we-api-url')?.value || '',
           apiKey: document.getElementById('we-api-key')?.value || '',
           model: document.getElementById('we-model')?.value || '',
+          temperature: Number.isFinite(parseFloat(document.getElementById('we-temperature')?.value)) ? Math.max(0, parseFloat(document.getElementById('we-temperature')?.value)) : 0.7,
+          maxTokens: Math.max(1, parseInt(document.getElementById('we-max-tokens')?.value) || 2000),
+          apiTimeoutMs: Number.isFinite(parseFloat(document.getElementById('we-api-timeout-sec')?.value)) ? Math.max(0, Math.round(parseFloat(document.getElementById('we-api-timeout-sec')?.value) * 1000)) : 120000,
           connectionMode: document.getElementById('we-connection-mode')?.value === 'proxy' ? 'proxy' : 'direct',
           injectIntoPrompt: document.getElementById('we-inject-into-prompt')?.checked !== false
         }));
