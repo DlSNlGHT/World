@@ -2163,8 +2163,10 @@ window.WORLD_ENGINE_UI = (function() {
         const event = scopedState?.events?.[index];
         if (!event) return;
         const copy = JSON.parse(JSON.stringify(event));
+        delete copy.id;
         delete copy.evolveResult;
         core.ensureEventFields(copy);
+        core.assignEntityId(scopedState.events, copy, core.ENTITY_ID_PREFIXES.events);
         scopedState.events.push(copy);
         saveScopedState(scope, scopedState);
         showToast('事件已复制到列表末尾');
@@ -2300,6 +2302,8 @@ window.WORLD_ENGINE_UI = (function() {
         const faction = state.factions?.[index];
         if (!faction) return;
         const copy = JSON.parse(JSON.stringify(faction));
+        delete copy.id;
+        core.assignEntityId(state.factions, copy, core.ENTITY_ID_PREFIXES.factions);
         state.factions.splice(index + 1, 0, copy);
         saveScopedState(scope, state);
         showToast('势力已复制');
@@ -2361,7 +2365,9 @@ window.WORLD_ENGINE_UI = (function() {
         const wind = scopedState.winds?.[index];
         if (!wind) return;
         const copy = JSON.parse(JSON.stringify(wind));
+        delete copy.id;
         copy.quietRounds = 0;
+        core.assignEntityId(scopedState.winds, copy, core.ENTITY_ID_PREFIXES.winds);
         scopedState.winds.push(copy);
         saveScopedState(scope, scopedState);
         showToast('风声已复制');
@@ -2421,6 +2427,8 @@ window.WORLD_ENGINE_UI = (function() {
         const trend = scopedState?.worldTrends?.[index];
         if (!trend) return;
         const copy = JSON.parse(JSON.stringify(trend));
+        delete copy.id;
+        core.assignEntityId(scopedState.worldTrends, copy, core.ENTITY_ID_PREFIXES.worldTrends);
         scopedState.worldTrends.push(copy);
         saveScopedState(scope, scopedState);
         showToast('天下大势已复制');
@@ -2479,6 +2487,8 @@ window.WORLD_ENGINE_UI = (function() {
         const enemy = state.enemies?.[index];
         if (!enemy) return;
         const copy = JSON.parse(JSON.stringify(enemy));
+        delete copy.id;
+        core.assignEntityId(state.enemies, copy, core.ENTITY_ID_PREFIXES.enemies);
         state.enemies.splice(index + 1, 0, copy);
         saveScopedState(scope, state);
         showToast('仇敌已复制');

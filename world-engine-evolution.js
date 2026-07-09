@@ -404,7 +404,7 @@ type：${picked.type}
   }
 
   // ========== 风声消散骰 ==========
-  // API 本轮返回同 topic 风声时，core.addWind 会将 quietRounds 重置为 0。
+  // API 本轮返回同 id 风声时，core.addWind 会将 quietRounds 重置为 0。
   // 未被更新的风声在下轮 API 调用前累积沉寂，并可能直接消散。
   function decayWinds(state, randomFn = Math.random) {
     const survivors = [];
@@ -442,10 +442,18 @@ type：${picked.type}
 
 你必须输出一个 JSON 对象。只输出本轮有实质变化的字段；禁止为了凑数制造无意义内容。
 
+### 持续实体 ID（强制）
+events、factions、worldTrends、winds、enemies 中的每个对象都有系统身份 id。
+- 更新当前状态中已有对象时，必须原样返回它现有的 id；即使 name 或 topic 改名，id 也绝对不能改变。
+- 创建新对象时必须显式填写 "id": null，由本地系统分配；禁止省略 id，也禁止自行编造、猜测或复用 id。
+- 不得把一个对象的 id 用于另一个对象。判断是否为同一对象只看 id，不看 name/topic 是否相同。
+- 当前状态里没有出现过的 id 一律无效。若不确定是更新旧对象还是创建新对象，应创建新对象并令 id 为 null。
+
 ### events（事件链数组）
 每项包含：
-- name: 事件名称（已有事件同名则覆盖更新，新名称则新增）
-- type: "conflict"/"progress"。conflict=冲突型事件链，progress=推进型事件链。新事件必须填写；已有事件的 type 一旦确定禁止改动，更新同名事件时必须沿用当前 type。
+- id: 已有事件必须原样返回当前 id；新事件必须显式填 null，禁止省略
+- name: 事件名称。名称允许随局势演变，但改名不代表创建新事件
+- type: "conflict"/"progress"。conflict=冲突型事件链，progress=推进型事件链。新事件必须填写；已有事件的 type 一旦确定禁止改动，更新同一 id 的事件时必须沿用当前 type。
 - level: 1-4。conflict 表示冲突烈度/失控势能，Lv 越高越容易升级；progress 表示事项规模/完成难度，Lv 越高越难完成。
 - stage: 按 type 使用不同阶段：
   - conflict 只能使用 "萌芽"/"发酵"/"逼近"/"已爆发"/"已消散"。
@@ -475,7 +483,8 @@ type：${picked.type}
 
 ### factions（势力数组）
 每项包含：
-- name: 势力名称（同名覆盖，新名新增）
+- id: 已有势力必须原样返回当前 id；新势力必须显式填 null，禁止省略
+- name: 势力名称。改名、易帜或称号变化时仍沿用原 id；真正分裂出的新势力使用新对象
 - scope: 势力直接控制或具有重大影响力的地理范围
 - status: 整体运势——"鼎盛"/"稳固"/"倾轧"/"困顿"/"衰落"/"瓦解"。
   鼎盛=有钱有人有势，铁板一块；稳固=正常运行无重大危机；倾轧=内部派系斗争，架子还没散；困顿=资源枯竭或被封锁，咬牙硬撑；衰落=失去支柱/地盘/核心人物，滑向瓦解；瓦解=名存实亡，仅待终局确认。
@@ -488,7 +497,8 @@ type：${picked.type}
 ### worldTrends（天下大势数组）
 天下大势是已经改变国家、国际或整个世界运行方式的长期局势，不是普通风声，也不是等待爆发的事件链。
 每项包含：
-- name: 大势名称（同名覆盖更新，新名新增）
+- id: 已有大势必须原样返回当前 id；新大势必须显式填 null，禁止省略
+- name: 大势名称。措辞变化时仍沿用原 id
 - scope: 实际影响范围
 - status: "持续中"/"已结束"
 - description: 当前局势及其正在如何约束世界行动
@@ -503,7 +513,8 @@ type：${picked.type}
 
 ### winds（风声数组）
 每项包含：
-- topic: 稳定主题名。更新同一条风声时必须沿用已有 topic；同 topic 覆盖更新，新 topic 新增。
+- id: 已有风声必须原样返回当前 id；新风声必须显式填 null，禁止省略
+- topic: 风声主题。传播中的说法、焦点或标题可以变化；只要仍是同一传播脉络，就沿用原 id。
 - type: "announcement"/"report"/"rumor"/"sentiment"，分别表示公告、消息、流言、舆情。
 - level: 1-4，表示实际传播规模：1=圈内少数人，2=地方，3=大区，4=国家/国际/天下。
 - content: 当前正在传播的具体说法；传播变质时更新此字段。
@@ -517,7 +528,7 @@ type：${picked.type}
 - 公告只证明发布者公开说过这件事，不保证内容为真；流言也可能恰好为真。不要使用可信度字段。
 - 私信、密令等仅有明确接收者的信息不属于风声；泄露并开始传播后才创建风声。
 - 没有产生实际外溢影响的风声可以只更新 winds，不得硬造其他系统变化。
-- 风声若连续多轮没有任何实质更新，会由本地系统判定消散并在下轮推演前删除。若一条风声本轮仍在传播、变质、扩大范围或持续影响世界，必须返回相同 topic 的更新；仅原样复述而没有实际变化不算更新。
+- 风声若连续多轮没有任何实质更新，会由本地系统判定消散并在下轮推演前删除。若一条风声本轮仍在传播、变质、扩大范围或持续影响世界，必须返回相同 id 的更新；仅原样复述而没有实际变化不算更新。
 - quietRounds 是本地内部字段，禁止输出或修改。
 
 ### economy（经济对象）
@@ -539,6 +550,7 @@ type：${picked.type}
 仇敌是因具体伤害行为而与{{user}}产生不可逆个人恩怨的角色或群体。不同于势力层面的态度对立（那是 factions.relation 的职责），仇敌的核心特征是：永不淡化、追着{{user}}跑。
 
 每项包含：
+- id: 已有仇敌必须原样返回当前 id；新仇敌必须显式填 null，禁止省略
 - name: 仇敌名称（个人姓名或复仇团体名）
 - reason: 结仇原因（简述{{user}}做了什么导致结仇）
 - type: "blood"/"grudge"。blood=血仇（核心人物被杀、至亲身亡/致残）；grudge=非致死恩怨（被废、破产、被夺走重要之物等造成不可逆伤害）
@@ -588,23 +600,23 @@ type：${picked.type}
 
   const JSON_EXAMPLE = `{
   "events": [
-    { "name": "血刀门复仇", "type": "conflict", "level": 2, "stage": "发酵", "stageRound": 5, "desc": "血刀门派出了追踪者，追踪者在青石关外三里亭设了暗哨" },
-    { "name": "青炉司改良火药", "type": "progress", "level": 3, "stage": "执行", "stageRound": 4, "desc": "青炉司已收齐硝石与密炭，正在试小炉，尚未进入定型关口" }
+    { "id": "event_1", "name": "血刀门复仇", "type": "conflict", "level": 2, "stage": "发酵", "stageRound": 5, "desc": "血刀门派出了追踪者，追踪者在青石关外三里亭设了暗哨" },
+    { "id": null, "name": "青炉司改良火药", "type": "progress", "level": 3, "stage": "执行", "stageRound": 4, "desc": "青炉司已收齐硝石与密炭，正在试小炉，尚未进入定型关口" }
   ],
   "factions": [
-    { "name": "血刀门", "scope": "血刀岭及周边三镇", "status": "稳固", "relation": "敌对", "currentGoal": "复仇", "core_person": "血刀老祖", "powerPillars": ["武力威慑","情报网"] }
+    { "id": "faction_1", "name": "血刀门", "scope": "血刀岭及周边三镇", "status": "稳固", "relation": "敌对", "currentGoal": "复仇", "core_person": "血刀老祖", "powerPillars": ["武力威慑","情报网"] }
   ],
   "worldTrends": [
-    { "name": "北境战争", "scope": "北境三州及周边诸国", "status": "持续中", "description": "边军与北境诸部进入长期战争，征粮、征兵与商路封锁持续改变各方行动", "source": "Lv4冲突型事件「北境战争」进入已爆发" }
+    { "id": "trend_1", "name": "北境战争", "scope": "北境三州及周边诸国", "status": "持续中", "description": "边军与北境诸部进入长期战争，征粮、征兵与商路封锁持续改变各方行动", "source": "Lv4冲突型事件「北境战争」进入已爆发" }
   ],
   "winds": [
-    { "topic": "青石关设卡", "type": "report", "level": 2, "content": "青石关北门已有官兵设卡盘查", "scope": "青石关及周边村镇", "source": "目击商贩→往来商队" }
+    { "id": "wind_1", "topic": "青石关设卡", "type": "report", "level": 2, "content": "青石关北门已有官兵设卡盘查", "scope": "青石关及周边村镇", "source": "目击商贩→往来商队" }
   ],
   "economy": { "climate": "平稳", "signals": [] },
   "reputation": { "authority": "默默无闻", "common": "默默无闻", "shadow": "默默无闻", "circuit": "默默无闻", "lastChange": "无变化" },
   "world_digest": "血刀门追踪者在青石关外三里亭设了暗哨；天机阁阁主上官云密信召回了三名外围密探；醉仙楼后厨因粮商涨价换了供货渠道。",
   "enemies": [
-    { "name": "血刀门", "reason": "{{user}}杀了血刀门少主", "type": "blood", "status": "执行中" }
+    { "id": "enemy_1", "name": "血刀门", "reason": "{{user}}杀了血刀门少主", "type": "blood", "status": "执行中" }
   ],
   "influenceChain": [
     { "trigger": "血刀门发布悬赏令", "impact": "草莽中人开始主动留意{{user}}的行踪", "fallout": "客栈与渡口出现试探和秘密报信者" }
@@ -616,6 +628,13 @@ type：${picked.type}
   // 作为「默认预设」的单一真相源，供 world-engine-preset.js 引用（避免双份拷贝漂移）。
   // callEvolutionAPI 内不再重新定义，直接引用此处；覆写层用 Final 变量区分默认值与用户覆写。
   const DEFAULT_SEG_ENGINE_ROLE = `你是一个世界推演引擎。每轮对话后，后台世界必须自动向前推进一步。\n请根据世界规则和本轮对话，更新世界状态。只输出 JSON，不要有其他文字。`;
+
+  // 身份协议属于本地数据完整性约束，不允许被自定义引擎预设覆盖。
+  const ENTITY_ID_PROTOCOL = `【持续实体 ID 协议（强制，不可覆盖）】
+- events、factions、worldTrends、winds、enemies 的 id 是系统身份。
+- 更新已有对象必须原样返回当前状态中的 id，即使 name/topic 改名也不得改变 id。
+- 创建新对象必须显式填写 "id": null，由本地系统分配；禁止省略 id，也禁止编造、猜测或复用 id。
+- 判断是否为同一对象只看 id。当前状态中不存在的 id 无效。`;
 
   const DEFAULT_SEG_CAUSAL_STEPS = `推演时按以下因果顺序检查：\n1. 【私密判定·最先执行】先判定本轮 {{user}} 及相关人物的行为有无目击者、是否留下可追溯痕迹。凡在无目击、未留痕迹的情况下发生的私密行为（独处、私密情爱、闺房之事、密室密谈、隐秘潜入、无人时的杀伐等），一律计入 blackbox.secretActions（witnesses 标"无"或"仅XX"），并且：不得据此生成风声、不得改变任何维度声誉、不得形成或推进事件链、不得让任何不在场 NPC 据此行动。只有当该行为被目击、留下可追溯痕迹、或事后确实被传播后，才可转为公开影响。\n2. 将所有持续中的天下大势作为本轮世界级约束，并检查是否形成新大势或已有大势明确结束。\n3. 判断本轮事实、行动与公开信息是否形成新风声（私密行为除外，见第1步）。\n4. 检查已有风声是否获得新的合法传播节点，并据此更新 level/scope/content/source。\n5. 判断风声实际覆盖了哪些势力、圈层或行动者；只有被覆盖者才能据此改变判断与行动。\n6. 天下大势或风声造成跨系统变化时，在对应状态字段中落实结果，并用 influenceChain 记录传导过程。\n7. 声誉判定：只有当 {{user}} 的行为已形成覆盖对应圈层的风声后，才改动对应维度声誉；私密、未传播或仅单人目击的行为不改变群体声誉。\n8. 仇敌判定：判断本轮是否产生触发血仇/恩怨的不可逆伤害；已有仇敌只有通过覆盖其情报来源的风声或其他合法渠道获知线索后，才能推进追踪，且受势力等级约束，不得凭空定位 {{user}}。\n9. 经济判定：只有事件链或可追溯的外部原因驱动时才更新 climate 与 signals；重大经济变化须生成对应风声，禁止凭空波动。\n10. 不得从面板全知信息直接跳到 NPC 行动，不得为了产生联动而虚构传播节点。`;
 
@@ -644,8 +663,8 @@ type：${picked.type}
 
     const segStateBlock = `## 当前世界状态（第${state.round}轮）\n${JSON.stringify({
   round: state.round,
-  events: (state.events || []).map(e => ({ name: e.name, type: e.type || 'conflict', stage: e.stage, stageRound: e.stageRound, level: e.level, desc: e.desc, evolveResult: e.evolveResult, stall: e.stall })),
-  factions: (state.factions || []).map(f => ({ name: f.name, scope: f.scope, status: f.status, relation: f.relation, currentGoal: f.currentGoal, core_person: f.core_person, powerPillars: f.powerPillars })),
+  events: (state.events || []).map(e => ({ id: e.id, name: e.name, type: e.type || 'conflict', stage: e.stage, stageRound: e.stageRound, level: e.level, desc: e.desc, evolveResult: e.evolveResult, stall: e.stall })),
+  factions: (state.factions || []).map(f => ({ id: f.id, name: f.name, scope: f.scope, status: f.status, relation: f.relation, currentGoal: f.currentGoal, core_person: f.core_person, powerPillars: f.powerPillars })),
   worldTrends: state.worldTrends || [],
   winds: (state.winds || []).map(({ quietRounds, ...wind }) => wind),
   reputation: state.reputation,
@@ -663,7 +682,7 @@ type：${picked.type}
 
     // [MAP] 实际发出的完整 prompt：与原模板逐字相同的拼接顺序与分隔，零语义漂移。
     // 4 段用上方的 seg*（覆写层 Final 变量）：无覆写时逐字等于原常量。
-    const prompt = segEngineRole + '\n\n' + segCausalSteps
+    const prompt = segEngineRole + '\n\n' + ENTITY_ID_PROTOCOL + '\n\n' + segCausalSteps
       + '\n\n========== 世界推演规则 ==========\n' + fullRules
       + '\n\n' + worldbookSection
       + '\n\n' + segStateBlock
@@ -676,15 +695,16 @@ type：${picked.type}
     // worldbookSection / toneSection / extraInstruction 为空时 content 为空字符串，展示侧标注「本轮未启用」。
     _lastPromptSegments = [
       { key: 'engine-role',    label: '① 引擎角色指令',            content: segEngineRole },
-      { key: 'causal-steps',   label: '② 因果检查（10 步）',        content: segCausalSteps },
-      { key: 'rules',          label: '③ 世界推演规则',            content: fullRules },
-      { key: 'worldbook',      label: '④ 世界书注入',              content: worldbookSection },
-      { key: 'state',          label: '⑤ 当前世界状态（JSON）',     content: segStateBlock },
-      { key: 'dialogue',       label: '⑥ 近期对话',                content: segDialogue },
-      { key: 'output-format',  label: '⑦ JSON 输出字段说明',       content: segOutputInstructions },
-      { key: 'json-example',   label: '⑧ JSON 示例',               content: segJsonExample },
-      { key: 'extra-instr',    label: '⑨ 附加指令',                content: segExtraInstruction },
-      { key: 'tone',           label: '⑩ 附加提示词（用户自定义）', content: segToneSection }
+      { key: 'entity-ids',     label: '② 持续实体 ID 协议',         content: ENTITY_ID_PROTOCOL },
+      { key: 'causal-steps',   label: '③ 因果检查（10 步）',        content: segCausalSteps },
+      { key: 'rules',          label: '④ 世界推演规则',            content: fullRules },
+      { key: 'worldbook',      label: '⑤ 世界书注入',              content: worldbookSection },
+      { key: 'state',          label: '⑥ 当前世界状态（JSON）',     content: segStateBlock },
+      { key: 'dialogue',       label: '⑦ 近期对话',                content: segDialogue },
+      { key: 'output-format',  label: '⑧ JSON 输出字段说明',       content: segOutputInstructions },
+      { key: 'json-example',   label: '⑨ JSON 示例',               content: segJsonExample },
+      { key: 'extra-instr',    label: '⑩ 附加指令',                content: segExtraInstruction },
+      { key: 'tone',           label: '⑪ 附加提示词（用户自定义）', content: segToneSection }
     ];
 
     const rawResult = await api.callApi(prompt, 8000, 0.7, _abortController.signal);
@@ -703,15 +723,15 @@ type：${picked.type}
     }
     console.log('[世界引擎] API JSON 解析成功，世界摘要:', update.world_digest || '[未返回]');
 
-    update.events = update.events || [];
-    update.factions = update.factions || [];
-    update.worldTrends = update.worldTrends || [];
-    update.winds = update.winds || [];
+    update.events = Array.isArray(update.events) ? update.events : [];
+    update.factions = Array.isArray(update.factions) ? update.factions : [];
+    update.worldTrends = Array.isArray(update.worldTrends) ? update.worldTrends : [];
+    update.winds = Array.isArray(update.winds) ? update.winds : [];
     update.economy = update.economy || {};
     if (!update.economy.signals) update.economy.signals = [];
     update.reputation = update.reputation || {};
     update.world_digest = update.world_digest || state.worldDigest;
-    update.enemies = update.enemies || [];
+    update.enemies = Array.isArray(update.enemies) ? update.enemies : [];
     update.influenceChain = Array.isArray(update.influenceChain) ? update.influenceChain : [];
     // regionalIncident 由本地骰子控制，不在 callEvolutionAPI 中自动补全
     // API 返回的 regionalIncident 在 mergeRegionalIncident 中验证
@@ -803,8 +823,11 @@ type：${picked.type}
 
       // 第5步：合并 API 返回
       for (const ev of update.events) {
-        const existing = state.events.find(e => e.name === ev.name);
+        const existingIndex = core.findEntityIndex(state.events, ev, core.ENTITY_ID_PREFIXES.events, 'name');
+        const existing = existingIndex !== -1 ? state.events[existingIndex] : null;
         if (existing) {
+          // API 的未知/错误 ID 不得污染本地身份；兼容同名认领时也强制继承本地 ID。
+          ev.id = existing.id;
           // 事件类型一旦确定不可由 API 改动
           ev.type = existing.type || 'conflict';
 
@@ -861,9 +884,7 @@ type：${picked.type}
           if (!en.name || !en.reason) continue;
           if (!en.type || !['blood', 'grudge'].includes(en.type)) en.type = 'blood';
           if (!en.status|| !['追踪中','策划中','执行中','已终结'].includes(en.status)) en.status = '追踪中';
-          const idx = (state.enemies || []).findIndex(ex => ex.name === en.name);
-          if (idx !== -1) state.enemies[idx] = { ...state.enemies[idx], ...en };
-          else state.enemies.unshift(en);
+          core.addEnemy(state, en);
         }
         // 已终结的仇敌保留20轮后清理
         state.enemies = (state.enemies || []).filter(en => {

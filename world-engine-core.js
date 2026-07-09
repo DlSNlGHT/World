@@ -88,9 +88,122 @@ window.WORLD_ENGINE_CORE = (function() {
     return 'default';
   }
 
+  // 持续实体使用分类 ID。ID 只在当前状态时间线内唯一；重 roll / 恢复存档后，
+  // 后续编号自然从恢复后的数组最大值继续，不维护不可回滚的全局计数器。
+  const ENTITY_ID_PREFIXES = {
+    events: 'event',
+    factions: 'faction',
+    worldTrends: 'trend',
+    winds: 'wind',
+    enemies: 'enemy'
+  };
+  const ENTITY_LEGACY_KEYS = {
+    events: 'name',
+    factions: 'name',
+    worldTrends: 'name',
+    winds: 'topic',
+    enemies: 'name'
+  };
+
+  function entityIdNumber(id, prefix) {
+    const m = String(id || '').match(new RegExp(`^${prefix}_([1-9]\\d*)$`));
+    if (!m) return null;
+    const n = Number(m[1]);
+    return Number.isSafeInteger(n) && n > 0 ? n : null;
+  }
+
+  function nextEntityId(items, prefix) {
+    let max = 0;
+    for (const item of (items || [])) {
+      const n = item && entityIdNumber(item.id, prefix);
+      if (n !== null && n > max) max = n;
+    }
+    return `${prefix}_${max + 1}`;
+  }
+
+  /**
+   * 旧存档迁移与损坏修复：
+   * - 缺失/非法 ID 按数组现状补号；
+   * - 重复 ID 只保留第一次出现的对象，后续对象获得新 ID；
+   * - 合法 ID 不重排，保证存档加载、导入和 checkpoint 恢复稳定。
+   */
+  function ensureEntityIds(items, prefix) {
+    if (!Array.isArray(items)) return items;
+    let max = 0;
+    for (const item of items) {
+      if (!item || typeof item !== 'object') continue;
+      const n = entityIdNumber(item.id, prefix);
+      if (n !== null && n > max) max = n;
+    }
+    const seen = new Set();
+    for (const item of items) {
+      if (!item || typeof item !== 'object') continue;
+      const n = entityIdNumber(item.id, prefix);
+      if (n !== null && !seen.has(item.id)) {
+        seen.add(item.id);
+        continue;
+      }
+      do { max++; } while (seen.has(`${prefix}_${max}`));
+      item.id = `${prefix}_${max}`;
+      seen.add(item.id);
+    }
+    return items;
+  }
+
+  function findEntityIndex(items, incoming, prefix, legacyKey) {
+    if (!Array.isArray(items) || !incoming || typeof incoming !== 'object') return -1;
+    const explicitlyNew = Object.prototype.hasOwnProperty.call(incoming, 'id')
+      && (incoming.id === null || incoming.id === '');
+    if (explicitlyNew) return -1;
+    if (entityIdNumber(incoming.id, prefix) !== null) {
+      const byId = items.findIndex(item => item && item.id === incoming.id);
+      if (byId !== -1) return byId;
+    }
+    // 兼容旧预设/旧模型：未返回 ID 或返回了未知 ID 时，仅用唯一同名项认领旧 ID。
+    const value = incoming[legacyKey];
+    if (!value) return -1;
+    const matches = [];
+    for (let i = 0; i < items.length; i++) {
+      if (items[i] && items[i][legacyKey] === value) matches.push(i);
+    }
+    return matches.length === 1 ? matches[0] : -1;
+  }
+
+  function assignEntityId(items, item, prefix) {
+    if (!item || typeof item !== 'object') return item;
+    item.id = nextEntityId(items, prefix);
+    return item;
+  }
+
+  // 首次升级旧存档时，checkpoint 是祖先状态和身份基准。
+  // 当前状态先按唯一旧名称继承 checkpoint ID，之后才给本轮新增实体继续补号。
+  function inheritLegacyIds(targetState, referenceState) {
+    if (!targetState || !referenceState) return targetState;
+    for (const collection of Object.keys(ENTITY_ID_PREFIXES)) {
+      const prefix = ENTITY_ID_PREFIXES[collection];
+      const legacyKey = ENTITY_LEGACY_KEYS[collection];
+      const targetItems = Array.isArray(targetState[collection]) ? targetState[collection] : [];
+      const referenceItems = Array.isArray(referenceState[collection]) ? referenceState[collection] : [];
+      ensureEntityIds(referenceItems, prefix);
+      const used = new Set(targetItems
+        .map(item => item && entityIdNumber(item.id, prefix) !== null ? item.id : null)
+        .filter(Boolean));
+      for (const item of targetItems) {
+        if (!item || typeof item !== 'object' || entityIdNumber(item.id, prefix) !== null) continue;
+        const matches = referenceItems.filter(ref => ref && ref[legacyKey] && ref[legacyKey] === item[legacyKey]);
+        if (matches.length === 1 && !used.has(matches[0].id)) {
+          item.id = matches[0].id;
+          used.add(item.id);
+        }
+      }
+    }
+    return targetState;
+  }
+
   function ensureArrays(state) {
     state.memories = state.memories || [];
     state.events = state.events || [];
+    ensureEntityIds(state.events, ENTITY_ID_PREFIXES.events);
     if (state.events) {
       for (const ev of state.events) {
         if (ev.stageRound === undefined) ev.stageRound = 1;
@@ -118,6 +231,7 @@ window.WORLD_ENGINE_CORE = (function() {
       }
     }
     state.factions = state.factions || [];
+    ensureEntityIds(state.factions, ENTITY_ID_PREFIXES.factions);
     const FACTION_RELATIONS = ['血盟', '盟友', '友好', '中立', '冷淡', '敌对', '世仇'];
     const FACTION_STATUSES = ['鼎盛', '稳固', '倾轧', '困顿', '衰落', '瓦解'];
     for (const f of state.factions) {
@@ -134,8 +248,10 @@ window.WORLD_ENGINE_CORE = (function() {
       if (f.powerPillars.length > 3) f.powerPillars.length = 3;
     }
     state.worldTrends = state.worldTrends || [];
+    ensureEntityIds(state.worldTrends, ENTITY_ID_PREFIXES.worldTrends);
     if (state.worldTrends.length > 4) state.worldTrends.length = 4;
     state.winds = state.winds || [];
+    ensureEntityIds(state.winds, ENTITY_ID_PREFIXES.winds);
     state.winds = state.winds.map((wind, index) => {
       wind.topic = wind.topic || wind.content || `风声${index + 1}`;
       if (!['announcement', 'report', 'rumor', 'sentiment'].includes(wind.type)) wind.type = 'rumor';
@@ -155,6 +271,7 @@ window.WORLD_ENGINE_CORE = (function() {
     state.economy = state.economy || { climate: '平稳', signals: [] };
     if (!state.economy.signals) state.economy.signals = [];
     state.enemies = state.enemies || [];
+    ensureEntityIds(state.enemies, ENTITY_ID_PREFIXES.enemies);
     state.influenceChain = Array.isArray(state.influenceChain) ? state.influenceChain : [];
     for (const influence of state.influenceChain) {
       if (influence && typeof influence === 'object' && influence._createdRound === undefined) {
@@ -190,6 +307,15 @@ window.WORLD_ENGINE_CORE = (function() {
         const merged = { ...def, ...saved };
         merged.memories = saved.memories || [];
         merged.lastInjection = saved.lastInjection || null;
+        const checkpointRaw = window.WORLD_ENGINE_STORE.getItem(STORAGE_PREFIX + chatId + '_checkpoint');
+        if (checkpointRaw) {
+          try {
+            const checkpoint = ensureArrays(JSON.parse(checkpointRaw));
+            inheritLegacyIds(merged, checkpoint);
+          } catch (e) {
+            console.warn('[世界引擎] 旧当前状态 ID 对齐失败，将按当前状态现状补号', e);
+          }
+        }
         return ensureArrays(merged);
       } catch(e) { console.warn('[世界引擎] 加载状态失败', e); }
     }
@@ -498,12 +624,15 @@ window.WORLD_ENGINE_CORE = (function() {
 
   function addEvent(state, event) {
     if (!state.events) state.events = [];
+    ensureEntityIds(state.events, ENTITY_ID_PREFIXES.events);
     ensureEventFields(event);
-    const idx = state.events.findIndex(e => e.name === event.name);
+    const idx = findEntityIndex(state.events, event, ENTITY_ID_PREFIXES.events, 'name');
     if (idx !== -1) {
+      event.id = state.events[idx].id;
       state.events[idx] = { ...state.events[idx], ...event };
       ensureEventFields(state.events[idx]);
     } else {
+      assignEntityId(state.events, event, ENTITY_ID_PREFIXES.events);
       state.events.unshift(event);
     }
     if (state.events.length > 16) state.events.pop();
@@ -512,6 +641,7 @@ window.WORLD_ENGINE_CORE = (function() {
 
   function addFaction(state, faction) {
     if (!state.factions) state.factions = [];
+    ensureEntityIds(state.factions, ENTITY_ID_PREFIXES.factions);
     const FACTION_RELATIONS = ['血盟', '盟友', '友好', '中立', '冷淡', '敌对', '世仇'];
     const FACTION_STATUSES = ['鼎盛', '稳固', '倾轧', '困顿', '衰落', '瓦解'];
     if (!FACTION_STATUSES.includes(faction.status)) faction.status = '稳固';
@@ -524,10 +654,12 @@ window.WORLD_ENGINE_CORE = (function() {
       return name.length > 4 ? name.slice(0, 4) : name;
     }).filter(Boolean);
     if (faction.powerPillars.length > 3) faction.powerPillars.length = 3;
-    const idx = state.factions.findIndex(f => f.name === faction.name);
+    const idx = findEntityIndex(state.factions, faction, ENTITY_ID_PREFIXES.factions, 'name');
     if (idx !== -1) {
+      faction.id = state.factions[idx].id;
       state.factions[idx] = { ...state.factions[idx], ...faction };
     } else {
+      assignEntityId(state.factions, faction, ENTITY_ID_PREFIXES.factions);
       state.factions.unshift(faction);
     }
     if (state.factions.length > 15) state.factions.pop();
@@ -536,16 +668,19 @@ window.WORLD_ENGINE_CORE = (function() {
 
   function addWorldTrend(state, trend) {
     if (!state.worldTrends) state.worldTrends = [];
+    ensureEntityIds(state.worldTrends, ENTITY_ID_PREFIXES.worldTrends);
     if (!trend || !trend.name) return;
     trend.status = trend.status === '已结束' ? '已结束' : '持续中';
     trend.scope = trend.scope || '天下';
     trend.description = trend.description || '';
     trend.source = trend.source || '';
-    const idx = state.worldTrends.findIndex(existing => existing.name === trend.name);
+    const idx = findEntityIndex(state.worldTrends, trend, ENTITY_ID_PREFIXES.worldTrends, 'name');
     if (idx !== -1) {
+      trend.id = state.worldTrends[idx].id;
       if (state.worldTrends[idx].status === '已结束') trend.status = '已结束';
       state.worldTrends[idx] = { ...state.worldTrends[idx], ...trend };
     } else {
+      assignEntityId(state.worldTrends, trend, ENTITY_ID_PREFIXES.worldTrends);
       state.worldTrends.unshift(trend);
       if (state.worldTrends.length > 4) state.worldTrends.length = 4;
     }
@@ -554,6 +689,7 @@ window.WORLD_ENGINE_CORE = (function() {
 
   function addWind(state, wind) {
     if (!state.winds) state.winds = [];
+    ensureEntityIds(state.winds, ENTITY_ID_PREFIXES.winds);
     delete wind.quietRounds;
     wind.topic = wind.topic || wind.content || `风声${Date.now()}`;
     if (!['announcement', 'report', 'rumor', 'sentiment'].includes(wind.type)) wind.type = 'rumor';
@@ -561,11 +697,30 @@ window.WORLD_ENGINE_CORE = (function() {
     wind.scope = wind.scope || '来源地';
     wind.source = wind.source || '来源不明';
     wind.quietRounds = 0;
-    const idx = state.winds.findIndex(existing => existing.topic === wind.topic);
-    if (idx !== -1) state.winds[idx] = { ...state.winds[idx], ...wind };
-    else state.winds.unshift(wind);
+    const idx = findEntityIndex(state.winds, wind, ENTITY_ID_PREFIXES.winds, 'topic');
+    if (idx !== -1) {
+      wind.id = state.winds[idx].id;
+      state.winds[idx] = { ...state.winds[idx], ...wind };
+    } else {
+      assignEntityId(state.winds, wind, ENTITY_ID_PREFIXES.winds);
+      state.winds.unshift(wind);
+    }
     if (state.winds.length > 12) state.winds.pop();
     saveState(state);
+  }
+
+  function addEnemy(state, enemy) {
+    if (!state.enemies) state.enemies = [];
+    ensureEntityIds(state.enemies, ENTITY_ID_PREFIXES.enemies);
+    const idx = findEntityIndex(state.enemies, enemy, ENTITY_ID_PREFIXES.enemies, 'name');
+    if (idx !== -1) {
+      enemy.id = state.enemies[idx].id;
+      state.enemies[idx] = { ...state.enemies[idx], ...enemy };
+    } else {
+      assignEntityId(state.enemies, enemy, ENTITY_ID_PREFIXES.enemies);
+      state.enemies.unshift(enemy);
+    }
+    return enemy.id;
   }
 
   // ========== 导出/导入清理 ==========
@@ -616,7 +771,9 @@ window.WORLD_ENGINE_CORE = (function() {
 
   return {
     getDefaultState, getChatId, loadState, hasState, saveState, clearState, saveStateWithLayer,
-    addMemory, addEvent, addFaction, addWorldTrend, addWind,
+    addMemory, addEvent, addFaction, addWorldTrend, addWind, addEnemy,
+    ENTITY_ID_PREFIXES, entityIdNumber, nextEntityId, ensureEntityIds, findEntityIndex, assignEntityId,
+    inheritLegacyIds,
     ensureEventFields, getUserName, renderUserName,
     saveCheckpoint, restoreCheckpoint, clearCheckpoint, getAnchorLayer, setAnchorLayer,
     getChatLayer, getChatFingerprint, saveFingerprint, loadFingerprint, isNewRound,
