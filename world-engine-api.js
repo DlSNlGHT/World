@@ -25,6 +25,7 @@ window.WORLD_ENGINE_API = (function() {
       backfillEndLayer: 0,     // 结束 AI 楼层（0 = 推到最后一个 AI 楼层）
       evolveEveryX: 1,
       evolveReadRounds: 1,
+      manualReadRounds: 1,
       evolveFilterRegex: '',
       tonePrompt: '',
       // 按时间推演模式
@@ -79,39 +80,64 @@ window.WORLD_ENGINE_API = (function() {
     throw new Error('经酒馆代理需要在酒馆环境中运行（未取到酒馆请求头）');
   }
 
-  // [FIX] 经酒馆服务端转发的推演调用：浏览器 → 同源酒馆后端（无 CORS）→ 服务端代发到第三方 API。
-  // 走 OpenAI source + reverse_proxy 路线，这样可把我们自己的 URL/KEY 透传给上游。
-  // [FIX] 带超时的 fetch：把调用方传入的 signal（用户主动中止 / 切聊天）与内部超时计时器
-  //   合并到同一次请求。超时触发 → controller.abort()，但抛出的是普通 Error（带 __timeout 标记），
-  //   而非 AbortError——这样 evolve 的 catch 会按「推演失败」处理并复位 _isRunning，
-  //   且状态栏显示明确的超时原因；用户主动中止仍走外部 signal 的 AbortError，显示「已中止」。
-  //   timeoutMs <= 0 时不设超时（保留旧行为）。
-  async function fetchWithTimeout(url, options, signal, timeoutMs) {
+  function timeoutError(timeoutMs) {
+    return new Error('API 请求超时（' + Math.max(1, Math.ceil(timeoutMs / 1000)) + 's 无响应），已中止本次请求');
+  }
+
+  async function readResponseBody(resp) {
+    const text = await resp.text();
+    let data = null;
+    let parseError = null;
+    if (text) {
+      try { data = JSON.parse(text); } catch (e) { parseError = e; }
+    }
+    return { resp, data, text, parseError };
+  }
+
+  function responseDetail(result) {
+    const data = result && result.data;
+    const text = result && result.text;
+    if (data && data.error && data.error.message) return data.error.message;
+    if (data) return JSON.stringify(data);
+    return text ? String(text).slice(0, 500) : '';
+  }
+
+  function requireJson(result, label) {
+    if (result.parseError) {
+      throw new Error((label || 'API') + ' 返回不是有效 JSON：' + result.parseError.message);
+    }
+    return result.data || {};
+  }
+
+  // 超时覆盖完整请求生命周期：fetch resolve 只代表响应头到达，正文读取仍可能卡住。
+  async function fetchResponseWithTimeout(url, options, signal, timeoutMs) {
+    timeoutMs = Number(timeoutMs) || 0;
     if (!(timeoutMs > 0)) {
-      return fetch(url, { ...options, signal: signal || null });
+      const resp = await fetch(url, { ...options, signal: signal || null });
+      return readResponseBody(resp);
     }
     const controller = new AbortController();
     let timedOut = false;
     const timer = setTimeout(() => { timedOut = true; controller.abort(); }, timeoutMs);
-    // 外部 signal 中止时一并中止本次请求
     const onExternalAbort = () => controller.abort();
     if (signal) {
       if (signal.aborted) controller.abort();
       else signal.addEventListener('abort', onExternalAbort, { once: true });
     }
     try {
-      return await fetch(url, { ...options, signal: controller.signal });
+      const resp = await fetch(url, { ...options, signal: controller.signal });
+      return await readResponseBody(resp);
     } catch (e) {
-      if (timedOut) {
-        throw new Error('API 请求超时（' + Math.round(timeoutMs / 1000) + 's 无响应），已中止本次推演');
-      }
-      throw e;   // 外部中止 → 原样抛 AbortError
+      if (timedOut) throw timeoutError(timeoutMs);
+      throw e;
     } finally {
       clearTimeout(timer);
       if (signal) signal.removeEventListener('abort', onExternalAbort);
     }
   }
 
+  // [FIX] 经酒馆服务端转发的推演调用：浏览器 → 同源酒馆后端（无 CORS）→ 服务端代发到第三方 API。
+  // 走 OpenAI source + reverse_proxy 路线，这样可把我们自己的 URL/KEY 透传给上游。
   async function callApiViaProxy(settings, body, signal) {
     const base = getProxyBase(settings);
     if (!base) throw new Error('未配置 API URL，请在设置中填写');
@@ -126,17 +152,16 @@ window.WORLD_ENGINE_API = (function() {
       stream: false
     };
     console.log('[世界引擎] 调用 API（经酒馆代理）:', base, payload.model);
-    const resp = await fetchWithTimeout('/api/backends/chat-completions/generate', {
+    const result = await fetchResponseWithTimeout('/api/backends/chat-completions/generate', {
       method: 'POST',
       headers: tavernHeaders(),
       body: JSON.stringify(payload)
     }, signal, settings.apiTimeoutMs);
+    const resp = result.resp;
     if (!resp.ok) {
-      let detail = '';
-      try { const err = await resp.json(); detail = err.error?.message || JSON.stringify(err); } catch(e) {}
-      throw new Error(`HTTP ${resp.status}: ${detail}`);
+      throw new Error(`HTTP ${resp.status}: ${responseDetail(result)}`);
     }
-    const data = await resp.json();
+    const data = requireJson(result, '酒馆代理');
     if (data && data.error) {
       throw new Error('酒馆代理返回错误：' + (data.error.message || JSON.stringify(data.error)));
     }
@@ -153,12 +178,14 @@ window.WORLD_ENGINE_API = (function() {
    */
   async function callApi(prompt, maxTokens, temperature, signal) {
     const settings = getSettings();
+    const selectedTemperature = temperature ?? settings.temperature;
+    const selectedMaxTokens = maxTokens ?? settings.maxTokens;
 
     const body = {
       model: settings.model || 'gpt-3.5-turbo',
       messages: [{ role: 'user', content: prompt }],
-      temperature: temperature ?? settings.temperature ?? 0.7,
-      max_tokens: maxTokens ?? settings.maxTokens ?? 2000
+      temperature: Number.isFinite(Number(selectedTemperature)) ? Math.max(0, Number(selectedTemperature)) : 0.7,
+      max_tokens: Math.max(1, parseInt(selectedMaxTokens) || 2000)
     };
 
     // [FIX] 经酒馆代理：绕过第三方 API 的 CORS 限制，由酒馆 Node 服务端转发
@@ -178,19 +205,18 @@ window.WORLD_ENGINE_API = (function() {
 
     console.log('[世界引擎] 调用 API:', url, body.model);
 
-    const resp = await fetchWithTimeout(url, {
+    const result = await fetchResponseWithTimeout(url, {
       method: 'POST',
       headers: headers,
       body: JSON.stringify(body)
     }, signal, settings.apiTimeoutMs);
+    const resp = result.resp;
 
     if (!resp.ok) {
-      let detail = '';
-      try { const err = await resp.json(); detail = err.error?.message || JSON.stringify(err); } catch(e) {}
-      throw new Error(`HTTP ${resp.status}: ${detail}`);
+      throw new Error(`HTTP ${resp.status}: ${responseDetail(result)}`);
     }
 
-    const data = await resp.json();
+    const data = requireJson(result, 'API');
     const choice = data.choices?.[0];
     if (!choice) throw new Error('API 返回缺少 choices[0]');
     if (choice.finish_reason === 'length') {
@@ -292,7 +318,7 @@ window.WORLD_ENGINE_API = (function() {
     // [FIX] 经酒馆代理：用酒馆 /status 端点拉模型列表，绕过 CORS
     if (settings.connectionMode === 'proxy') {
       if (!baseUrl) throw new Error('未配置 API URL，请在设置中填写');
-      const resp = await fetch('/api/backends/chat-completions/status', {
+      const result = await fetchResponseWithTimeout('/api/backends/chat-completions/status', {
         method: 'POST',
         headers: tavernHeaders(),
         body: JSON.stringify({
@@ -300,9 +326,9 @@ window.WORLD_ENGINE_API = (function() {
           reverse_proxy: baseUrl,
           proxy_password: settings.apiKey || ''
         })
-      });
-      if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-      const data = await resp.json();
+      }, null, settings.apiTimeoutMs);
+      if (!result.resp.ok) throw new Error(`HTTP ${result.resp.status}: ${responseDetail(result)}`);
+      const data = requireJson(result, '酒馆代理');
       if (data && data.error) throw new Error('酒馆代理拉取模型失败（请检查 URL/密钥是否正确）');
       if (data.data && Array.isArray(data.data)) {
         return data.data.map(m => m.id);
@@ -314,9 +340,9 @@ window.WORLD_ENGINE_API = (function() {
     const headers = { 'Content-Type': 'application/json' };
     if (settings.apiKey) headers['Authorization'] = 'Bearer ' + settings.apiKey;
 
-    const resp = await fetch(url, { headers });
-    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-    const data = await resp.json();
+    const result = await fetchResponseWithTimeout(url, { headers }, null, settings.apiTimeoutMs);
+    if (!result.resp.ok) throw new Error(`HTTP ${result.resp.status}: ${responseDetail(result)}`);
+    const data = requireJson(result, 'API');
     if (data.data && Array.isArray(data.data)) {
       return data.data.map(m => m.id);
     }
