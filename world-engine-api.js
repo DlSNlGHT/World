@@ -25,6 +25,7 @@ window.WORLD_ENGINE_API = (function() {
       backfillEndLayer: 0,     // 结束 AI 楼层（0 = 推到最后一个 AI 楼层）
       evolveEveryX: 1,
       evolveReadRounds: 1,
+      manualReadRounds: 1,
       evolveFilterRegex: '',
       tonePrompt: '',
       // 按时间推演模式

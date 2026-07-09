@@ -375,16 +375,37 @@
         if (window.__WE_SetExternalStatus) window.__WE_SetExternalStatus(text, !!isErr);
       }
 
+      function getElapsedReadRounds(state, maxRounds) {
+        const limit = Math.max(1, parseInt(maxRounds) || 1);
+        const cp = core.restoreCheckpoint();
+        const L = core.getChatLayer();
+        let anchorL = (cp && cp.chatLayer != null) ? Number(cp.chatLayer)
+                    : (state && state.chatLayer != null ? Number(state.chatLayer) : L);
+        if (!Number.isFinite(anchorL)) anchorL = L;
+        const since = Math.floor(Math.max(0, L - anchorL) / 2);
+        return Math.max(1, Math.min(since, limit));
+      }
+
+      function buildDialogueText(chat, readRounds, settings) {
+        const start = Math.max(0, chat.length - readRounds * 2);
+        return chat.slice(start)
+          .map(m => (m.is_user ? '用户' : 'AI') + '：' + core.filterDialogue((m.mes || '').trim(), settings))
+          .filter(line => line.length > 3)
+          .join('\n');
+      }
+
       // 执行一次推演（自动按轮 / 按时间 / 设置页手填时间 共用）。
       // storyDay 非 null → 推演成功后写入 state.time（按时间模式）。
-      async function performEvolution(aiMsg, chat, storyDay, readRoundsOverride) {
+      async function performEvolution(aiMsg, chat, storyDay, readRoundsOverride, opts) {
         isEvolving = true;
+        opts = opts || {};
         try {
           const state = core.loadState();
           const isNewRound = core.isNewRound();
           setStatus('推演中...');
-          // 显示基底跟随 isNewRound：新轮次→当前状态，重 roll→存档点
-          if (ui && ui.setEvolvingUI) ui.setEvolvingUI(true, isNewRound ? 'state' : 'checkpoint');
+          // 显示基底：手动按钮显式传入；自动路径跟随 isNewRound。
+          const displayScope = opts.displayScope || (isNewRound ? 'state' : 'checkpoint');
+          if (ui && ui.setEvolvingUI) ui.setEvolvingUI(true, displayScope);
           if (ui && ui.refresh) ui.refresh(true);
 
           // 取对话喂后台；时间模式由调用方传入读取轮数，按轮模式用 a（夹紧到 X）。start 做负数保护
@@ -398,18 +419,16 @@
               readRounds = Math.min(Math.max(1, parseInt(settings.evolveEveryX) || 1), readRounds);
             }
           }
-          const start = Math.max(0, chat.length - readRounds * 2);
-          const dialogueText = chat.slice(start)
-            .map(m => (m.is_user ? '用户' : 'AI') + '：' + core.filterDialogue((m.mes || '').trim(), settings))
-            .filter(line => line.length > 3)
-            .join('\n');
+          const dialogueText = buildDialogueText(chat, readRounds, settings);
 
-          const success = await evolution.evolve(state, '', aiMsg, { dialogueText });
+          const evolveOpts = { dialogueText };
+          if (opts.mode) evolveOpts.mode = opts.mode;
+          const success = await evolution.evolve(state, opts.userMsg || '', aiMsg, evolveOpts);
           if (success) {
             ledger.recordChanges(state);
             if (storyDay != null) { state.time = Number(storyDay); core.saveState(state); }
             // 重 roll 时正文已按楼层注入存档点，推演完成后不覆盖
-            if (isNewRound) applyInjection();
+            if (isNewRound || opts.forceApplyInjection) applyInjection();
             console.log('[世界引擎] ✅ 推演完成，当前第', state.round, '轮');
           } else {
             console.warn('[世界引擎] ⚠️ 推演失败或已中止');
@@ -425,6 +444,25 @@
           isEvolving = false;
           if (ui) { ui.setEvolvingUI(false); ui.refresh(true); }
         }
+      }
+
+      async function manualEvolve(mode, scope) {
+        if (isEvolving) return false;
+        if (evolution.isRunning && evolution.isRunning()) { setStatus('已有推演进行中...'); return false; }
+        const ctx = SillyTavern.getContext();
+        const chat = ctx?.chat || [];
+        const lastMsg = chat[chat.length - 1];
+        const userMsg = lastMsg?.is_user ? (lastMsg.mes || '') : '';
+        const aiMsg = !lastMsg?.is_user ? (lastMsg?.mes || '').trim() : '';
+        const settings = api.getSettings(true);
+        const state = core.loadState();
+        const readRounds = getElapsedReadRounds(state, settings.manualReadRounds);
+        return performEvolution(aiMsg, chat, null, readRounds, {
+          mode,
+          displayScope: scope,
+          userMsg,
+          forceApplyInjection: true
+        });
       }
 
       // 设置页「本轮对话时间」手填保存后：判断是否够时间，够则推演。
@@ -453,13 +491,7 @@
         const lastMsg = chat[chat.length - 1];
         const aiMsg = !lastMsg?.is_user ? (lastMsg?.mes || '').trim() : '';
         // 与自动路径一致：读取 min(经过轮数, 上限X) 轮
-        const Xmax = Math.max(1, parseInt(settings.evolveTimeMaxRounds) || 10);
-        const Lnow = core.getChatLayer();
-        let anchorL = (cp && cp.chatLayer != null) ? Number(cp.chatLayer)
-                    : (st && st.chatLayer != null ? Number(st.chatLayer) : Lnow);
-        if (!Number.isFinite(anchorL)) anchorL = Lnow;
-        const since = Math.floor(Math.max(0, Lnow - anchorL) / 2);
-        const readRounds = Math.max(1, Math.min(since, Xmax));
+        const readRounds = getElapsedReadRounds(st, settings.evolveTimeMaxRounds);
         await performEvolution(aiMsg, chat, Number(currentDay), readRounds);
       }
 
@@ -551,7 +583,7 @@
       // 初始化时立即按对话层数选择注入状态
       applyInjectionForCurrentRound();
       // 暴露按对话层数选择的注入入口供手动调用
-      window.WORLD_ENGINE = { applyInjection: applyInjectionForCurrentRound, manualTimeEvolve };
+      window.WORLD_ENGINE = { applyInjection: applyInjectionForCurrentRound, manualEvolve, manualTimeEvolve };
 
       // ========== 添加面板入口按钮到酒馆输入栏 ==========
       // 已移至 world-engine-ui.js 的 buildInputButton()

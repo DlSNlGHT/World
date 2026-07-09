@@ -1850,6 +1850,7 @@ window.WORLD_ENGINE_UI = (function() {
     const mode = (settings.evolveMode === 'manual' || settings.evolveMode === 'time') ? settings.evolveMode : 'auto';
     const everyX = Math.max(1, parseInt(settings.evolveEveryX) || 1);
     const readRounds = Math.min(everyX, Math.max(1, parseInt(settings.evolveReadRounds) || 1));
+    const manualReadRounds = Math.max(1, parseInt(settings.manualReadRounds) || 1);
     // 按时间模式的当前值
     const _stForTime = core.hasState() ? core.loadState() : null;
     const _cpForTime = core.restoreCheckpoint();
@@ -1911,6 +1912,11 @@ window.WORLD_ENGINE_UI = (function() {
         <label>每次推演读取最近几轮对话（a）</label>
         <input type="number" id="we-evolve-readrounds" min="1" max="${everyX}" step="1" value="${readRounds}" style="width:100%;">
         <div style="font-size:11px;color:var(--we-text3);margin-top:3px;">从当前层往前取 a 轮的「用户输入 + AI 输出」喂给后台推演。最小 1，最大不超过 X（每次推演的轮数）。默认 1 = 只读最新一轮。</div>
+      </div>
+      <div class="we-input-group" id="we-manual-readrounds-group" style="${mode === 'manual' ? '' : 'display:none;'}">
+        <label>手动推演读取最近几轮对话</label>
+        <input type="number" id="we-manual-readrounds" min="1" step="1" value="${manualReadRounds}" style="width:100%;">
+        <div style="font-size:11px;color:var(--we-text3);margin-top:3px;">点击「向前推进」或「重新推进」时，从当前层往前取这些轮的「用户输入 + AI 输出」喂给后台推演。默认 1 = 只读最新一轮。</div>
       </div>
       <div id="we-evolve-time-group" style="${mode === 'time' ? '' : 'display:none;'}">
         <div class="we-input-group" style="display:flex;gap:6px;">
@@ -2939,6 +2945,7 @@ window.WORLD_ENGINE_UI = (function() {
           evolveMode: (_modeRaw === 'manual' || _modeRaw === 'time') ? _modeRaw : 'auto',
           evolveEveryX: Math.max(1, parseInt(document.getElementById('we-evolve-everyx')?.value) || 1),
           evolveReadRounds: Math.max(1, parseInt(document.getElementById('we-evolve-readrounds')?.value) || 1),
+          manualReadRounds: Math.max(1, parseInt(document.getElementById('we-manual-readrounds')?.value) || 1),
           evolveFilterRegex: gv('we-filter-regex') || '',
           displayMode: document.getElementById('we-display-mode')?.value === 'expand' ? 'expand' : 'mask',
           // 按时间模式
@@ -2993,19 +3000,22 @@ window.WORLD_ENGINE_UI = (function() {
       };
     }
 
-    // 推演模式切换：按轮显示 X/a，按时间显示时间组，手动都隐藏
+    // 推演模式切换：按轮显示 X/a，按时间显示时间组，手动显示手动读取轮数
     const evolveModeSel = document.getElementById('we-evolve-mode');
     if (evolveModeSel) {
       evolveModeSel.onchange = () => {
         const v = evolveModeSel.value;
         const roundShow = v === 'auto' ? '' : 'none';
+        const manualShow = v === 'manual' ? '' : 'none';
         const timeShow = v === 'time' ? '' : 'none';
         const g1 = document.getElementById('we-evolve-everyx-group');
         if (g1) g1.style.display = roundShow;
         const g2 = document.getElementById('we-evolve-readrounds-group');
         if (g2) g2.style.display = roundShow;
-        const g3 = document.getElementById('we-evolve-time-group');
-        if (g3) g3.style.display = timeShow;
+        const g3 = document.getElementById('we-manual-readrounds-group');
+        if (g3) g3.style.display = manualShow;
+        const g4 = document.getElementById('we-evolve-time-group');
+        if (g4) g4.style.display = timeShow;
       };
     }
 
@@ -3882,57 +3892,13 @@ window.WORLD_ENGINE_UI = (function() {
   //   重新推进 → 喂存档点 B（mode 'redo'），面板显示存档点；
   //   向前推进 → 喂当前状态 A（mode 'forward'），面板显示当前状态。
   async function runManualEvolve(mode, scope) {
-    if (isEvolving) return;
-    if (evolution.isRunning?.()) {
-      if (window.__WE_SetExternalStatus) window.__WE_SetExternalStatus('已有推演进行中...');
-      showToast('已有推演进行中，请稍候');
+    if (!window.WORLD_ENGINE || typeof window.WORLD_ENGINE.manualEvolve !== 'function') {
+      showToast('手动推演入口未就绪', true);
       return;
     }
-    isEvolving = true;
-    setEvolvingUI(true, scope);
-    refresh(true);
-    if (window.__WE_SetExternalStatus) window.__WE_SetExternalStatus('推演中...');
-    try {
-      const ctx = SillyTavern.getContext();
-      const s = core.loadState();
-      const chat = ctx?.chat || [];
-      const lastMsg = chat[chat.length - 1];
-      const userMsg = lastMsg?.is_user ? (lastMsg.mes || '') : '';
-      const aiMsg = !lastMsg?.is_user ? (lastMsg?.mes || '') : '';
-      // 读取轮数：手动/时间模式 → min(自上次推演经过轮数, 上限X)；按轮模式 → a（≤X）。start 做负数保护。
-      const st = window.WORLD_ENGINE_API ? window.WORLD_ENGINE_API.getSettings(true) : {};
-      let rounds;
-      if (st.evolveMode === 'manual' || st.evolveMode === 'time') {
-        const Xmax = Math.max(1, parseInt(st.evolveTimeMaxRounds) || 10);
-        const cpp = core.restoreCheckpoint();
-        const L = core.getChatLayer();
-        let anchorL = (cpp && cpp.chatLayer != null) ? Number(cpp.chatLayer)
-                    : (s && s.chatLayer != null ? Number(s.chatLayer) : L);
-        if (!Number.isFinite(anchorL)) anchorL = L;
-        const since = Math.floor(Math.max(0, L - anchorL) / 2);
-        rounds = Math.max(1, Math.min(since, Xmax));
-      } else {
-        const everyX = Math.max(1, parseInt(st.evolveEveryX) || 1);
-        rounds = Math.min(everyX, Math.max(1, parseInt(st.evolveReadRounds) || 1));
-      }
-      const start = Math.max(0, chat.length - rounds * 2);
-      const dialogueText = chat.slice(start)
-        .map(m => (m.is_user ? '用户' : 'AI') + '：' + core.filterDialogue((m.mes || '').trim(), st))
-        .filter(line => line.length > 3)
-        .join('\n');
-      const ok = await evolution.evolve(s, userMsg, aiMsg, { mode, dialogueText });
-      if (ok && window.WORLD_ENGINE_LEDGER) window.WORLD_ENGINE_LEDGER.recordChanges(s);
-      if (ok && window.WORLD_ENGINE?.applyInjection) window.WORLD_ENGINE.applyInjection();
-      const reason = !ok && evolution.getLastError ? evolution.getLastError() : '';
-      if (window.__WE_SetExternalStatus) window.__WE_SetExternalStatus(ok ? '推演完成' : (reason ? '推演失败：' + reason : '推演失败'), !ok);
-      if (ok) showToast('推演完成');
-    } catch(e) {
-      if (window.__WE_SetExternalStatus) window.__WE_SetExternalStatus('推演失败: ' + e.message, true);
-      showToast('' + e.message, true);
-    }
-    isEvolving = false;
-    setEvolvingUI(false);
-    refresh();
+    const ok = await window.WORLD_ENGINE.manualEvolve(mode, scope);
+    if (ok) showToast('推演完成');
+    else if (evolution.getLastError?.()) showToast(evolution.getLastError(), true);
   }
 
   // 批量「重填世界推演」：清空当前世界状态，从第 1 个 AI 楼层分批推到指定楼层。
