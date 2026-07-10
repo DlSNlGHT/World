@@ -2156,28 +2156,34 @@ window.WORLD_ENGINE_UI = (function() {
       </div>`;
 
     const diceBody = `
-      <div style="font-size:12px;color:var(--we-text2);line-height:1.6;margin-bottom:10px;">
-        事件链骰子控制“已有事件链每轮是否推进、停滞或受挫”。推进修正为正数会让事件更容易动起来，为负数则更容易拖延。
-        保底基数控制连续多次没有成功推进后，多少轮强制向前推一格。
+      <div style="font-size:12px;color:var(--we-text2);line-height:1.65;margin-bottom:10px;">
+        每条事件链每轮掷 1d100。设阶段格数 r = 当前格数 / 9。<br>
+        目标值 T = 阶段基础值 - 200 × r × (1 - r) + Lv修正 - 全局推进修正。<br>
+        若 骰值 &gt; T：推进一格；若 骰值 &lt; T × 受挫系数：倒退一格；否则保持。<br>
+        冲突型 Lv 修正 = -(Lv - 1) × 10，Lv 越高越容易爆发。推进型 Lv 修正 = +(Lv - 1) × 10，Lv 越高越难完成。
       </div>
       <div class="we-input-group">
-        <label>事件链骰子参数</label>
+        <label>事件骰子公式参数</label>
         <div style="display:flex;gap:6px;flex-wrap:wrap;">
-          ${numInput('we-local-dice-mod', 'localEventDiceModifier', '推进修正', 0, -100, '1')}
-          ${numInput('we-local-setback-ratio', 'localEventSetbackRatioPercent', '受挫阈值 %', 40, 0, '1')}
-          ${numInput('we-local-progress-fail-base', 'localProgressFailBase', '进展保底基数', 2, 0, '1')}
-          ${numInput('we-local-conflict-fail-base', 'localConflictFailBase', '冲突保底基数', 6, 1, '1')}
+          ${numInput('we-local-dice-mod', 'localEventDiceModifier', '全局推进修正', 0, -100, '1')}
+          ${numInput('we-local-setback-ratio', 'localEventSetbackRatioPercent', '受挫系数 %', 40, 0, '1')}
+          ${numInput('we-local-progress-fail-base', 'localProgressFailBase', '推进型保底 A', 2, 0, '1')}
+          ${numInput('we-local-conflict-fail-base', 'localConflictFailBase', '冲突型保底 B', 6, 1, '1')}
         </div>
-        <div style="font-size:11px;color:var(--we-text3);margin-top:3px;">受挫阈值越高，低骰导致倒退的范围越大；调太高会让事件反复拉扯。</div>
+        <div style="font-size:11px;color:var(--we-text3);margin-top:3px;">
+          保底公式：推进型连续失败上限 = A + Lv；冲突型连续失败上限 = max(1, B - Lv)。达到上限后强制推进一格。
+        </div>
       </div>`;
 
     const winddecayBody = `
-      <div style="font-size:12px;color:var(--we-text2);line-height:1.6;margin-bottom:10px;">
-        风声如果本轮没有被模型更新，就会累计沉寂轮数，并按这里的曲线掷骰消散。
-        base 是基础消散率，grace 是免检轮数，linear / quadratic 决定沉寂越久时消散率上涨多快。
+      <div style="font-size:12px;color:var(--we-text2);line-height:1.65;margin-bottom:10px;">
+        风声本轮没有被同 ID 更新时，沉寂轮数 +1。沉寂轮数 ≤ grace 时不检查消散。<br>
+        超过 grace 后：n = 沉寂轮数 - grace - 1。<br>
+        消散率 P = clamp(base + linear × n + quadratic × n² - (Lv - 1) × 10, 5, 95)。<br>
+        掷 1d100，若 骰值 ≤ P，则该风声消散。Lv 越高，越不容易消散。
       </div>
       <div class="we-input-group">
-        <label>风声消散曲线</label>
+        <label>风声消散公式参数</label>
         ${['Announcement:公告:10:4:3:1','Report:报道:20:2:4:2','Rumor:谣言:25:1:5:3','Sentiment:民意:8:5:2:1'].map(row => {
           const p = row.split(':');
           return '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:6px;">'
