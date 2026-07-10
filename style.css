@@ -2442,18 +2442,64 @@
 }
 
 /* [FIX] ===== 设置页选项卡 ===== */
+.we-settings-tabs-shell {
+  position: relative;
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr) 28px;
+  align-items: stretch;
+  gap: 4px;
+  border-bottom: 1px solid var(--we-border);
+  margin-bottom: 12px;
+}
+.we-settings-tabs-shell::before,
+.we-settings-tabs-shell::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 1px;
+  width: 22px;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.15s;
+  z-index: 2;
+}
+.we-settings-tabs-shell::before {
+  left: 32px;
+  background: linear-gradient(90deg, var(--we-bg), transparent);
+}
+.we-settings-tabs-shell::after {
+  right: 32px;
+  background: linear-gradient(270deg, var(--we-bg), transparent);
+}
+.we-settings-tabs-shell.is-left-shadow::before,
+.we-settings-tabs-shell.is-right-shadow::after { opacity: 1; }
 .we-settings-tabs {
   display: flex;
   gap: 2px;
   overflow-x: auto;
-  border-bottom: 1px solid var(--we-border);
-  margin-bottom: 12px;
-  scrollbar-width: thin;
+  scrollbar-width: none;
+  min-width: 0;
 }
-.we-settings-tabs::-webkit-scrollbar { height: 6px; }
-.we-settings-tabs::-webkit-scrollbar-thumb {
-  background: rgba(208,170,88,0.35);
-  border-radius: 999px;
+.we-settings-tabs::-webkit-scrollbar { display: none; }
+.we-settings-tab-scroll {
+  width: 28px;
+  min-width: 28px;
+  padding: 0;
+  border: 1px solid rgba(208,170,88,0.22);
+  border-bottom: none;
+  border-radius: 6px 6px 0 0;
+  background: rgba(208,170,88,0.06);
+  color: var(--we-text2);
+  cursor: pointer;
+  transition: color 0.15s, background 0.15s, opacity 0.15s;
+}
+.we-settings-tab-scroll:hover:not(:disabled) {
+  color: var(--we-gold);
+  background: rgba(208,170,88,0.12);
+}
+.we-settings-tab-scroll:disabled {
+  opacity: 0.25;
+  cursor: default;
 }
 .we-settings-tab {
   flex: 0 0 auto;

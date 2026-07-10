@@ -551,10 +551,14 @@ window.WORLD_ENGINE_UI = (function() {
       about:     renderAbout()
     };
 
-    const tabBar = '<div class="we-settings-tabs">'
+    const tabBar = '<div class="we-settings-tabs-shell">'
+      + '<button class="we-settings-tab-scroll" data-dir="-1" title="向左滚动"><i class="fa-solid fa-chevron-left"></i></button>'
+      + '<div class="we-settings-tabs" id="we-settings-tabs">'
       + SETTINGS_TABS.map(t =>
           '<button class="we-settings-tab' + (t.key === _settingsTab ? ' we-settings-tab--active' : '')
           + '" data-tab="' + t.key + '">' + t.label + '</button>').join('')
+      + '</div>'
+      + '<button class="we-settings-tab-scroll" data-dir="1" title="向右滚动"><i class="fa-solid fa-chevron-right"></i></button>'
       + '</div>';
 
     const panels = SETTINGS_TABS.map(t =>
@@ -2924,6 +2928,7 @@ window.WORLD_ENGINE_UI = (function() {
           t.classList.toggle('we-settings-tab--active', t.dataset.tab === key));
         document.querySelectorAll('.we-settings-panel').forEach(p =>
           p.style.display = (p.dataset.tab === key) ? '' : 'none');
+        tab.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' });
         // [FIX] 切到调试 tab 时，局部刷新 renderDebug 拉最新一轮推演数据（不动其它 tab 输入）
         if (key === 'debug') { refreshDebugRender(); refreshPresetManage(); }
       };
@@ -2931,6 +2936,32 @@ window.WORLD_ENGINE_UI = (function() {
 
     // 「关于」卡内的版本下拉切换：复用 #we-preset-select 范式（点击弹出原生可滚动列表）。
     //   纯 CSS 显隐、不重渲染、不触碰其它 tab。
+    const settingsTabs = document.getElementById('we-settings-tabs');
+    const updateSettingsTabScroll = () => {
+      if (!settingsTabs) return;
+      const shell = settingsTabs.closest('.we-settings-tabs-shell');
+      if (!shell) return;
+      const max = Math.max(0, settingsTabs.scrollWidth - settingsTabs.clientWidth);
+      shell.classList.toggle('is-left-shadow', settingsTabs.scrollLeft > 2);
+      shell.classList.toggle('is-right-shadow', settingsTabs.scrollLeft < max - 2);
+      shell.querySelectorAll('.we-settings-tab-scroll').forEach(btn => {
+        const dir = Number(btn.dataset.dir) || 1;
+        btn.disabled = max <= 2 || (dir < 0 ? settingsTabs.scrollLeft <= 2 : settingsTabs.scrollLeft >= max - 2);
+      });
+    };
+    if (settingsTabs) {
+      settingsTabs.addEventListener('scroll', updateSettingsTabScroll, { passive: true });
+      const activeTab = settingsTabs.querySelector('.we-settings-tab--active');
+      if (activeTab) activeTab.scrollIntoView({ block: 'nearest', inline: 'center' });
+      document.querySelectorAll('.we-settings-tab-scroll').forEach(btn => {
+        btn.onclick = () => {
+          const dir = Number(btn.dataset.dir) || 1;
+          settingsTabs.scrollBy({ left: dir * Math.max(120, settingsTabs.clientWidth * 0.65), behavior: 'smooth' });
+        };
+      });
+      setTimeout(updateSettingsTabScroll, 0);
+    }
+
     const clSel = document.getElementById('we-changelog-select');
     if (clSel) {
       clSel.onchange = () => {
