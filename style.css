@@ -2448,9 +2448,13 @@
   overflow-x: auto;
   border-bottom: 1px solid var(--we-border);
   margin-bottom: 12px;
-  scrollbar-width: none;
+  scrollbar-width: thin;
 }
-.we-settings-tabs::-webkit-scrollbar { display: none; }
+.we-settings-tabs::-webkit-scrollbar { height: 6px; }
+.we-settings-tabs::-webkit-scrollbar-thumb {
+  background: rgba(208,170,88,0.35);
+  border-radius: 999px;
+}
 .we-settings-tab {
   flex: 0 0 auto;
   padding: 7px 14px;
