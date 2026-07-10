@@ -404,7 +404,7 @@ type：${picked.type}
   }
 
   // ========== 风声消散骰 ==========
-  // API 本轮返回同 topic 风声时，core.addWind 会将 quietRounds 重置为 0。
+  // API 本轮返回同 id 风声时，core.addWind 会将 quietRounds 重置为 0。
   // 未被更新的风声在下轮 API 调用前累积沉寂，并可能直接消散。
   function decayWinds(state, randomFn = Math.random) {
     const survivors = [];
@@ -442,10 +442,24 @@ type：${picked.type}
 
 你必须输出一个 JSON 对象。只输出本轮有实质变化的字段；禁止为了凑数制造无意义内容。
 
+### 输出字数限制
+以下限制按中文汉字计数，标点符号、空格、数字和英文字母不计入字数；但仍要求表达简洁，不得用大量标点或英文绕过限制。
+- events.desc：不得超过50个汉字。
+- factions.currentGoal：不得超过50个汉字。
+- winds.content：不得超过50个汉字。
+- influenceChain.impact：不得超过50个汉字。
+- influenceChain.fallout：不得超过50个汉字。
+- worldTrends.description：不得超过100个汉字。
+
 ### events（事件链数组）
+创建、更新或拆分事件链前，必须先做“归纳判断”：事件链不是事实清单、任务清单或新闻标题集合，而是对需要跨轮追踪的主事项的抽象记录。若新内容与已有事件链或本轮事项簇共享时间/范围/主体/原因/目标/执行过程/后果归属，应更新主事件链 desc/stage/level/stall，不得新建子事件链。
+events 只记录仍未闭合、需要跨未来轮次持续判断其推进、受阻、转向、完成、爆发、失败或消散的主事项。创建事件链必须同时满足：明确独立且未闭合；有可识别的持续主体、目标对象或作用范围；需要时间、资源、信息、组织、条件变化或外部响应才能继续演化；后续至少有两种合理走向；已经有行动开始、计划下达、资源投入、组织调度、调查推进、矛盾持续、条件累积或准备落实等实际依据。
+以下情况不得创建事件链，无论非终局还是终局：已经完成/胜负已定/目标达成或失败且无需继续追踪；只有历史意义、新闻价值、气氛、情绪余波、单次结果或一次性影响；当前场景内即可收束的普通行动、日常事务、临时互动、短暂插曲、局部处置或顺手善后；仅凭“可能引发后续行动/调查/报复/追责/重建/舆论/合作/交易/风险”等推测；把同一主事项下的步骤、材料、线索、局部阻碍、阶段结果、单个后果或传播反馈拆成多条。
+后续影响不等于事件链。闭合事项的后果应写入世界摘要、winds、reputation、factions、economy、blackbox 或 influenceChain。只有后续影响已经形成新的、独立的、未闭合主事项，并且有持续主体与可演化目标时，才允许另建事件链。已爆发/已完成不是新闻记录，只用于收束已有事件链，或极少数本体规模重大且仍会持续影响未来多轮判断的独立主事项。
 每项包含：
-- name: 事件名称（已有事件同名则覆盖更新，新名称则新增）
-- type: "conflict"/"progress"。conflict=冲突型事件链，progress=推进型事件链。新事件必须填写；已有事件的 type 一旦确定禁止改动，更新同名事件时必须沿用当前 type。
+- id: 已有事件必须原样返回当前 id；新事件必须显式填 null，禁止省略
+- name: 事件名称。名称允许随局势演变，但改名不代表创建新事件
+- type: "conflict"/"progress"。conflict=冲突型事件链，progress=推进型事件链。新事件必须填写；已有事件的 type 一旦确定禁止改动，更新同一 id 的事件时必须沿用当前 type。
 - level: 1-4。conflict 表示冲突烈度/失控势能，Lv 越高越容易升级；progress 表示事项规模/完成难度，Lv 越高越难完成。
 - stage: 按 type 使用不同阶段：
   - conflict 只能使用 "萌芽"/"发酵"/"逼近"/"已爆发"/"已消散"。
@@ -474,8 +488,10 @@ type：${picked.type}
 - "已爆发"/"已消散"/"已完成"/"已失败" 均为终局，进入后不得恢复为非终局阶段。如需重启，应创建新的事件链。
 
 ### factions（势力数组）
+只有具备稳定共同身份、共同目标、组织决策能力和跨轮次行动能力的群体才能创建为势力。临时人群、一次性队伍和无组织公众不得创建，也不得为凑数量虚构势力。只有字段发生实质变化时才更新。
 每项包含：
-- name: 势力名称（同名覆盖，新名新增）
+- id: 已有势力必须原样返回当前 id；新势力必须显式填 null，禁止省略
+- name: 势力名称。改名、易帜或称号变化时仍沿用原 id；真正分裂出的新势力使用新对象
 - scope: 势力直接控制或具有重大影响力的地理范围
 - status: 整体运势——"鼎盛"/"稳固"/"倾轧"/"困顿"/"衰落"/"瓦解"。
   鼎盛=有钱有人有势，铁板一块；稳固=正常运行无重大危机；倾轧=内部派系斗争，架子还没散；困顿=资源枯竭或被封锁，咬牙硬撑；衰落=失去支柱/地盘/核心人物，滑向瓦解；瓦解=名存实亡，仅待终局确认。
@@ -488,7 +504,8 @@ type：${picked.type}
 ### worldTrends（天下大势数组）
 天下大势是已经改变国家、国际或整个世界运行方式的长期局势，不是普通风声，也不是等待爆发的事件链。
 每项包含：
-- name: 大势名称（同名覆盖更新，新名新增）
+- id: 已有大势必须原样返回当前 id；新大势必须显式填 null，禁止省略
+- name: 大势名称。措辞变化时仍沿用原 id
 - scope: 实际影响范围
 - status: "持续中"/"已结束"
 - description: 当前局势及其正在如何约束世界行动
@@ -502,8 +519,12 @@ type：${picked.type}
 - 大势产生的新行动、风声或经济变化应写入对应字段；跨系统传导写入 influenceChain。
 
 ### winds（风声数组）
+新风声必须已经通过合法节点开始传播，并且足以影响认知、行动或其他持久状态。单人私语、无人转述的闲话、纯气氛和对旧事实的机械复述不得创建。
+创建前必须先做“信息主题归并”判断：风声可以是真实消息、流言、误传、夸张说法或片面理解；但它记录的是正在传播的信息主题，不是事实清单、细节清单、版本清单或后续标题。若新信息与已有风声共享核心对象、核心事件/事项、核心说法、传播含义或社会指向，必须沿用原 id 更新 content/level/scope/source，不得新建。
+同一信息主题的补充、续传、细节增加、范围扩大、语气变化、版本变形、可信度变化、情绪升温或影响扩散，都应合并到原风声。禁止仅因标题变化、措辞变化、版本后缀或传播阶段变化创建重复风声。只有当核心传播含义已经改变，并指向不同对象、不同判断、不同利益关系、不同风险判断或不同群体行动时，才允许创建新风声。
 每项包含：
-- topic: 稳定主题名。更新同一条风声时必须沿用已有 topic；同 topic 覆盖更新，新 topic 新增。
+- id: 已有风声必须原样返回当前 id；新风声必须显式填 null，禁止省略
+- topic: 风声主题。传播中的说法、焦点或标题可以变化；只要仍是同一传播脉络，就沿用原 id。
 - type: "announcement"/"report"/"rumor"/"sentiment"，分别表示公告、消息、流言、舆情。
 - level: 1-4，表示实际传播规模：1=圈内少数人，2=地方，3=大区，4=国家/国际/天下。
 - content: 当前正在传播的具体说法；传播变质时更新此字段。
@@ -517,14 +538,16 @@ type：${picked.type}
 - 公告只证明发布者公开说过这件事，不保证内容为真；流言也可能恰好为真。不要使用可信度字段。
 - 私信、密令等仅有明确接收者的信息不属于风声；泄露并开始传播后才创建风声。
 - 没有产生实际外溢影响的风声可以只更新 winds，不得硬造其他系统变化。
-- 风声若连续多轮没有任何实质更新，会由本地系统判定消散并在下轮推演前删除。若一条风声本轮仍在传播、变质、扩大范围或持续影响世界，必须返回相同 topic 的更新；仅原样复述而没有实际变化不算更新。
+- 风声若连续多轮没有任何实质更新，会由本地系统判定消散并在下轮推演前删除。若一条风声本轮仍在传播、变质、扩大范围或持续影响世界，必须返回相同 id 的更新；仅原样复述而没有实际变化不算更新。
 - quietRounds 是本地内部字段，禁止输出或修改。
 
 ### economy（经济对象）
 - climate: 经济气候 — 当前区域经济温度："繁荣"/"平稳"/"衰退"/"动荡"
 - signals: 市场信号数组。每项 { summary: "一句话描述变化和影响", scope: "影响的地理范围（具体区域名）" }。记录当前市场上值得注意的经济变化——该变化必须足以影响势力行动、NPC决策或事件链走向。日常琐碎波动不配进入。一般不超过3条。
+- signal 必须是已经发生的市场变化，不能只是预测；只有幅度、范围、原因或决策影响实质改变时才更新，影响消失后移除。单一商品变化通常不得改变整个区域的 climate。
 
 ### reputation（声誉对象）
+只有信息已传播到对应圈层，并足以改变该圈层对{{user}}的总体评价时才能改变声誉。单个NPC态度、未传播行为和重复旧闻不得改变声誉；没有跨级所需的新事实时不要返回 reputation。
 四维声誉，每维五级（从低到高，只能取这五个值）：天怒人怨→声名狼藉→默默无闻→受人尊敬→万众敬仰
 - authority: 朝堂之上 — 掌权建制力量对{{user}}的评价。守法/逆法、顺从/挑衅。
 - common: 市井之间 — 普通百姓/街头舆论对{{user}}的口碑。仁善/暴戾、保护者/威胁者。
@@ -533,12 +556,14 @@ type：${picked.type}
 - lastChange: 本轮变化简述（如"无变化"或"朝堂评价因协助缉拿上升"）
 
 ### world_digest（字符串）
-本轮后台世界推演叙事，150-200字。描述本轮世界后台发生了什么（天下大势约束、NPC独立行动、团体内部变化、风声传播等），禁止提及{{user}}。
+本轮后台世界推演叙事，150-200字。先感知自上次世界状态更新以来大致经过的剧情时间，再描述相对上次状态真正发生的新变化（天下大势约束、NPC独立行动、团体内部变化、风声传播等）。旧对话只作背景，不要重复当作新变化；若时间很短或新增事实不足，可写局势基本稳定或只有轻微变化。禁止提及{{user}}。
 
 ### enemies（仇敌录数组）
 仇敌是因具体伤害行为而与{{user}}产生不可逆个人恩怨的角色或群体。不同于势力层面的态度对立（那是 factions.relation 的职责），仇敌的核心特征是：永不淡化、追着{{user}}跑。
+只有满足对应类型的完整触发条件才创建；愤怒、敌意或口头威胁本身不构成仇敌。已有仇敌只有行动能力、定位、阶段、主体或终结事实发生实质变化时才更新。
 
 每项包含：
+- id: 已有仇敌必须原样返回当前 id；新仇敌必须显式填 null，禁止省略
 - name: 仇敌名称（个人姓名或复仇团体名）
 - reason: 结仇原因（简述{{user}}做了什么导致结仇）
 - type: "blood"/"grudge"。blood=血仇（核心人物被杀、至亲身亡/致残）；grudge=非致死恩怨（被废、破产、被夺走重要之物等造成不可逆伤害）
@@ -567,6 +592,7 @@ type：${picked.type}
 
 ### influenceChain（影响链数组）
 用于记录重要变化在世界中的传播过程，说明什么触发了变化、直接改变了什么、又产生了什么后续余波。它不是新的事件链，不参与骰子推进，也不表示 stage 进度。
+只有触发源已经使另一个系统的持久状态发生实质变化，并且这段传导对理解后续状态有必要时才创建。潜在可能、普通情绪、事件内部步骤和事件链常规进度不得创建；尚未发生但有依据的趋势只能写入 fallout。
 每项包含：
 - trigger: 触发源。引发变化的具体事件、行动、天下大势、风声、经济变化、声誉变化或黑盒信息
 - impact: 直接影响。触发源已经真实改变了什么世界状态
@@ -580,6 +606,7 @@ type：${picked.type}
 - 同一 trigger 已有记录时更新该记录，不要无限堆叠重复记录。
 
 ### blackbox（信息黑盒对象）
+只有需要跨轮次保护知情边界，或追踪未来用途、暴露风险的隐秘行为与资产才进入黑盒。普通内心想法、未实施念头、公开物品、即时消耗品和无后续价值的隐私不得进入。
 - secretActions: 隐秘行为数组，每项 { action: "行为描述", witnesses: "无/仅XX" }
 - secretAssets: 隐秘资产数组，每项 { name: "资产名称", exposure: 0-100, status: "有效/过期/暴露/失效" }
   exposure 表示该资产被外界发现的风险程度：0=绝密，100=已完全公开。
@@ -588,23 +615,23 @@ type：${picked.type}
 
   const JSON_EXAMPLE = `{
   "events": [
-    { "name": "血刀门复仇", "type": "conflict", "level": 2, "stage": "发酵", "stageRound": 5, "desc": "血刀门派出了追踪者，追踪者在青石关外三里亭设了暗哨" },
-    { "name": "青炉司改良火药", "type": "progress", "level": 3, "stage": "执行", "stageRound": 4, "desc": "青炉司已收齐硝石与密炭，正在试小炉，尚未进入定型关口" }
+    { "id": "event_1", "name": "血刀门复仇", "type": "conflict", "level": 2, "stage": "发酵", "stageRound": 5, "desc": "血刀门派出了追踪者，追踪者在青石关外三里亭设了暗哨" },
+    { "id": null, "name": "青炉司改良火药", "type": "progress", "level": 3, "stage": "执行", "stageRound": 4, "desc": "青炉司已收齐硝石与密炭，正在试小炉，尚未进入定型关口" }
   ],
   "factions": [
-    { "name": "血刀门", "scope": "血刀岭及周边三镇", "status": "稳固", "relation": "敌对", "currentGoal": "复仇", "core_person": "血刀老祖", "powerPillars": ["武力威慑","情报网"] }
+    { "id": "faction_1", "name": "血刀门", "scope": "血刀岭及周边三镇", "status": "稳固", "relation": "敌对", "currentGoal": "复仇", "core_person": "血刀老祖", "powerPillars": ["武力威慑","情报网"] }
   ],
   "worldTrends": [
-    { "name": "北境战争", "scope": "北境三州及周边诸国", "status": "持续中", "description": "边军与北境诸部进入长期战争，征粮、征兵与商路封锁持续改变各方行动", "source": "Lv4冲突型事件「北境战争」进入已爆发" }
+    { "id": "trend_1", "name": "北境战争", "scope": "北境三州及周边诸国", "status": "持续中", "description": "边军与北境诸部进入长期战争，征粮、征兵与商路封锁持续改变各方行动", "source": "Lv4冲突型事件「北境战争」进入已爆发" }
   ],
   "winds": [
-    { "topic": "青石关设卡", "type": "report", "level": 2, "content": "青石关北门已有官兵设卡盘查", "scope": "青石关及周边村镇", "source": "目击商贩→往来商队" }
+    { "id": "wind_1", "topic": "青石关设卡", "type": "report", "level": 2, "content": "青石关北门已有官兵设卡盘查", "scope": "青石关及周边村镇", "source": "目击商贩→往来商队" }
   ],
   "economy": { "climate": "平稳", "signals": [] },
   "reputation": { "authority": "默默无闻", "common": "默默无闻", "shadow": "默默无闻", "circuit": "默默无闻", "lastChange": "无变化" },
   "world_digest": "血刀门追踪者在青石关外三里亭设了暗哨；天机阁阁主上官云密信召回了三名外围密探；醉仙楼后厨因粮商涨价换了供货渠道。",
   "enemies": [
-    { "name": "血刀门", "reason": "{{user}}杀了血刀门少主", "type": "blood", "status": "执行中" }
+    { "id": "enemy_1", "name": "血刀门", "reason": "{{user}}杀了血刀门少主", "type": "blood", "status": "执行中" }
   ],
   "influenceChain": [
     { "trigger": "血刀门发布悬赏令", "impact": "草莽中人开始主动留意{{user}}的行踪", "fallout": "客栈与渡口出现试探和秘密报信者" }
@@ -616,6 +643,13 @@ type：${picked.type}
   // 作为「默认预设」的单一真相源，供 world-engine-preset.js 引用（避免双份拷贝漂移）。
   // callEvolutionAPI 内不再重新定义，直接引用此处；覆写层用 Final 变量区分默认值与用户覆写。
   const DEFAULT_SEG_ENGINE_ROLE = `你是一个世界推演引擎。每轮对话后，后台世界必须自动向前推进一步。\n请根据世界规则和本轮对话，更新世界状态。只输出 JSON，不要有其他文字。`;
+
+  // 身份协议属于本地数据完整性约束，不允许被自定义引擎预设覆盖。
+  const ENTITY_ID_PROTOCOL = `【持续实体 ID 协议（强制，不可覆盖）】
+- events、factions、worldTrends、winds、enemies 的 id 是系统身份。
+- 更新已有对象必须原样返回当前状态中的 id，即使 name/topic 改名也不得改变 id。
+- 创建新对象必须显式填写 "id": null，由本地系统分配；禁止省略 id，也禁止编造、猜测或复用 id。
+- 判断是否为同一对象只看 id。当前状态中不存在的 id 无效。`;
 
   const DEFAULT_SEG_CAUSAL_STEPS = `推演时按以下因果顺序检查：\n1. 【私密判定·最先执行】先判定本轮 {{user}} 及相关人物的行为有无目击者、是否留下可追溯痕迹。凡在无目击、未留痕迹的情况下发生的私密行为（独处、私密情爱、闺房之事、密室密谈、隐秘潜入、无人时的杀伐等），一律计入 blackbox.secretActions（witnesses 标"无"或"仅XX"），并且：不得据此生成风声、不得改变任何维度声誉、不得形成或推进事件链、不得让任何不在场 NPC 据此行动。只有当该行为被目击、留下可追溯痕迹、或事后确实被传播后，才可转为公开影响。\n2. 将所有持续中的天下大势作为本轮世界级约束，并检查是否形成新大势或已有大势明确结束。\n3. 判断本轮事实、行动与公开信息是否形成新风声（私密行为除外，见第1步）。\n4. 检查已有风声是否获得新的合法传播节点，并据此更新 level/scope/content/source。\n5. 判断风声实际覆盖了哪些势力、圈层或行动者；只有被覆盖者才能据此改变判断与行动。\n6. 天下大势或风声造成跨系统变化时，在对应状态字段中落实结果，并用 influenceChain 记录传导过程。\n7. 声誉判定：只有当 {{user}} 的行为已形成覆盖对应圈层的风声后，才改动对应维度声誉；私密、未传播或仅单人目击的行为不改变群体声誉。\n8. 仇敌判定：判断本轮是否产生触发血仇/恩怨的不可逆伤害；已有仇敌只有通过覆盖其情报来源的风声或其他合法渠道获知线索后，才能推进追踪，且受势力等级约束，不得凭空定位 {{user}}。\n9. 经济判定：只有事件链或可追溯的外部原因驱动时才更新 climate 与 signals；重大经济变化须生成对应风声，禁止凭空波动。\n10. 不得从面板全知信息直接跳到 NPC 行动，不得为了产生联动而虚构传播节点。`;
 
@@ -644,8 +678,8 @@ type：${picked.type}
 
     const segStateBlock = `## 当前世界状态（第${state.round}轮）\n${JSON.stringify({
   round: state.round,
-  events: (state.events || []).map(e => ({ name: e.name, type: e.type || 'conflict', stage: e.stage, stageRound: e.stageRound, level: e.level, desc: e.desc, evolveResult: e.evolveResult, stall: e.stall })),
-  factions: (state.factions || []).map(f => ({ name: f.name, scope: f.scope, status: f.status, relation: f.relation, currentGoal: f.currentGoal, core_person: f.core_person, powerPillars: f.powerPillars })),
+  events: (state.events || []).map(e => ({ id: e.id, name: e.name, type: e.type || 'conflict', stage: e.stage, stageRound: e.stageRound, level: e.level, desc: e.desc, evolveResult: e.evolveResult, stall: e.stall })),
+  factions: (state.factions || []).map(f => ({ id: f.id, name: f.name, scope: f.scope, status: f.status, relation: f.relation, currentGoal: f.currentGoal, core_person: f.core_person, powerPillars: f.powerPillars })),
   worldTrends: state.worldTrends || [],
   winds: (state.winds || []).map(({ quietRounds, ...wind }) => wind),
   reputation: state.reputation,
@@ -663,7 +697,7 @@ type：${picked.type}
 
     // [MAP] 实际发出的完整 prompt：与原模板逐字相同的拼接顺序与分隔，零语义漂移。
     // 4 段用上方的 seg*（覆写层 Final 变量）：无覆写时逐字等于原常量。
-    const prompt = segEngineRole + '\n\n' + segCausalSteps
+    const prompt = segEngineRole + '\n\n' + ENTITY_ID_PROTOCOL + '\n\n' + segCausalSteps
       + '\n\n========== 世界推演规则 ==========\n' + fullRules
       + '\n\n' + worldbookSection
       + '\n\n' + segStateBlock
@@ -676,15 +710,16 @@ type：${picked.type}
     // worldbookSection / toneSection / extraInstruction 为空时 content 为空字符串，展示侧标注「本轮未启用」。
     _lastPromptSegments = [
       { key: 'engine-role',    label: '① 引擎角色指令',            content: segEngineRole },
-      { key: 'causal-steps',   label: '② 因果检查（10 步）',        content: segCausalSteps },
-      { key: 'rules',          label: '③ 世界推演规则',            content: fullRules },
-      { key: 'worldbook',      label: '④ 世界书注入',              content: worldbookSection },
-      { key: 'state',          label: '⑤ 当前世界状态（JSON）',     content: segStateBlock },
-      { key: 'dialogue',       label: '⑥ 近期对话',                content: segDialogue },
-      { key: 'output-format',  label: '⑦ JSON 输出字段说明',       content: segOutputInstructions },
-      { key: 'json-example',   label: '⑧ JSON 示例',               content: segJsonExample },
-      { key: 'extra-instr',    label: '⑨ 附加指令',                content: segExtraInstruction },
-      { key: 'tone',           label: '⑩ 附加提示词（用户自定义）', content: segToneSection }
+      { key: 'entity-ids',     label: '② 持续实体 ID 协议',         content: ENTITY_ID_PROTOCOL },
+      { key: 'causal-steps',   label: '③ 因果检查（10 步）',        content: segCausalSteps },
+      { key: 'rules',          label: '④ 世界推演规则',            content: fullRules },
+      { key: 'worldbook',      label: '⑤ 世界书注入',              content: worldbookSection },
+      { key: 'state',          label: '⑥ 当前世界状态（JSON）',     content: segStateBlock },
+      { key: 'dialogue',       label: '⑦ 近期对话',                content: segDialogue },
+      { key: 'output-format',  label: '⑧ JSON 输出字段说明',       content: segOutputInstructions },
+      { key: 'json-example',   label: '⑨ JSON 示例',               content: segJsonExample },
+      { key: 'extra-instr',    label: '⑩ 附加指令',                content: segExtraInstruction },
+      { key: 'tone',           label: '⑪ 附加提示词（用户自定义）', content: segToneSection }
     ];
 
     const rawResult = await api.callApi(prompt, undefined, undefined, _abortController.signal);
@@ -703,15 +738,15 @@ type：${picked.type}
     }
     console.log('[世界引擎] API JSON 解析成功，世界摘要:', update.world_digest || '[未返回]');
 
-    update.events = update.events || [];
-    update.factions = update.factions || [];
-    update.worldTrends = update.worldTrends || [];
-    update.winds = update.winds || [];
+    update.events = Array.isArray(update.events) ? update.events : [];
+    update.factions = Array.isArray(update.factions) ? update.factions : [];
+    update.worldTrends = Array.isArray(update.worldTrends) ? update.worldTrends : [];
+    update.winds = Array.isArray(update.winds) ? update.winds : [];
     update.economy = update.economy || {};
     if (!update.economy.signals) update.economy.signals = [];
     update.reputation = update.reputation || {};
     update.world_digest = update.world_digest || state.worldDigest;
-    update.enemies = update.enemies || [];
+    update.enemies = Array.isArray(update.enemies) ? update.enemies : [];
     update.influenceChain = Array.isArray(update.influenceChain) ? update.influenceChain : [];
     // regionalIncident 由本地骰子控制，不在 callEvolutionAPI 中自动补全
     // API 返回的 regionalIncident 在 mergeRegionalIncident 中验证
@@ -803,8 +838,11 @@ type：${picked.type}
 
       // 第5步：合并 API 返回
       for (const ev of update.events) {
-        const existing = state.events.find(e => e.name === ev.name);
+        const existingIndex = core.findEntityIndex(state.events, ev, core.ENTITY_ID_PREFIXES.events, 'name');
+        const existing = existingIndex !== -1 ? state.events[existingIndex] : null;
         if (existing) {
+          // API 的未知/错误 ID 不得污染本地身份；兼容同名认领时也强制继承本地 ID。
+          ev.id = existing.id;
           // 事件类型一旦确定不可由 API 改动
           ev.type = existing.type || 'conflict';
 
@@ -861,9 +899,7 @@ type：${picked.type}
           if (!en.name || !en.reason) continue;
           if (!en.type || !['blood', 'grudge'].includes(en.type)) en.type = 'blood';
           if (!en.status|| !['追踪中','策划中','执行中','已终结'].includes(en.status)) en.status = '追踪中';
-          const idx = (state.enemies || []).findIndex(ex => ex.name === en.name);
-          if (idx !== -1) state.enemies[idx] = { ...state.enemies[idx], ...en };
-          else state.enemies.unshift(en);
+          core.addEnemy(state, en);
         }
         // 已终结的仇敌保留20轮后清理
         state.enemies = (state.enemies || []).filter(en => {
