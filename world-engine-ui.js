@@ -1896,6 +1896,7 @@ window.WORLD_ENGINE_UI = (function() {
     const apiMaxTokens = Math.max(1, parseInt(settings.maxTokens) || 2000);
     const apiTimeoutMs = Number.isFinite(Number(settings.apiTimeoutMs)) ? Number(settings.apiTimeoutMs) : 120000;
     const apiTimeoutSec = Math.max(0, Math.round(apiTimeoutMs / 1000));
+    const injectMaxChars = Number.isFinite(Number(settings.injectMaxChars)) ? Math.max(0, Math.floor(Number(settings.injectMaxChars))) : 5000;
 
     const sec = (id, title, body) =>
       '<div class="we-section"><div class="we-section-title">' + sectionHeader(title, id) + '</div>' +
@@ -2045,6 +2046,11 @@ window.WORLD_ENGINE_UI = (function() {
           注入正文
         </label>
         <div style="font-size:11px;color:var(--we-text3);margin-top:3px;">关闭后不会将当前状态或存档点注入聊天正文。</div>
+      </div>
+      <div class="we-input-group">
+        <label>正文注入最大字符数</label>
+        <input type="number" id="we-inject-max-chars" min="0" step="100" value="${injectMaxChars}" style="width:100%;">
+        <div style="font-size:11px;color:var(--we-text3);margin-top:3px;">限制注入到正文 prompt 的世界状态长度。默认 5000；0 = 不限制。</div>
       </div>`;
 
     const displayMode = settings.displayMode === 'expand' ? 'expand' : 'mask';
@@ -3033,6 +3039,7 @@ window.WORLD_ENGINE_UI = (function() {
           apiTimeoutMs: Number.isFinite(timeoutSecRaw) ? Math.max(0, Math.round(timeoutSecRaw * 1000)) : 120000,
           connectionMode: document.getElementById('we-connection-mode')?.value === 'proxy' ? 'proxy' : 'direct',
           injectIntoPrompt: document.getElementById('we-inject-into-prompt')?.checked !== false,
+          injectMaxChars: Math.max(0, parseInt(gv('we-inject-max-chars')) || 0),
           syncToChat: document.getElementById('we-sync-to-chat')?.checked === true,
           autoBackup: document.getElementById('we-auto-backup')?.checked === true,
           evolveMode: (_modeRaw === 'manual' || _modeRaw === 'time') ? _modeRaw : 'auto',
@@ -3369,7 +3376,8 @@ window.WORLD_ENGINE_UI = (function() {
           maxTokens: Math.max(1, parseInt(document.getElementById('we-max-tokens')?.value) || 2000),
           apiTimeoutMs: Number.isFinite(parseFloat(document.getElementById('we-api-timeout-sec')?.value)) ? Math.max(0, Math.round(parseFloat(document.getElementById('we-api-timeout-sec')?.value) * 1000)) : 120000,
           connectionMode: document.getElementById('we-connection-mode')?.value === 'proxy' ? 'proxy' : 'direct',
-          injectIntoPrompt: document.getElementById('we-inject-into-prompt')?.checked !== false
+          injectIntoPrompt: document.getElementById('we-inject-into-prompt')?.checked !== false,
+          injectMaxChars: Math.max(0, parseInt(document.getElementById('we-inject-max-chars')?.value) || 0)
         }));
         if (api.getSettings) api.getSettings(true);
         fetchBtn.disabled = true;

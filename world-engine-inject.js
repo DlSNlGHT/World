@@ -184,7 +184,14 @@ window.WORLD_ENGINE_INJECT = (function() {
 ${rulesSummary}
     `.trim();
 
-    return context.substring(0, 5000);
+    let maxChars = 5000;
+    try {
+      const api = window.WORLD_ENGINE_API;
+      const settings = api && api.getSettings ? api.getSettings() : {};
+      const configured = Number(settings.injectMaxChars);
+      if (Number.isFinite(configured)) maxChars = Math.max(0, Math.floor(configured));
+    } catch (e) {}
+    return maxChars > 0 ? context.substring(0, maxChars) : context;
   }
 
   return { buildContext };
