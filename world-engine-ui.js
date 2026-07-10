@@ -2141,6 +2141,9 @@ window.WORLD_ENGINE_UI = (function() {
     const numInput = (id, key, label, d, min, step) =>
       '<div class="we-input-group" style="flex:1;min-width:112px;margin-bottom:0;"><label>' + label + '</label>'
       + '<input type="number" id="' + id + '" min="' + min + '" step="' + step + '" value="' + mech(key, d) + '"></div>';
+    const wideNumInput = (id, key, label, d, min, step) =>
+      '<div class="we-input-group" style="width:100%;margin-bottom:0;"><label>' + label + '</label>'
+      + '<input type="number" id="' + id + '" min="' + min + '" step="' + step + '" value="' + mech(key, d) + '"></div>';
     const regionalBody = `
       <div style="font-size:12px;color:var(--we-text2);line-height:1.6;margin-bottom:10px;">
         区域突发事件是纯本地骰子：先由本地判定是否发生，再把事件类型和约束交给推演模型写成世界变化。
@@ -2164,8 +2167,10 @@ window.WORLD_ENGINE_UI = (function() {
       </div>
       <div class="we-input-group">
         <label>事件骰子公式参数</label>
+        <div style="margin-bottom:6px;">
+          ${wideNumInput('we-local-dice-mod', 'localEventDiceModifier', '全局推进修正', 0, -100, '1')}
+        </div>
         <div style="display:flex;gap:6px;flex-wrap:wrap;">
-          ${numInput('we-local-dice-mod', 'localEventDiceModifier', '全局推进修正', 0, -100, '1')}
           ${numInput('we-local-setback-ratio', 'localEventSetbackRatioPercent', '受挫系数 %', 40, 0, '1')}
           ${numInput('we-local-progress-fail-base', 'localProgressFailBase', '推进型保底 A', 2, 0, '1')}
           ${numInput('we-local-conflict-fail-base', 'localConflictFailBase', '冲突型保底 B', 6, 1, '1')}
@@ -2184,7 +2189,7 @@ window.WORLD_ENGINE_UI = (function() {
       </div>
       <div class="we-input-group">
         <label>风声消散公式参数</label>
-        ${['Announcement:公告:10:4:3:1','Report:报道:20:2:4:2','Rumor:谣言:25:1:5:3','Sentiment:民意:8:5:2:1'].map(row => {
+        ${['Rumor:流言:25:1:5:3','Sentiment:舆论:8:5:2:1','Report:消息:20:2:4:2','Announcement:公告:10:4:3:1'].map(row => {
           const p = row.split(':');
           return '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:6px;">'
             + '<div style="width:42px;color:var(--we-text2);font-size:12px;align-self:center;">' + p[1] + '</div>'
@@ -2197,8 +2202,10 @@ window.WORLD_ENGINE_UI = (function() {
       </div>`;
 
     const retentionBody = `
-      <div style="font-size:12px;color:var(--we-text2);line-height:1.6;margin-bottom:10px;">
-        这里控制“东西在面板里留多久”和“每类最多存多少”。调低会让世界状态更轻，调高会保留更多历史脉络，但面板和注入会更长。
+      <div style="font-size:12px;color:var(--we-text2);line-height:1.65;margin-bottom:10px;">
+        这里控制“东西在面板里留多久”和“每类最多存多少”。<br>
+        正面终局事件（已爆发 / 已完成）保留轮数 = 基础保留 + Lv × 每级额外保留。<br>
+        负面终局事件（已消散 / 已失败）下一轮清退；影响链、已终结仇敌、账本分别按各自保存轮数清退。
       </div>
       <div class="we-input-group">
         <label>保留轮数</label>
