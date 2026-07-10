@@ -506,10 +506,7 @@ window.WORLD_ENGINE_UI = (function() {
   const SETTINGS_TABS = [
     { key: 'common',    label: '常用' },
     { key: 'advanced',  label: '高级' },
-    { key: 'regional',  label: '区域事件' },
-    { key: 'dice',      label: '事件骰子' },
-    { key: 'winddecay', label: '风声消散' },
-    { key: 'retention', label: '保留上限' },
+    { key: 'mechanics', label: '本地机制' },
     { key: 'archive',   label: '存档' },
     { key: 'worldbook', label: '世界书' },
     { key: 'debug',     label: '调试' },
@@ -547,10 +544,7 @@ window.WORLD_ENGINE_UI = (function() {
     const panelContent = {
       common:    form.api + form.evolve + form.inject,
       advanced:  form.backfill + form.filter + form.display + extra.tone,
-      regional:  form.regional,
-      dice:      form.dice,
-      winddecay: form.winddecay,
-      retention: form.retention,
+      mechanics: form.mechanics,
       archive:   form.chatcache + extra.data + checkpointSection,
       worldbook: extra.worldbook,
       debug:     debugSection,
@@ -2224,10 +2218,10 @@ window.WORLD_ENGINE_UI = (function() {
       api: sec('set-api', 'API 配置', apiBody),
       evolve: sec('set-evolve', '推演模式', evolveBody),
       backfill: sec('set-backfill', '批量重填世界推演', backfillBody),
-      regional: sec('set-regional', '区域事件', regionalBody),
-      dice: sec('set-dice', '事件骰子', diceBody),
-      winddecay: sec('set-winddecay', '风声消散', winddecayBody),
-      retention: sec('set-retention', '保留上限', retentionBody),
+      mechanics: sec('set-regional', '区域事件', regionalBody)
+        + sec('set-dice', '事件骰子', diceBody)
+        + sec('set-winddecay', '风声消散', winddecayBody)
+        + sec('set-retention', '保留上限', retentionBody),
       filter: sec('set-filter', '输入输出过滤器', filterBody),
       display: sec('set-display', '界面显示', displayBody),
       chatcache: sec('set-chatcache', '酒馆缓存与存档', chatcacheBody),
