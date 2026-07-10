@@ -49,6 +49,7 @@ window.WORLD_ENGINE_API = (function() {
       localTerminalLevelKeepRounds: 2,
       localInfluenceKeepRounds: 8,
       localEnemyTerminalKeepRounds: 20,
+      localLedgerKeepRounds: 20,
       localCapEvents: 16,
       localCapFactions: 15,
       localCapWinds: 12,

@@ -3,6 +3,12 @@ window.WORLD_ENGINE_LEDGER = (function() {
   const core = window.WORLD_ENGINE_CORE;
   const MAX_LEDGER_ROUNDS = 20;
 
+  function getMaxLedgerRounds() {
+    const settings = window.WORLD_ENGINE_API && window.WORLD_ENGINE_API.getSettings ? window.WORLD_ENGINE_API.getSettings() : {};
+    const n = Number(settings.localLedgerKeepRounds);
+    return Math.max(1, Math.round(Number.isFinite(n) ? n : MAX_LEDGER_ROUNDS));
+  }
+
   const EVENT_TYPE_NAMES = { conflict: '冲突型', progress: '推进型' };
   const TERMINAL_STAGES = new Set(['已完成', '已失败', '已消散', '已爆发']);
 
@@ -83,8 +89,9 @@ window.WORLD_ENGINE_LEDGER = (function() {
       changes: changes
     });
 
-    if (state.memories.length > MAX_LEDGER_ROUNDS) {
-      state.memories.length = MAX_LEDGER_ROUNDS;
+    const maxLedgerRounds = getMaxLedgerRounds();
+    if (state.memories.length > maxLedgerRounds) {
+      state.memories.length = maxLedgerRounds;
     }
 
     core.saveState(state);

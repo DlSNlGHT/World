@@ -506,7 +506,10 @@ window.WORLD_ENGINE_UI = (function() {
   const SETTINGS_TABS = [
     { key: 'common',    label: '常用' },
     { key: 'advanced',  label: '高级' },
-    { key: 'mechanics', label: '本地机制' },
+    { key: 'regional',  label: '区域事件' },
+    { key: 'dice',      label: '事件骰子' },
+    { key: 'winddecay', label: '风声消散' },
+    { key: 'retention', label: '保留上限' },
     { key: 'archive',   label: '存档' },
     { key: 'worldbook', label: '世界书' },
     { key: 'debug',     label: '调试' },
@@ -544,7 +547,10 @@ window.WORLD_ENGINE_UI = (function() {
     const panelContent = {
       common:    form.api + form.evolve + form.inject,
       advanced:  form.backfill + form.filter + form.display + extra.tone,
-      mechanics: form.mechanics,
+      regional:  form.regional,
+      dice:      form.dice,
+      winddecay: form.winddecay,
+      retention: form.retention,
       archive:   form.chatcache + extra.data + checkpointSection,
       worldbook: extra.worldbook,
       debug:     debugSection,
@@ -2137,29 +2143,43 @@ window.WORLD_ENGINE_UI = (function() {
     const numInput = (id, key, label, d, min, step) =>
       '<div class="we-input-group" style="flex:1;min-width:112px;margin-bottom:0;"><label>' + label + '</label>'
       + '<input type="number" id="' + id + '" min="' + min + '" step="' + step + '" value="' + mech(key, d) + '"></div>';
-    const mechanicsBody = `
-      <div style="font-size:11px;color:var(--we-text3);margin-bottom:8px;">这些数值只控制本地判定与清理。默认值等同旧版硬编码；调得太激进时，世界会明显更躁动。</div>
+    const regionalBody = `
+      <div style="font-size:12px;color:var(--we-text2);line-height:1.6;margin-bottom:10px;">
+        区域突发事件是纯本地骰子：先由本地判定是否发生，再把事件类型和约束交给推演模型写成世界变化。
+        概率越高，远方灾变、治安事件、交通断裂这类背景波动越频繁。
+      </div>
       <div class="we-input-group">
-        <label>区域突发事件</label>
+        <label>区域突发事件参数</label>
         <div style="display:flex;gap:6px;flex-wrap:wrap;">
           ${numInput('we-local-ri-chance', 'localRegionalIncidentChancePercent', '触发概率 %', 3, 0, '0.1')}
           ${numInput('we-local-ri-duration', 'localRegionalIncidentDuration', '持续轮数', 5, 1, '1')}
           ${numInput('we-local-ri-cooldown', 'localRegionalIncidentCooldown', '消散后冷却', 5, 0, '1')}
         </div>
+      </div>`;
+
+    const diceBody = `
+      <div style="font-size:12px;color:var(--we-text2);line-height:1.6;margin-bottom:10px;">
+        事件链骰子控制“已有事件链每轮是否推进、停滞或受挫”。推进修正为正数会让事件更容易动起来，为负数则更容易拖延。
+        保底基数控制连续多次没有成功推进后，多少轮强制向前推一格。
       </div>
       <div class="we-input-group">
-        <label>事件链骰子</label>
+        <label>事件链骰子参数</label>
         <div style="display:flex;gap:6px;flex-wrap:wrap;">
           ${numInput('we-local-dice-mod', 'localEventDiceModifier', '推进修正', 0, -100, '1')}
           ${numInput('we-local-setback-ratio', 'localEventSetbackRatioPercent', '受挫阈值 %', 40, 0, '1')}
           ${numInput('we-local-progress-fail-base', 'localProgressFailBase', '进展保底基数', 2, 0, '1')}
           ${numInput('we-local-conflict-fail-base', 'localConflictFailBase', '冲突保底基数', 6, 1, '1')}
         </div>
-        <div style="font-size:11px;color:var(--we-text3);margin-top:3px;">推进修正为正数时更容易推进，为负数时更容易卡住。受挫阈值越高，低骰导致倒退的范围越大。</div>
+        <div style="font-size:11px;color:var(--we-text3);margin-top:3px;">受挫阈值越高，低骰导致倒退的范围越大；调太高会让事件反复拉扯。</div>
+      </div>`;
+
+    const winddecayBody = `
+      <div style="font-size:12px;color:var(--we-text2);line-height:1.6;margin-bottom:10px;">
+        风声如果本轮没有被模型更新，就会累计沉寂轮数，并按这里的曲线掷骰消散。
+        base 是基础消散率，grace 是免检轮数，linear / quadratic 决定沉寂越久时消散率上涨多快。
       </div>
       <div class="we-input-group">
         <label>风声消散曲线</label>
-        <div style="font-size:11px;color:var(--we-text3);margin-bottom:6px;">base=基础消散率，grace=免检轮数，linear/quadratic=沉寂越久增长越快；风声等级越高越抗消散。</div>
         ${['Announcement:公告:10:4:3:1','Report:报道:20:2:4:2','Rumor:谣言:25:1:5:3','Sentiment:民意:8:5:2:1'].map(row => {
           const p = row.split(':');
           return '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:6px;">'
@@ -2170,14 +2190,25 @@ window.WORLD_ENGINE_UI = (function() {
             + numInput('we-local-wind-' + p[0].toLowerCase() + '-quadratic', 'localWind' + p[0] + 'Quadratic', 'quadratic', p[5], 0, '1')
             + '</div>';
         }).join('')}
+      </div>`;
+
+    const retentionBody = `
+      <div style="font-size:12px;color:var(--we-text2);line-height:1.6;margin-bottom:10px;">
+        这里控制“东西在面板里留多久”和“每类最多存多少”。调低会让世界状态更轻，调高会保留更多历史脉络，但面板和注入会更长。
       </div>
       <div class="we-input-group">
-        <label>保留轮数与容量上限</label>
+        <label>保留轮数</label>
         <div style="display:flex;gap:6px;flex-wrap:wrap;">
           ${numInput('we-local-terminal-base', 'localTerminalBaseKeepRounds', '终局基础保留', 2, 0, '1')}
           ${numInput('we-local-terminal-level', 'localTerminalLevelKeepRounds', '每级额外保留', 2, 0, '1')}
           ${numInput('we-local-influence-keep', 'localInfluenceKeepRounds', '影响链保留', 8, 1, '1')}
           ${numInput('we-local-enemy-keep', 'localEnemyTerminalKeepRounds', '已终结仇敌保留', 20, 1, '1')}
+          ${numInput('we-local-ledger-keep', 'localLedgerKeepRounds', '账本保存轮数', 20, 1, '1')}
+        </div>
+      </div>
+      <div class="we-input-group">
+        <label>容量上限</label>
+        <div style="display:flex;gap:6px;flex-wrap:wrap;">
           ${numInput('we-local-cap-events', 'localCapEvents', '事件上限', 16, 1, '1')}
           ${numInput('we-local-cap-factions', 'localCapFactions', '势力上限', 15, 1, '1')}
           ${numInput('we-local-cap-winds', 'localCapWinds', '风声上限', 12, 1, '1')}
@@ -2193,7 +2224,10 @@ window.WORLD_ENGINE_UI = (function() {
       api: sec('set-api', 'API 配置', apiBody),
       evolve: sec('set-evolve', '推演模式', evolveBody),
       backfill: sec('set-backfill', '批量重填世界推演', backfillBody),
-      mechanics: sec('set-mechanics', '本地机制', mechanicsBody),
+      regional: sec('set-regional', '区域事件', regionalBody),
+      dice: sec('set-dice', '事件骰子', diceBody),
+      winddecay: sec('set-winddecay', '风声消散', winddecayBody),
+      retention: sec('set-retention', '保留上限', retentionBody),
       filter: sec('set-filter', '输入输出过滤器', filterBody),
       display: sec('set-display', '界面显示', displayBody),
       chatcache: sec('set-chatcache', '酒馆缓存与存档', chatcacheBody),
@@ -3151,6 +3185,7 @@ window.WORLD_ENGINE_UI = (function() {
           localTerminalLevelKeepRounds: Math.max(0, parseInt(gv('we-local-terminal-level')) || 0),
           localInfluenceKeepRounds: Math.max(1, parseInt(gv('we-local-influence-keep')) || 8),
           localEnemyTerminalKeepRounds: Math.max(1, parseInt(gv('we-local-enemy-keep')) || 20),
+          localLedgerKeepRounds: Math.max(1, parseInt(gv('we-local-ledger-keep')) || 20),
           localCapEvents: Math.max(1, parseInt(gv('we-local-cap-events')) || 16),
           localCapFactions: Math.max(1, parseInt(gv('we-local-cap-factions')) || 15),
           localCapWinds: Math.max(1, parseInt(gv('we-local-cap-winds')) || 12),
