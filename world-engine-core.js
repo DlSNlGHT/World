@@ -19,6 +19,15 @@ window.WORLD_ENGINE_CORE = (function() {
     progress: ['已完成', '已失败']
   };
 
+  function getSettings() {
+    return window.WORLD_ENGINE_API && window.WORLD_ENGINE_API.getSettings ? window.WORLD_ENGINE_API.getSettings() : {};
+  }
+
+  function capSetting(key, fallback) {
+    const n = Number(getSettings()[key]);
+    return Math.max(1, Math.round(Number.isFinite(n) ? n : fallback));
+  }
+
   function getDefaultState() {
     return {
       round: 0,
@@ -249,7 +258,7 @@ window.WORLD_ENGINE_CORE = (function() {
     }
     state.worldTrends = state.worldTrends || [];
     ensureEntityIds(state.worldTrends, ENTITY_ID_PREFIXES.worldTrends);
-    if (state.worldTrends.length > 4) state.worldTrends.length = 4;
+    if (state.worldTrends.length > capSetting('localCapWorldTrends', 4)) state.worldTrends.length = capSetting('localCapWorldTrends', 4);
     state.winds = state.winds || [];
     ensureEntityIds(state.winds, ENTITY_ID_PREFIXES.winds);
     state.winds = state.winds.map((wind, index) => {
@@ -635,7 +644,7 @@ window.WORLD_ENGINE_CORE = (function() {
       assignEntityId(state.events, event, ENTITY_ID_PREFIXES.events);
       state.events.unshift(event);
     }
-    if (state.events.length > 16) state.events.pop();
+    if (state.events.length > capSetting('localCapEvents', 16)) state.events.length = capSetting('localCapEvents', 16);
     saveState(state);
   }
 
@@ -662,7 +671,7 @@ window.WORLD_ENGINE_CORE = (function() {
       assignEntityId(state.factions, faction, ENTITY_ID_PREFIXES.factions);
       state.factions.unshift(faction);
     }
-    if (state.factions.length > 15) state.factions.pop();
+    if (state.factions.length > capSetting('localCapFactions', 15)) state.factions.length = capSetting('localCapFactions', 15);
     saveState(state);
   }
 
@@ -682,7 +691,7 @@ window.WORLD_ENGINE_CORE = (function() {
     } else {
       assignEntityId(state.worldTrends, trend, ENTITY_ID_PREFIXES.worldTrends);
       state.worldTrends.unshift(trend);
-      if (state.worldTrends.length > 4) state.worldTrends.length = 4;
+      if (state.worldTrends.length > capSetting('localCapWorldTrends', 4)) state.worldTrends.length = capSetting('localCapWorldTrends', 4);
     }
     saveState(state);
   }
@@ -705,7 +714,7 @@ window.WORLD_ENGINE_CORE = (function() {
       assignEntityId(state.winds, wind, ENTITY_ID_PREFIXES.winds);
       state.winds.unshift(wind);
     }
-    if (state.winds.length > 12) state.winds.pop();
+    if (state.winds.length > capSetting('localCapWinds', 12)) state.winds.length = capSetting('localCapWinds', 12);
     saveState(state);
   }
 
@@ -720,6 +729,7 @@ window.WORLD_ENGINE_CORE = (function() {
       assignEntityId(state.enemies, enemy, ENTITY_ID_PREFIXES.enemies);
       state.enemies.unshift(enemy);
     }
+    if (state.enemies.length > capSetting('localCapEnemies', 8)) state.enemies.length = capSetting('localCapEnemies', 8);
     return enemy.id;
   }
 

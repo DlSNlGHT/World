@@ -27,6 +27,48 @@ window.WORLD_ENGINE_EVOLUTION = (function() {
     sentiment: { base: 8, grace: 5, linear: 2, quadratic: 1 }
   };
 
+  function localSettings() {
+    return api && api.getSettings ? api.getSettings() : {};
+  }
+
+  function numSetting(key, fallback, min, max) {
+    const n = Number(localSettings()[key]);
+    let v = Number.isFinite(n) ? n : fallback;
+    if (min !== undefined) v = Math.max(min, v);
+    if (max !== undefined) v = Math.min(max, v);
+    return v;
+  }
+
+  function intSetting(key, fallback, min, max) {
+    return Math.round(numSetting(key, fallback, min, max));
+  }
+
+  function capSetting(key, fallback) {
+    return intSetting(key, fallback, 1);
+  }
+
+  function windDecayParams(type) {
+    const defaults = WIND_DECAY[type] || WIND_DECAY.rumor;
+    const prefix = {
+      announcement: 'localWindAnnouncement',
+      report: 'localWindReport',
+      rumor: 'localWindRumor',
+      sentiment: 'localWindSentiment'
+    }[type] || 'localWindRumor';
+    return {
+      base: numSetting(prefix + 'Base', defaults.base, 0, 95),
+      grace: intSetting(prefix + 'Grace', defaults.grace, 0),
+      linear: numSetting(prefix + 'Linear', defaults.linear, 0),
+      quadratic: numSetting(prefix + 'Quadratic', defaults.quadratic, 0)
+    };
+  }
+
+  function positiveTerminalKeepRounds(event) {
+    const base = intSetting('localTerminalBaseKeepRounds', 2, 0);
+    const perLevel = intSetting('localTerminalLevelKeepRounds', 2, 0);
+    return base + (event.level || 1) * perLevel;
+  }
+
   let _lastPrompt = '';
   let _lastRawResult = '';
   // [MAP] 推演 prompt 分段（全透明展示用，只读）。与实际发出的 prompt 字节级一致：
@@ -188,7 +230,7 @@ type：${picked.type}
         incident.scope = '';
         incident.impact = '';
         incident.duration = 0;
-        incident.cooldown = REGIONAL_INCIDENT_CONFIG.cooldownRounds;
+        incident.cooldown = intSetting('localRegionalIncidentCooldown', REGIONAL_INCIDENT_CONFIG.cooldownRounds, 0);
         incident._retry = false;
         incident._retryType = '';
         console.log('[世界引擎] 区域突发事件已消散（持续期满）:', title);
@@ -210,7 +252,7 @@ type：${picked.type}
     }
 
     const dice = randomFn();
-    const chance = REGIONAL_INCIDENT_CONFIG.chance;
+    const chance = numSetting('localRegionalIncidentChancePercent', REGIONAL_INCIDENT_CONFIG.chance * 100, 0, 100) / 100;
 
     // 确定是否需要触发
     let triggerNow = false;
@@ -246,7 +288,7 @@ type：${picked.type}
 
     incident.active = true;
     incident.type = triggerType;
-    incident.duration = REGIONAL_INCIDENT_CONFIG.durationRounds; // 持续轮数，冷却在消散后才开始
+    incident.duration = intSetting('localRegionalIncidentDuration', REGIONAL_INCIDENT_CONFIG.durationRounds, 1); // 持续轮数，冷却在消散后才开始
     incident.cooldown = 0;
 
     return {
@@ -283,7 +325,7 @@ type：${picked.type}
     }
 
     // 新触发首轮（尚无标题）：合并 API 返回的事件内容
-    const duration = incident.duration || REGIONAL_INCIDENT_CONFIG.durationRounds;
+    const duration = incident.duration || intSetting('localRegionalIncidentDuration', REGIONAL_INCIDENT_CONFIG.durationRounds, 1);
     if (update.regionalIncident && update.regionalIncident.active) {
       state.regionalIncident = {
         active: true,
@@ -352,7 +394,7 @@ type：${picked.type}
       const stageBase = (EVENT_STAGE_BASE[ev.type] || EVENT_STAGE_BASE.conflict)[ev.stage] || 85;
       const level = ev.level || 1;
       const levelAdjust = ev.type === 'progress' ? (level - 1) * 10 : -((level - 1) * 10);
-      const threshold = Math.round(stageBase - 200 * r * (1 - r) + levelAdjust);
+      const threshold = Math.round(stageBase - 200 * r * (1 - r) + levelAdjust - numSetting('localEventDiceModifier', 0, -100, 100));
       const dice = Math.floor(Math.random() * 100) + 1;
 
       if (dice > threshold) {
@@ -362,7 +404,7 @@ type：${picked.type}
         ev.evolveResult = '成功';
         anyTriggered = true;
         if (ev.stage === EVENT_FINAL_STAGE.conflict) logEruption(state, ev);
-      } else if (dice < threshold * 0.4) {
+      } else if (dice < threshold * (numSetting('localEventSetbackRatioPercent', 40, 0, 100) / 100)) {
         // 受挫：倒退
         ev.stageRound = Math.max(1, ev.stageRound - 1);
         ev.consecutiveFails++;
@@ -379,7 +421,9 @@ type：${picked.type}
 
   function getMaxFails(ev) {
     const level = ev.level || 1;
-    return ev.type === 'progress' ? 2 + level : 6 - level;
+    const progressBase = intSetting('localProgressFailBase', 2, 0);
+    const conflictBase = intSetting('localConflictFailBase', 6, 1);
+    return ev.type === 'progress' ? progressBase + level : Math.max(1, conflictBase - level);
   }
 
   function advanceStageRound(ev) {
@@ -411,7 +455,7 @@ type：${picked.type}
     const decayed = [];
 
     for (const wind of state.winds || []) {
-      const params = WIND_DECAY[wind.type] || WIND_DECAY.rumor;
+      const params = windDecayParams(wind.type);
       const level = Math.min(4, Math.max(1, parseInt(wind.level) || 1));
       wind.quietRounds = Math.max(0, parseInt(wind.quietRounds) || 0) + 1;
 
@@ -905,11 +949,11 @@ events 只记录仍未闭合、需要跨未来轮次持续判断其推进、受�
         state.enemies = (state.enemies || []).filter(en => {
           if (en.status === '已终结') {
             en._terminalSince = en._terminalSince || state.round;
-            return (state.round - en._terminalSince) < 20;
+            return (state.round - en._terminalSince) < intSetting('localEnemyTerminalKeepRounds', 20, 1);
           }
           return true;
         });
-        if (state.enemies.length > 8) state.enemies.length = 8;
+        if (state.enemies.length > capSetting('localCapEnemies', 8)) state.enemies.length = capSetting('localCapEnemies', 8);
       }
 
       // 影响链
@@ -927,15 +971,16 @@ events 只记录仍未闭合、需要跨未来轮次持续判断其推进、受�
             state.influenceChain.unshift(influence);
           }
         }
-        if (state.influenceChain.length > 12) state.influenceChain.length = 12;
+        if (state.influenceChain.length > capSetting('localCapInfluence', 12)) state.influenceChain.length = capSetting('localCapInfluence', 12);
       }
 
-      // Influence entries expire after 8 rounds; updates to the same trigger do not renew them.
+      // Influence entries expire after the configured number of rounds; updates to the same trigger do not renew them.
       const completedRound = state.round + 1;
+      const influenceKeepRounds = intSetting('localInfluenceKeepRounds', 8, 1);
       const cleanedInfluence = (state.influenceChain || []).filter(influence => {
         if (!influence || typeof influence !== 'object') return false;
         if (influence._createdRound === undefined) influence._createdRound = state.round;
-        return (completedRound - influence._createdRound) < 8;
+        return (completedRound - influence._createdRound) < influenceKeepRounds;
       });
       if (cleanedInfluence.length !== (state.influenceChain || []).length) {
         console.log('[World Engine] auto-removed influence entries:', (state.influenceChain || [])
@@ -946,8 +991,8 @@ events 只记录仍未闭合、需要跨未来轮次持续判断其推进、受�
       state.influenceChain = cleanedInfluence;
 
       // economy signals 上限
-      if (state.economy && state.economy.signals && state.economy.signals.length > 8) {
-        state.economy.signals.length = 8;
+      if (state.economy && state.economy.signals && state.economy.signals.length > capSetting('localCapEconomySignals', 8)) {
+        state.economy.signals.length = capSetting('localCapEconomySignals', 8);
       }
 
       // 区域突发事件合并
@@ -956,8 +1001,9 @@ events 只记录仍未闭合、需要跨未来轮次持续判断其推进、受�
       if (update.blackbox) {
         state.blackbox = update.blackbox;
         const totalBlackbox = (state.blackbox.secretActions?.length || 0) + (state.blackbox.secretAssets?.length || 0);
-        if (totalBlackbox > 12) {
-          const excess = totalBlackbox - 12;
+        const blackboxCap = capSetting('localCapBlackbox', 12);
+        if (totalBlackbox > blackboxCap) {
+          const excess = totalBlackbox - blackboxCap;
           const actions = state.blackbox.secretActions || [];
           const assets = state.blackbox.secretAssets || [];
           if (actions.length > excess) {
@@ -978,7 +1024,7 @@ events 只记录仍未闭合、需要跨未来轮次持续判断其推进、受�
         if (e.stage === '已消散' || e.stage === '已失败') return false;
         if (POSITIVE_TERMINALS.includes(e.stage)) {
           if (e._terminalSince === undefined) e._terminalSince = state.round;
-          const keepRounds = 2 + (e.level || 1) * 2;
+          const keepRounds = positiveTerminalKeepRounds(e);
           return (state.round - e._terminalSince) < keepRounds;
         }
         // 非终局：清掉可能残留的倒计时标记（被 API 改回非终局阶段时）

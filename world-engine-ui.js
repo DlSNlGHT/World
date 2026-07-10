@@ -238,6 +238,28 @@ window.WORLD_ENGINE_UI = (function() {
    * 世界稳定度（纯 UI 现算，只读，不写存档/不进 prompt/不返 API）
    * 稳定度 = clamp(100 - 世界压力, 0, 100)
    */
+  function localSettingNumber(key, fallback, min, max) {
+    const settings = window.WORLD_ENGINE_API && window.WORLD_ENGINE_API.getSettings ? window.WORLD_ENGINE_API.getSettings() : {};
+    const n = Number(settings[key]);
+    let v = Number.isFinite(n) ? n : fallback;
+    if (min !== undefined) v = Math.max(min, v);
+    if (max !== undefined) v = Math.min(max, v);
+    return v;
+  }
+
+  function localTerminalKeepRounds(event) {
+    const base = Math.round(localSettingNumber('localTerminalBaseKeepRounds', 2, 0));
+    const perLevel = Math.round(localSettingNumber('localTerminalLevelKeepRounds', 2, 0));
+    return Math.max(1, base + (Number(event && event.level) || 1) * perLevel);
+  }
+
+  function localEventMaxFails(event) {
+    const level = Number(event && event.level) || 1;
+    const progressBase = Math.round(localSettingNumber('localProgressFailBase', 2, 0));
+    const conflictBase = Math.round(localSettingNumber('localConflictFailBase', 6, 1));
+    return event && event.type === 'progress' ? progressBase + level : Math.max(1, conflictBase - level);
+  }
+
   function computeWorldStability(state) {
     state = state || {};
     const round = Number(state.round) || 0;
@@ -252,7 +274,7 @@ window.WORLD_ENGINE_UI = (function() {
       if (level < 3) continue;
       const isProgress = e.type === 'progress';
       const base = isProgress ? PROGRESS_BASE : CONFLICT_BASE;
-      const keepTotal = 2 + level * 2;
+      const keepTotal = localTerminalKeepRounds(e);
       const remainFactor = () => {
         if (e._terminalSince === undefined) return 1;
         return clamp((keepTotal - (round - e._terminalSince)) / keepTotal, 0, 1);
@@ -484,6 +506,7 @@ window.WORLD_ENGINE_UI = (function() {
   const SETTINGS_TABS = [
     { key: 'common',    label: '常用' },
     { key: 'advanced',  label: '高级' },
+    { key: 'mechanics', label: '本地机制' },
     { key: 'archive',   label: '存档' },
     { key: 'worldbook', label: '世界书' },
     { key: 'debug',     label: '调试' },
@@ -521,6 +544,7 @@ window.WORLD_ENGINE_UI = (function() {
     const panelContent = {
       common:    form.api + form.evolve + form.inject,
       advanced:  form.backfill + form.filter + form.display + extra.tone,
+      mechanics: form.mechanics,
       archive:   form.chatcache + extra.data + checkpointSection,
       worldbook: extra.worldbook,
       debug:     debugSection,
@@ -749,7 +773,7 @@ window.WORLD_ENGINE_UI = (function() {
       const terminalStages = e.type === 'progress' ? ['已完成', '已失败'] : ['已爆发', '已消散'];
       const isTerminal = terminalStages.includes(e.stage);
       if (e.consecutiveFails > 0 && !isTerminal) {
-        const maxFails = e.type === 'progress' ? 2 + (e.level || 1) : 6 - (e.level || 1);
+        const maxFails = localEventMaxFails(e);
         extras += ` <span class="we-badge" style="background:#6662;color:#888;">${e.consecutiveFails}/${maxFails}</span>`;
       }
       if (e.stall && !isTerminal) {
@@ -782,7 +806,7 @@ window.WORLD_ENGINE_UI = (function() {
       let countdownHtml = '';
       const POSITIVE_TERMINALS = ['已爆发', '已完成'];
       if (POSITIVE_TERMINALS.includes(e.stage) && e._terminalSince !== undefined) {
-        const keepRounds = 2 + (e.level || 1) * 2;
+        const keepRounds = localTerminalKeepRounds(e);
         const left = keepRounds - (curRound - e._terminalSince) + 1;
         if (left >= 1) {
           const cdColor = e.stage === '已完成' ? '#58e8b3' : '#e07465';
@@ -852,7 +876,7 @@ window.WORLD_ENGINE_UI = (function() {
 
     // 正面终局倒计时：默认值取当前剩余，非终局事件留空
     const POSITIVE_TERMINALS = ['已爆发', '已完成'];
-    const keepRounds = 2 + (Number(event.level) || 1) * 2;
+    const keepRounds = localTerminalKeepRounds(event);
     let leftValue = '';
     if (POSITIVE_TERMINALS.includes(event.stage)) {
       const curRound = (core.loadState() || {}).round || 0;
@@ -2109,10 +2133,67 @@ window.WORLD_ENGINE_UI = (function() {
 
     // [FIX] 选项卡化：返回按 section 分好的片段字典，由 renderSettingsView 归入各选项卡。
     //   每个 sec(...) 调用、body 内容、字段 id 与原先一字不改，只是不再直接拼成一串。
+    const mech = (k, d) => { const v = settings[k]; return (v === undefined || v === null || v === '') ? d : v; };
+    const numInput = (id, key, label, d, min, step) =>
+      '<div class="we-input-group" style="flex:1;min-width:112px;margin-bottom:0;"><label>' + label + '</label>'
+      + '<input type="number" id="' + id + '" min="' + min + '" step="' + step + '" value="' + mech(key, d) + '"></div>';
+    const mechanicsBody = `
+      <div style="font-size:11px;color:var(--we-text3);margin-bottom:8px;">这些数值只控制本地判定与清理。默认值等同旧版硬编码；调得太激进时，世界会明显更躁动。</div>
+      <div class="we-input-group">
+        <label>区域突发事件</label>
+        <div style="display:flex;gap:6px;flex-wrap:wrap;">
+          ${numInput('we-local-ri-chance', 'localRegionalIncidentChancePercent', '触发概率 %', 3, 0, '0.1')}
+          ${numInput('we-local-ri-duration', 'localRegionalIncidentDuration', '持续轮数', 5, 1, '1')}
+          ${numInput('we-local-ri-cooldown', 'localRegionalIncidentCooldown', '消散后冷却', 5, 0, '1')}
+        </div>
+      </div>
+      <div class="we-input-group">
+        <label>事件链骰子</label>
+        <div style="display:flex;gap:6px;flex-wrap:wrap;">
+          ${numInput('we-local-dice-mod', 'localEventDiceModifier', '推进修正', 0, -100, '1')}
+          ${numInput('we-local-setback-ratio', 'localEventSetbackRatioPercent', '受挫阈值 %', 40, 0, '1')}
+          ${numInput('we-local-progress-fail-base', 'localProgressFailBase', '进展保底基数', 2, 0, '1')}
+          ${numInput('we-local-conflict-fail-base', 'localConflictFailBase', '冲突保底基数', 6, 1, '1')}
+        </div>
+        <div style="font-size:11px;color:var(--we-text3);margin-top:3px;">推进修正为正数时更容易推进，为负数时更容易卡住。受挫阈值越高，低骰导致倒退的范围越大。</div>
+      </div>
+      <div class="we-input-group">
+        <label>风声消散曲线</label>
+        <div style="font-size:11px;color:var(--we-text3);margin-bottom:6px;">base=基础消散率，grace=免检轮数，linear/quadratic=沉寂越久增长越快；风声等级越高越抗消散。</div>
+        ${['Announcement:公告:10:4:3:1','Report:报道:20:2:4:2','Rumor:谣言:25:1:5:3','Sentiment:民意:8:5:2:1'].map(row => {
+          const p = row.split(':');
+          return '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:6px;">'
+            + '<div style="width:42px;color:var(--we-text2);font-size:12px;align-self:center;">' + p[1] + '</div>'
+            + numInput('we-local-wind-' + p[0].toLowerCase() + '-base', 'localWind' + p[0] + 'Base', 'base', p[2], 0, '1')
+            + numInput('we-local-wind-' + p[0].toLowerCase() + '-grace', 'localWind' + p[0] + 'Grace', 'grace', p[3], 0, '1')
+            + numInput('we-local-wind-' + p[0].toLowerCase() + '-linear', 'localWind' + p[0] + 'Linear', 'linear', p[4], 0, '1')
+            + numInput('we-local-wind-' + p[0].toLowerCase() + '-quadratic', 'localWind' + p[0] + 'Quadratic', 'quadratic', p[5], 0, '1')
+            + '</div>';
+        }).join('')}
+      </div>
+      <div class="we-input-group">
+        <label>保留轮数与容量上限</label>
+        <div style="display:flex;gap:6px;flex-wrap:wrap;">
+          ${numInput('we-local-terminal-base', 'localTerminalBaseKeepRounds', '终局基础保留', 2, 0, '1')}
+          ${numInput('we-local-terminal-level', 'localTerminalLevelKeepRounds', '每级额外保留', 2, 0, '1')}
+          ${numInput('we-local-influence-keep', 'localInfluenceKeepRounds', '影响链保留', 8, 1, '1')}
+          ${numInput('we-local-enemy-keep', 'localEnemyTerminalKeepRounds', '已终结仇敌保留', 20, 1, '1')}
+          ${numInput('we-local-cap-events', 'localCapEvents', '事件上限', 16, 1, '1')}
+          ${numInput('we-local-cap-factions', 'localCapFactions', '势力上限', 15, 1, '1')}
+          ${numInput('we-local-cap-winds', 'localCapWinds', '风声上限', 12, 1, '1')}
+          ${numInput('we-local-cap-trends', 'localCapWorldTrends', '大势上限', 4, 1, '1')}
+          ${numInput('we-local-cap-influence', 'localCapInfluence', '影响链上限', 12, 1, '1')}
+          ${numInput('we-local-cap-enemies', 'localCapEnemies', '仇敌上限', 8, 1, '1')}
+          ${numInput('we-local-cap-econ', 'localCapEconomySignals', '经济信号上限', 8, 1, '1')}
+          ${numInput('we-local-cap-blackbox', 'localCapBlackbox', '黑盒总上限', 12, 1, '1')}
+        </div>
+      </div>`;
+
     return {
       api: sec('set-api', 'API 配置', apiBody),
       evolve: sec('set-evolve', '推演模式', evolveBody),
       backfill: sec('set-backfill', '批量重填世界推演', backfillBody),
+      mechanics: sec('set-mechanics', '本地机制', mechanicsBody),
       filter: sec('set-filter', '输入输出过滤器', filterBody),
       display: sec('set-display', '界面显示', displayBody),
       chatcache: sec('set-chatcache', '酒馆缓存与存档', chatcacheBody),
@@ -2255,7 +2336,7 @@ window.WORLD_ENGINE_UI = (function() {
         // 剩余轮数 → 反推 _terminalSince（仅正面终局）
         const POSITIVE_TERMINALS = ['已爆发', '已完成'];
         if (POSITIVE_TERMINALS.includes(event.stage)) {
-          const K = 2 + (event.level || 1) * 2;
+          const K = localTerminalKeepRounds(event);
           const curRound = scopedState.round || 0;
           let left = Number(editor.querySelector('.we-event-edit-left').value);
           left = Number.isFinite(left) && left >= 1 ? Math.min(K, left) : K;
@@ -3058,7 +3139,42 @@ window.WORLD_ENGINE_UI = (function() {
           evolveTimeMul2: parseFloat(gv('we-time-mul2')) || 0,
           evolveTimeMul3: parseFloat(gv('we-time-mul3')) || 0,
           evolveTimeThreshold: Math.max(1, parseInt(gv('we-time-threshold')) || 1),
-          evolveTimeMaxRounds: Math.max(1, parseInt(gv('we-time-maxrounds')) || 10)
+          evolveTimeMaxRounds: Math.max(1, parseInt(gv('we-time-maxrounds')) || 10),
+          localRegionalIncidentChancePercent: Math.min(100, Math.max(0, parseFloat(gv('we-local-ri-chance')) || 0)),
+          localRegionalIncidentDuration: Math.max(1, parseInt(gv('we-local-ri-duration')) || 5),
+          localRegionalIncidentCooldown: Math.max(0, parseInt(gv('we-local-ri-cooldown')) || 0),
+          localEventDiceModifier: Math.min(100, Math.max(-100, parseInt(gv('we-local-dice-mod')) || 0)),
+          localEventSetbackRatioPercent: Math.min(100, Math.max(0, parseFloat(gv('we-local-setback-ratio')) || 0)),
+          localProgressFailBase: Math.max(0, parseInt(gv('we-local-progress-fail-base')) || 0),
+          localConflictFailBase: Math.max(1, parseInt(gv('we-local-conflict-fail-base')) || 6),
+          localTerminalBaseKeepRounds: Math.max(0, parseInt(gv('we-local-terminal-base')) || 0),
+          localTerminalLevelKeepRounds: Math.max(0, parseInt(gv('we-local-terminal-level')) || 0),
+          localInfluenceKeepRounds: Math.max(1, parseInt(gv('we-local-influence-keep')) || 8),
+          localEnemyTerminalKeepRounds: Math.max(1, parseInt(gv('we-local-enemy-keep')) || 20),
+          localCapEvents: Math.max(1, parseInt(gv('we-local-cap-events')) || 16),
+          localCapFactions: Math.max(1, parseInt(gv('we-local-cap-factions')) || 15),
+          localCapWinds: Math.max(1, parseInt(gv('we-local-cap-winds')) || 12),
+          localCapWorldTrends: Math.max(1, parseInt(gv('we-local-cap-trends')) || 4),
+          localCapInfluence: Math.max(1, parseInt(gv('we-local-cap-influence')) || 12),
+          localCapEnemies: Math.max(1, parseInt(gv('we-local-cap-enemies')) || 8),
+          localCapEconomySignals: Math.max(1, parseInt(gv('we-local-cap-econ')) || 8),
+          localCapBlackbox: Math.max(1, parseInt(gv('we-local-cap-blackbox')) || 12),
+          localWindAnnouncementBase: Math.min(95, Math.max(0, parseFloat(gv('we-local-wind-announcement-base')) || 0)),
+          localWindAnnouncementGrace: Math.max(0, parseInt(gv('we-local-wind-announcement-grace')) || 0),
+          localWindAnnouncementLinear: Math.max(0, parseFloat(gv('we-local-wind-announcement-linear')) || 0),
+          localWindAnnouncementQuadratic: Math.max(0, parseFloat(gv('we-local-wind-announcement-quadratic')) || 0),
+          localWindReportBase: Math.min(95, Math.max(0, parseFloat(gv('we-local-wind-report-base')) || 0)),
+          localWindReportGrace: Math.max(0, parseInt(gv('we-local-wind-report-grace')) || 0),
+          localWindReportLinear: Math.max(0, parseFloat(gv('we-local-wind-report-linear')) || 0),
+          localWindReportQuadratic: Math.max(0, parseFloat(gv('we-local-wind-report-quadratic')) || 0),
+          localWindRumorBase: Math.min(95, Math.max(0, parseFloat(gv('we-local-wind-rumor-base')) || 0)),
+          localWindRumorGrace: Math.max(0, parseInt(gv('we-local-wind-rumor-grace')) || 0),
+          localWindRumorLinear: Math.max(0, parseFloat(gv('we-local-wind-rumor-linear')) || 0),
+          localWindRumorQuadratic: Math.max(0, parseFloat(gv('we-local-wind-rumor-quadratic')) || 0),
+          localWindSentimentBase: Math.min(95, Math.max(0, parseFloat(gv('we-local-wind-sentiment-base')) || 0)),
+          localWindSentimentGrace: Math.max(0, parseInt(gv('we-local-wind-sentiment-grace')) || 0),
+          localWindSentimentLinear: Math.max(0, parseFloat(gv('we-local-wind-sentiment-linear')) || 0),
+          localWindSentimentQuadratic: Math.max(0, parseFloat(gv('we-local-wind-sentiment-quadratic')) || 0)
         };
         // a 不得超过 X（每次推演的轮数）
         ns.evolveReadRounds = Math.min(ns.evolveReadRounds, ns.evolveEveryX);
