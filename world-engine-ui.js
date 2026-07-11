@@ -30,6 +30,89 @@ window.WORLD_ENGINE_UI = (function() {
   let _wbCachedChatId = null;
   let _wbScrollTop = 0;
 
+  // 六套纯 CSS 变量主题。写在 <html> 上，面板、悬浮球和顶部状态条同步换色。
+  const WE_THEME_KEY = 'we-theme';
+  const WE_THEMES = [
+    { id: 'default', name: '墨玉 · 默认' },
+    { id: 'night', name: '夜阑 · 近黑' },
+    { id: 'deepsea', name: '深海 · 幽蓝' },
+    { id: 'plum', name: '夜合 · 暗紫' },
+    { id: 'paper', name: '云白 · 清爽' },
+    { id: 'sakura', name: '早樱 · 浅粉' }
+  ];
+  const MECHANICS_DEFAULT_FIELDS = {
+    regional: {
+      'we-local-ri-chance': 3,
+      'we-local-ri-duration': 5,
+      'we-local-ri-cooldown': 5
+    },
+    dice: {
+      'we-local-dice-mod': 0,
+      'we-local-setback-ratio': 40,
+      'we-local-progress-fail-base': 2,
+      'we-local-conflict-fail-base': 6
+    },
+    winddecay: {
+      'we-local-wind-rumor-base': 25,
+      'we-local-wind-rumor-grace': 1,
+      'we-local-wind-rumor-linear': 5,
+      'we-local-wind-rumor-quadratic': 3,
+      'we-local-wind-sentiment-base': 8,
+      'we-local-wind-sentiment-grace': 5,
+      'we-local-wind-sentiment-linear': 2,
+      'we-local-wind-sentiment-quadratic': 1,
+      'we-local-wind-report-base': 20,
+      'we-local-wind-report-grace': 2,
+      'we-local-wind-report-linear': 4,
+      'we-local-wind-report-quadratic': 2,
+      'we-local-wind-announcement-base': 10,
+      'we-local-wind-announcement-grace': 4,
+      'we-local-wind-announcement-linear': 3,
+      'we-local-wind-announcement-quadratic': 1
+    },
+    retention: {
+      'we-local-terminal-base': 2,
+      'we-local-terminal-level': 2,
+      'we-local-influence-keep': 8,
+      'we-local-enemy-keep': 20,
+      'we-local-ledger-keep': 20,
+      'we-local-cap-events': 16,
+      'we-local-cap-factions': 15,
+      'we-local-cap-winds': 12,
+      'we-local-cap-trends': 4,
+      'we-local-cap-influence': 12,
+      'we-local-cap-enemies': 8,
+      'we-local-cap-econ': 8,
+      'we-local-cap-blackbox': 12
+    }
+  };
+
+  function normalizeTheme(id) {
+    return WE_THEMES.some(theme => theme.id === id) ? id : 'default';
+  }
+
+  function getStoredTheme() {
+    try { return normalizeTheme(localStorage.getItem(WE_THEME_KEY) || 'default'); }
+    catch (e) { return 'default'; }
+  }
+
+  function applyTheme(id) {
+    const theme = normalizeTheme(id);
+    const root = document.documentElement;
+    if (!root) return;
+    if (theme === 'default') root.removeAttribute('data-we-theme');
+    else root.setAttribute('data-we-theme', theme);
+  }
+
+  function setTheme(id) {
+    const theme = normalizeTheme(id);
+    applyTheme(theme);
+    try { localStorage.setItem(WE_THEME_KEY, theme); } catch (e) {}
+  }
+
+  // 模块加载时立即恢复主题，避免面板和悬浮球先闪默认色。
+  applyTheme(getStoredTheme());
+
   function h(str) {
     if (!str) return '';
     return String(str).replace(/[&<>"']/g, m => ({
@@ -2083,7 +2166,16 @@ window.WORLD_ENGINE_UI = (function() {
       </div>`;
 
     const displayMode = settings.displayMode === 'expand' ? 'expand' : 'mask';
+    const currentTheme = getStoredTheme();
+    const themeOptions = WE_THEMES.map(theme =>
+      `<option value="${theme.id}" ${theme.id === currentTheme ? 'selected' : ''}>${theme.name}</option>`
+    ).join('');
     const displayBody = `
+      <div class="we-input-group">
+        <label>主题配色</label>
+        <select id="we-theme-select" style="width:100%;">${themeOptions}</select>
+        <div style="font-size:11px;color:var(--we-text3);margin-top:3px;">即时应用并自动记忆。深色：墨玉、夜阑、深海、夜合；浅色：云白、早樱。</div>
+      </div>
       <div class="we-input-group">
         <label>主页显示模式</label>
         <select id="we-display-mode" style="width:100%;">
@@ -2145,7 +2237,12 @@ window.WORLD_ENGINE_UI = (function() {
     const wideNumInput = (id, key, label, d, min, step) =>
       '<div class="we-input-group" style="width:100%;margin-bottom:0;"><label>' + label + '</label>'
       + '<input type="number" id="' + id + '" min="' + min + '" step="' + step + '" value="' + mech(key, d) + '"></div>';
+    const mechanicsResetButton = (group) =>
+      '<div style="display:flex;justify-content:flex-end;margin-bottom:8px;">'
+      + '<button class="we-btn" type="button" data-we-mechanics-reset="' + group + '"><i class="fa-solid fa-arrow-rotate-left"></i> 恢复默认</button>'
+      + '</div>';
     const regionalBody = `
+      ${mechanicsResetButton('regional')}
       <div style="font-size:12px;color:var(--we-text2);line-height:1.6;margin-bottom:10px;">
         区域突发事件是纯本地骰子：先由本地判定是否发生，再把事件类型和约束交给推演模型写成世界变化。
         概率越高，远方灾变、治安事件、交通断裂这类背景波动越频繁。
@@ -2160,6 +2257,7 @@ window.WORLD_ENGINE_UI = (function() {
       </div>`;
 
     const diceBody = `
+      ${mechanicsResetButton('dice')}
       <div style="font-size:12px;color:var(--we-text2);line-height:1.65;margin-bottom:10px;">
         每条事件链每轮掷 1d100。设阶段格数 r = 当前格数 / 9。<br>
         目标值 T = 阶段基础值 - 200 × r × (1 - r) + Lv修正 - 全局推进修正。<br>
@@ -2182,6 +2280,7 @@ window.WORLD_ENGINE_UI = (function() {
       </div>`;
 
     const winddecayBody = `
+      ${mechanicsResetButton('winddecay')}
       <div style="font-size:12px;color:var(--we-text2);line-height:1.65;margin-bottom:10px;">
         风声本轮没有被同 ID 更新时，沉寂轮数 +1。沉寂轮数 ≤ grace 时不检查消散。<br>
         超过 grace 后：n = 沉寂轮数 - grace - 1。<br>
@@ -2203,6 +2302,7 @@ window.WORLD_ENGINE_UI = (function() {
       </div>`;
 
     const retentionBody = `
+      ${mechanicsResetButton('retention')}
       <div style="font-size:12px;color:var(--we-text2);line-height:1.65;margin-bottom:10px;">
         这里控制“东西在面板里留多久”和“每类最多存多少”。<br>
         正面终局事件（已爆发 / 已完成）保留轮数 = 基础保留 + Lv × 每级额外保留。<br>
@@ -2295,6 +2395,22 @@ window.WORLD_ENGINE_UI = (function() {
   }
 
   function bindEvents(state) {
+    const themeSelect = document.getElementById('we-theme-select');
+    if (themeSelect) themeSelect.onchange = () => setTheme(themeSelect.value);
+
+    document.querySelectorAll('[data-we-mechanics-reset]').forEach(button => {
+      button.onclick = () => {
+        const group = button.dataset.weMechanicsReset;
+        const defaults = MECHANICS_DEFAULT_FIELDS[group];
+        if (!defaults) return;
+        for (const [id, value] of Object.entries(defaults)) {
+          const input = document.getElementById(id);
+          if (input) value === null ? input.value = '' : input.value = String(value);
+        }
+        showToast('已恢复本区默认值，点击“保存设置”后生效');
+      };
+    });
+
     document.querySelectorAll('.we-event-delete').forEach(button => {
       button.onclick = () => {
         const scope = button.dataset.eventScope;

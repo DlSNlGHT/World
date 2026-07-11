@@ -18,6 +18,101 @@
   --we-blue: #70a8d2;
   --we-green: #69b68e;
   --we-red: #d66f68;
+  --we-hairline: rgba(255,255,255,0.06);
+  --we-title: #d8bd82;
+  --we-ball-ocean: #163039;
+  --we-ball-land: #5a9387;
+  --we-ball-count-bg: rgba(13,24,32,0.85);
+  --we-ball-badge-border: #0d1820;
+  --we-ball-orbit: rgba(120,170,180,0.38);
+  --we-ball-orbit-active: rgba(88,184,169,0.6);
+  --we-ball-sat-start: #2a4a55;
+  --we-ball-sat-end: #14262e;
+  --we-ball-sat-hover-start: #3a6675;
+  --we-ball-sat-hover-end: #1b3640;
+  --we-ball-sat-border: rgba(229,240,237,0.22);
+  --we-ball-glow: rgba(88,184,169,0.75);
+  --we-ball-sat-glow: rgba(120,180,190,0.65);
+  --we-top-status-bg: rgba(13,24,32,0.95);
+  --we-ring-track: rgba(255,255,255,0.12);
+}
+
+/* 六套界面配色；default（墨玉）使用 :root 默认值。 */
+:root[data-we-theme="night"] {
+  --we-bg: #17181c; --we-bg2: #121317; --we-bg-hl: #2b2e36;
+  --we-card: #1c1d22; --we-surface: #262830; --we-border: rgba(255,255,255,0.16);
+  --we-text: #e8e9ec; --we-text2: #a9acb4; --we-text3: #71747c;
+  --we-accent: #8ab4f8; --we-gold: #c7a86a; --we-title: #d6dae1;
+  --we-hairline: rgba(255,255,255,0.07);
+  --we-ball-ocean: #20232a; --we-ball-land: #7e8798;
+  --we-ball-count-bg: rgba(18,19,23,0.9); --we-ball-badge-border: #101116;
+  --we-ball-orbit: rgba(169,172,180,0.38); --we-ball-orbit-active: rgba(138,180,248,0.68);
+  --we-ball-sat-start: #363943; --we-ball-sat-end: #1c1e24;
+  --we-ball-sat-hover-start: #4a5060; --we-ball-sat-hover-end: #292c35;
+  --we-ball-sat-border: rgba(232,233,236,0.24); --we-top-status-bg: rgba(18,19,23,0.96);
+  --we-ball-glow: rgba(138,180,248,0.78); --we-ball-sat-glow: rgba(138,180,248,0.66);
+}
+
+:root[data-we-theme="deepsea"] {
+  --we-bg: #0e1b2a; --we-bg2: #0a1622; --we-bg-hl: #1c3a56;
+  --we-card: #10202f; --we-surface: #163049; --we-border: rgba(90,168,210,0.32);
+  --we-text: #dce9f5; --we-text2: #9fb6cc; --we-text3: #66809a;
+  --we-accent: #4fc3dc; --we-gold: #e0b968; --we-title: #86c8e4;
+  --we-hairline: rgba(255,255,255,0.06);
+  --we-ball-ocean: #0b2941; --we-ball-land: #42a4b5;
+  --we-ball-count-bg: rgba(7,22,35,0.9); --we-ball-badge-border: #071724;
+  --we-ball-orbit: rgba(79,195,220,0.38); --we-ball-orbit-active: rgba(79,195,220,0.72);
+  --we-ball-sat-start: #245274; --we-ball-sat-end: #0c2335;
+  --we-ball-sat-hover-start: #33769c; --we-ball-sat-hover-end: #12364f;
+  --we-ball-sat-border: rgba(134,200,228,0.3); --we-top-status-bg: rgba(8,22,34,0.96);
+  --we-ball-glow: rgba(79,195,220,0.8); --we-ball-sat-glow: rgba(79,195,220,0.7);
+}
+
+:root[data-we-theme="plum"] {
+  --we-bg: #1e1526; --we-bg2: #170f1e; --we-bg-hl: #3a2450;
+  --we-card: #221829; --we-surface: #2e2140; --we-border: rgba(170,139,201,0.34);
+  --we-text: #ece3f2; --we-text2: #bda9cc; --we-text3: #8a7799;
+  --we-accent: #b98bd6; --we-gold: #d8b06a; --we-title: #d9b8f0;
+  --we-hairline: rgba(255,255,255,0.06);
+  --we-ball-ocean: #2b1838; --we-ball-land: #a56cc0;
+  --we-ball-count-bg: rgba(23,15,30,0.9); --we-ball-badge-border: #180f20;
+  --we-ball-orbit: rgba(185,139,214,0.4); --we-ball-orbit-active: rgba(185,139,214,0.72);
+  --we-ball-sat-start: #513564; --we-ball-sat-end: #25152f;
+  --we-ball-sat-hover-start: #70498a; --we-ball-sat-hover-end: #382045;
+  --we-ball-sat-border: rgba(217,184,240,0.28); --we-top-status-bg: rgba(23,15,30,0.96);
+  --we-ball-glow: rgba(185,139,214,0.8); --we-ball-sat-glow: rgba(185,139,214,0.7);
+}
+
+:root[data-we-theme="paper"] {
+  --we-bg: #f5f7f9; --we-bg2: #eceef2; --we-bg-hl: #e0e5ea;
+  --we-card: #ffffff; --we-surface: #eef1f5; --we-border: rgba(0,0,0,0.16);
+  --we-beige: #5c4f32; --we-text: #232f39; --we-text2: #55616f; --we-text3: #8792a0;
+  --we-accent: #2f8f7f; --we-gold: #a9791f; --we-title: #93671b;
+  --we-danger: #c0564f; --we-success: #3f9b6f; --we-hairline: rgba(0,0,0,0.10);
+  --we-ball-ocean: #d7e7ef; --we-ball-land: #5eaa98;
+  --we-ball-count-bg: rgba(255,255,255,0.94); --we-ball-badge-border: #e2e7eb;
+  --we-ball-orbit: rgba(47,143,127,0.38); --we-ball-orbit-active: rgba(47,143,127,0.7);
+  --we-ball-sat-start: #ffffff; --we-ball-sat-end: #dce5e8;
+  --we-ball-sat-hover-start: #ffffff; --we-ball-sat-hover-end: #c8dadd;
+  --we-ball-sat-border: rgba(35,47,57,0.22); --we-top-status-bg: rgba(255,255,255,0.96);
+  --we-ball-glow: rgba(47,143,127,0.68); --we-ball-sat-glow: rgba(47,143,127,0.58);
+  --we-ring-track: rgba(0,0,0,0.12);
+}
+
+:root[data-we-theme="sakura"] {
+  --we-bg: #fff6f9; --we-bg2: #fdedf2; --we-bg-hl: #f8dbe5;
+  --we-card: #ffffff; --we-surface: #fdeff4; --we-border: rgba(168,88,118,0.30);
+  --we-beige: #7a4c56; --we-text: #3b2a30; --we-text2: #6d5760; --we-text3: #9a818a;
+  --we-accent: #c76b8e; --we-gold: #b07a3f; --we-title: #a85876;
+  --we-danger: #c85a63; --we-success: #4f9b78; --we-hairline: rgba(0,0,0,0.09);
+  --we-ball-ocean: #f4dce8; --we-ball-land: #d7789d;
+  --we-ball-count-bg: rgba(255,246,249,0.95); --we-ball-badge-border: #f3dce5;
+  --we-ball-orbit: rgba(199,107,142,0.38); --we-ball-orbit-active: rgba(199,107,142,0.72);
+  --we-ball-sat-start: #ffffff; --we-ball-sat-end: #f2d9e3;
+  --we-ball-sat-hover-start: #ffffff; --we-ball-sat-hover-end: #ecc4d3;
+  --we-ball-sat-border: rgba(168,88,118,0.26); --we-top-status-bg: rgba(255,246,249,0.96);
+  --we-ball-glow: rgba(199,107,142,0.7); --we-ball-sat-glow: rgba(199,107,142,0.6);
+  --we-ring-track: rgba(0,0,0,0.10);
 }
 
 /* ===== 世界引擎悬浮球 ===== */
@@ -50,7 +145,7 @@
 .we-ball-globe {
   border-radius: 50%;
   overflow: hidden;
-  background: #163039;
+  background: var(--we-ball-ocean);
   box-shadow: inset 0 1px 0 rgba(255,255,255,0.10);
   border: 1px solid rgba(229,240,237,0.14);
 }
@@ -59,7 +154,7 @@
   content: "";
   position: absolute;
   inset: 0;
-  background: #5a9387;
+  background: var(--we-ball-land);
   -webkit-mask: url("worldmap.svg") 0 center / 200% 100% repeat-x;
           mask: url("worldmap.svg") 0 center / 200% 100% repeat-x;
 }
@@ -75,8 +170,8 @@
   to   { -webkit-mask-position: -200% center; mask-position: -200% center; }
 }
 @keyframes we-globe-glow {
-  0%,100% { box-shadow: 0 0 0 rgba(88,184,169,0); }
-  50%     { box-shadow: 0 0 14px 2px rgba(88,184,169,0.75); }
+  0%,100% { box-shadow: 0 0 0 transparent; }
+  50%     { box-shadow: 0 0 14px 2px var(--we-ball-glow); }
 }
 
 /* 进度环（每 X 轮推演计数） */
@@ -84,7 +179,7 @@
   inset: -4px;
   border-radius: 50%;
   --we-ring-pct: 0deg;
-  background: conic-gradient(var(--we-gold) var(--we-ring-pct), rgba(255,255,255,0.12) 0);
+  background: conic-gradient(var(--we-gold) var(--we-ring-pct), var(--we-ring-track) 0);
   -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 4px), #000 calc(100% - 3px));
           mask: radial-gradient(farthest-side, transparent calc(100% - 4px), #000 calc(100% - 3px));
   opacity: 0;
@@ -103,7 +198,7 @@
   height: 16px;
   padding: 0 4px;
   border-radius: 8px;
-  background: rgba(13,24,32,0.85);
+  background: var(--we-ball-count-bg);
   border: 1px solid var(--we-border);
   font-size: 9px;
   font-weight: 700;
@@ -131,12 +226,12 @@
 }
 #we-input-btn.we-ball-success .we-ball-badge {
   background: var(--we-success);
-  border: 1.5px solid #0d1820;
+  border: 1.5px solid var(--we-ball-badge-border);
   transform: scale(1);
 }
 #we-input-btn.we-ball-fail .we-ball-badge {
   background: var(--we-danger);
-  border: 1.5px solid #0d1820;
+  border: 1.5px solid var(--we-ball-badge-border);
   transform: scale(1);
 }
 
@@ -148,12 +243,12 @@
 #we-input-btn.we-ball > .we-ball-orbit {
   inset: -11px;
   border-radius: 50%;
-  border: 1px dashed rgba(120,170,180,0.38);
+  border: 1px dashed var(--we-ball-orbit);
   pointer-events: none;
   z-index: 1;
 }
 #we-input-btn.we-ball-evolving > .we-ball-orbit {
-  border-color: rgba(88,184,169,0.6);
+  border-color: var(--we-ball-orbit-active);
   animation: we-orbit-spin 12s linear infinite;
 }
 @keyframes we-orbit-spin { to { transform: rotate(360deg); } }
@@ -169,8 +264,8 @@
   justify-content: center;
   font-size: 9px;
   color: var(--we-text2, #cdd6dd);
-  background: radial-gradient(circle at 35% 30%, #2a4a55, #14262e);
-  border: 1px solid rgba(229,240,237,0.22);
+  background: radial-gradient(circle at 35% 30%, var(--we-ball-sat-start), var(--we-ball-sat-end));
+  border: 1px solid var(--we-ball-sat-border);
   box-shadow: 0 2px 6px rgba(8,18,24,0.5);
   pointer-events: auto;
   cursor: pointer;
@@ -178,8 +273,8 @@
   transition: background 0.15s, box-shadow 0.15s, opacity 0.15s;
 }
 #we-input-btn.we-ball > .we-sat:hover {
-  background: radial-gradient(circle at 35% 30%, #3a6675, #1b3640);
-  box-shadow: 0 0 9px rgba(120,180,190,0.65);
+  background: radial-gradient(circle at 35% 30%, var(--we-ball-sat-hover-start), var(--we-ball-sat-hover-end));
+  box-shadow: 0 0 9px var(--we-ball-sat-glow);
 }
 /* 三颗卫星中心距球心 33px（贴合球缘），正落在轨道线上。
    用 id 提高优先级，盖过 > .we-sat 的 inset:auto */
@@ -214,7 +309,7 @@
   max-width: 80vw;
   padding: 10px 22px;
   border-radius: 10px;
-  background: rgba(13,24,32,0.95);
+  background: var(--we-top-status-bg);
   border: 1px solid var(--we-border);
   color: var(--we-text, #e6edf2);
   font-size: 16px;
@@ -246,7 +341,7 @@
   width: min(420px, calc(100vw - 24px));
   height: calc(100dvh - 20px - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px));
   max-height: 900px;
-  background: #182028;
+  background: var(--we-bg);
   color: var(--we-text);
   border-radius: 14px;
   box-shadow: 0 10px 36px rgba(0,0,0,0.68), 0 0 0 1px rgba(208,170,88,0.10);
@@ -688,7 +783,7 @@
 }
 
 .we-core-stat + .we-core-stat {
-  border-left: 1px solid rgba(255,255,255,0.045);
+  border-left: 1px solid var(--we-hairline);
 }
 
 .we-core-stat-k {
@@ -1353,7 +1448,7 @@
   grid-template-columns: 34px minmax(0, 1fr);
   gap: 7px;
   padding: 3px 0;
-  border-top: 1px solid rgba(255,255,255,0.045);
+  border-top: 1px solid var(--we-hairline);
   color: var(--we-text3);
   font-size: 11px;
   line-height: 1.55;
@@ -1425,7 +1520,7 @@
 }
 
 .we-trend-name {
-  color: #d8bd82;
+  color: var(--we-title);
   font-size: 14px;
   font-weight: 800;
 }
@@ -1454,7 +1549,7 @@
   gap: 7px;
   margin-top: 5px;
   padding-top: 4px;
-  border-top: 1px solid rgba(255,255,255,0.05);
+  border-top: 1px solid var(--we-hairline);
   color: var(--we-text3);
   font-size: 10px;
 }
@@ -1636,7 +1731,7 @@
   align-items: center;
   gap: 10px;
   padding: 7px 2px;
-  border-top: 1px solid rgba(255,255,255,0.05);
+  border-top: 1px solid var(--we-hairline);
 }
 .we-rep-row:first-child { border-top: none; }
 .we-rep-dim {
@@ -1694,7 +1789,7 @@
 }
 
 .we-influence-step + .we-influence-step {
-  border-top: 1px solid rgba(255,255,255,0.05);
+  border-top: 1px solid var(--we-hairline);
 }
 
 .we-influence-label {
@@ -2256,7 +2351,7 @@
 .we-wind-rumor .we-wind-content span:last-child {
   color: var(--we-text3);
 }
-.we-wind-rumor .we-wind-field { border-top-color: rgba(255,255,255,0.03); }
+.we-wind-rumor .we-wind-field { border-top-color: var(--we-hairline); }
 .we-wind-rumor > .we-wind-header,
 .we-wind-rumor > .we-wind-field,
 .we-wind-rumor > .we-event-editor,
@@ -2430,7 +2525,7 @@
   gap: 8px;
   margin-bottom: 10px;
   padding: 12px 0 8px;
-  background: #182028;
+  background: var(--we-bg);
   border-bottom: 1px solid var(--we-border);
   box-shadow: 0 6px 10px rgba(0, 0, 0, 0.16);
 }
@@ -2575,7 +2670,7 @@
 .we-settings-save-sticky {
   position: sticky;
   bottom: 0;
-  background: #182028;
+  background: var(--we-bg);
   padding-top: 10px;
   margin-top: 4px;
   border-top: 1px solid var(--we-border);
@@ -2802,7 +2897,7 @@
 /* 未触发/冷却中：沉默收缩，不喧嚣 */
 .we-regional-incident-item:not(.we-accident-triggered) {
   background: rgba(255,255,255,0.015);
-  border: 1px solid rgba(255,255,255,0.04);
+  border: 1px solid var(--we-hairline);
   color: var(--we-text3);
 }
 
@@ -2815,7 +2910,7 @@
   color: var(--we-text2);
   padding-bottom: 7px;
   margin-bottom: 9px;
-  border-bottom: 1px solid rgba(255,255,255,0.05);
+  border-bottom: 1px solid var(--we-hairline);
 }
 
 /* 内容：宋体长卷气息，行距宽，左侧一道细青线如页边注 */
@@ -2840,7 +2935,7 @@
   align-items: start;
   background: transparent;
   border: none;
-  border-top: 1px solid rgba(255,255,255,0.042);
+  border-top: 1px solid var(--we-hairline);
   border-radius: 0;
   padding: 8px 2px;
   margin-bottom: 0;
@@ -2857,7 +2952,7 @@
   line-height: 1.65;
   text-align: right;
   padding-right: 9px;
-  border-right: 1px solid rgba(255,255,255,0.06);
+  border-right: 1px solid var(--we-hairline);
   white-space: nowrap;
   margin-bottom: 0;
 }
