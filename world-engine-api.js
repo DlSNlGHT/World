@@ -11,6 +11,7 @@ window.WORLD_ENGINE_API = (function() {
       model: 'gpt-3.5-turbo',
       temperature: 0.7,
       maxTokens: 2000,
+      apiAutoRetries: 0,
       // [FIX] 连接方式：'direct'=浏览器直连（默认，原有行为）；'proxy'=经酒馆服务端转发，绕过第三方 API 的 CORS 限制
       connectionMode: 'direct',
       injectIntoPrompt: true,

@@ -766,19 +766,44 @@ events 只记录仍未闭合、需要跨未来轮次持续判断其推进、受�
       { key: 'tone',           label: '⑪ 附加提示词（用户自定义）', content: segToneSection }
     ];
 
-    const rawResult = await api.callApi(prompt, undefined, undefined, _abortController.signal);
     _lastPrompt = prompt;
-    _lastRawResult = rawResult;
-    const update = api.parseJSON(rawResult);
-    if (!update || typeof update !== 'object' || Array.isArray(update)) {
-      throw new Error('API 返回无法解析为有效 JSON，已保留重 roll 前的当前状态');
-    }
+    _lastRawResult = '';
     const knownFields = [
       'events', 'factions', 'worldTrends', 'winds', 'economy', 'reputation',
       'world_digest', 'enemies', 'influenceChain', 'regionalIncident', 'blackbox'
     ];
-    if (!knownFields.some(field => Object.prototype.hasOwnProperty.call(update, field))) {
-      throw new Error('API 返回不包含任何世界状态字段，已保留重 roll 前的当前状态');
+    const retrySettings = api.getSettings ? api.getSettings() : {};
+    const maxRetries = Math.max(0, parseInt(retrySettings.apiAutoRetries) || 0);
+    let update = null;
+
+    for (let attempt = 0; attempt <= maxRetries; attempt++) {
+      try {
+        const rawResult = await api.callApi(prompt, undefined, undefined, _abortController.signal);
+        _lastRawResult = rawResult;
+        update = api.parseJSON(rawResult);
+        if (!update || typeof update !== 'object' || Array.isArray(update)) {
+          throw new Error('API 返回无法解析为有效 JSON，已保留重 roll 前的当前状态');
+        }
+        if (!knownFields.some(field => Object.prototype.hasOwnProperty.call(update, field))) {
+          throw new Error('API 返回不包含任何世界状态字段，已保留重 roll 前的当前状态');
+        }
+        break;
+      } catch (error) {
+        // 用户主动停止或切换聊天会触发外部 AbortController；这是唯一不重试的情况。
+        if (_abortController && _abortController.signal.aborted) throw error;
+
+        if (attempt >= maxRetries) {
+          if (maxRetries > 0 && error && error.message) {
+            error.message += `（已自动重试 ${maxRetries} 次）`;
+          }
+          throw error;
+        }
+
+        console.warn(`[世界引擎] API 调用或返回异常，自动重试 ${attempt + 1}/${maxRetries}:`, error && error.message ? error.message : error);
+        if (window.__WE_SetExternalStatus) {
+          window.__WE_SetExternalStatus(`API 异常，自动重试 ${attempt + 1}/${maxRetries}`);
+        }
+      }
     }
     console.log('[世界引擎] API JSON 解析成功，世界摘要:', update.world_digest || '[未返回]');
 

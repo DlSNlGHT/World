@@ -627,7 +627,7 @@ window.WORLD_ENGINE_UI = (function() {
     // 各选项卡承载的片段（每个 section 恰好出现一次，零重复）
     const panelContent = {
       common:    form.api + form.evolve + form.inject,
-      advanced:  form.backfill + form.filter + form.display + extra.tone,
+      advanced:  form.retry + form.backfill + form.filter + form.display + extra.tone,
       mechanics: form.mechanics,
       archive:   form.chatcache + extra.data + checkpointSection,
       worldbook: extra.worldbook,
@@ -2006,6 +2006,7 @@ window.WORLD_ENGINE_UI = (function() {
     const tv = (k, d) => (settings[k] != null && settings[k] !== '') ? settings[k] : d;
     const apiTemperature = Number.isFinite(Number(settings.temperature)) ? Math.max(0, Number(settings.temperature)) : 0.7;
     const apiMaxTokens = Math.max(1, parseInt(settings.maxTokens) || 2000);
+    const apiAutoRetries = Math.max(0, parseInt(settings.apiAutoRetries) || 0);
     const apiTimeoutMs = Number.isFinite(Number(settings.apiTimeoutMs)) ? Number(settings.apiTimeoutMs) : 120000;
     const apiTimeoutSec = Math.max(0, Math.round(apiTimeoutMs / 1000));
     const injectMaxChars = Number.isFinite(Number(settings.injectMaxChars)) ? Math.max(0, Math.floor(Number(settings.injectMaxChars))) : 5000;
@@ -2256,6 +2257,13 @@ window.WORLD_ENGINE_UI = (function() {
         </div>
       </div>`;
 
+    const retryBody = `
+      <div class="we-input-group">
+        <label>API 异常自动重试次数（X）</label>
+        <input type="number" id="we-api-auto-retries" min="0" step="1" value="${apiAutoRetries}" style="width:100%;">
+        <div style="font-size:11px;color:var(--we-text3);margin-top:3px;">默认 0 = 不重试。除主动停止或切换聊天造成的中止外，空返回、乱码、解析失败、HTTP 错误、超时和网络错误都会额外重试 X 次；总请求次数最多为 1 + X。</div>
+      </div>`;
+
     const diceBody = `
       ${mechanicsResetButton('dice')}
       <div style="font-size:12px;color:var(--we-text2);line-height:1.65;margin-bottom:10px;">
@@ -2336,6 +2344,7 @@ window.WORLD_ENGINE_UI = (function() {
       api: sec('set-api', 'API 配置', apiBody),
       evolve: sec('set-evolve', '推演模式', evolveBody),
       backfill: sec('set-backfill', '批量重填世界推演', backfillBody),
+      retry: sec('set-api-retry', 'API 自动重试', retryBody),
       mechanics: sec('set-regional', '区域事件', regionalBody)
         + sec('set-dice', '事件骰子', diceBody)
         + sec('set-winddecay', '风声消散', winddecayBody)
@@ -3306,6 +3315,7 @@ window.WORLD_ENGINE_UI = (function() {
           model: document.getElementById('we-model')?.value || 'gpt-3.5-turbo',
           temperature: Number.isFinite(temperatureRaw) ? Math.max(0, temperatureRaw) : 0.7,
           maxTokens: Math.max(1, parseInt(gv('we-max-tokens')) || 2000),
+          apiAutoRetries: Math.max(0, parseInt(gv('we-api-auto-retries')) || 0),
           apiTimeoutMs: Number.isFinite(timeoutSecRaw) ? Math.max(0, Math.round(timeoutSecRaw * 1000)) : 120000,
           connectionMode: document.getElementById('we-connection-mode')?.value === 'proxy' ? 'proxy' : 'direct',
           injectIntoPrompt: document.getElementById('we-inject-into-prompt')?.checked !== false,
