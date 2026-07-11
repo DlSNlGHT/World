@@ -4,72 +4,126 @@ window.WORLD_ENGINE_INJECT = (function() {
   const ledger = window.WORLD_ENGINE_LEDGER;
 
   // 声誉判词：把等级翻译成给正文模型看的人话，避免注入光秃秃的等级标签
-  const REP_DIM_NAME = { authority: '朝堂之上', common: '市井之间', shadow: '草莽之中', circuit: '同道之间' };
+  const REP_DIM_NAME = { authority: '官方与权力圈层', common: '公众与民间圈层', shadow: '非正式与地下圈层', circuit: '行业与专业圈层' };
   const REP_VERDICT = {
     authority: { // 朝堂之上 —— 守法/顺从 ↔ 挑衅/危险
-      天怒人怨: '朝堂视为眼中钉，已被通缉问罪，官面上人人喊打',
-      声名狼藉: '在官场名声极坏，被当成麻烦与危险分子，处处提防',
-      默默无闻: '朝堂无人识其名，进不了当权者的眼',
-      受人尊敬: '官面上颇有声望，被视作可用可信之人',
-      万众敬仰: '深得当权者倚重，朝堂之上一言九鼎',
+      天怒人怨: '该圈层普遍将其视为严重威胁，并可能主动采取限制或追责行动',
+      声名狼藉: '该圈层评价明显负面，对其保持警惕并倾向于限制合作',
+      默默无闻: '该圈层对其缺乏了解，尚未形成明确评价',
+      受人尊敬: '该圈层总体评价正面，愿意给予一定信任与合作机会',
+      万众敬仰: '该圈层高度认可其能力与影响力，愿意优先支持其行动',
     },
     common: { // 市井之间 —— 仁善/保护 ↔ 暴戾/威胁
-      天怒人怨: '百姓恨之入骨，提起就唾骂，避之如蛇蝎',
-      声名狼藉: '市井口碑极差，被当成祸害，街坊见了绕道走',
-      默默无闻: '街面上没什么人听过他，泯然众人',
-      受人尊敬: '百姓念其好，口碑甚佳，当他是仗义之人',
-      万众敬仰: '万民拥戴，所到之处百姓夹道，被奉若再生父母',
+      天怒人怨: '公众评价极度负面，普遍回避、抵制或公开反对其行动',
+      声名狼藉: '公众评价明显负面，对其缺乏信任并倾向保持距离',
+      默默无闻: '公众对其缺乏了解，尚未形成广泛评价',
+      受人尊敬: '公众评价总体正面，对其行为与承诺具有一定信任',
+      万众敬仰: '公众评价高度正面，具有广泛认同与较强号召力',
     },
     shadow: { // 草莽之中 —— 有种/敢扛 ↔ 没种/欺弱
-      天怒人怨: '江湖人人喊打，黑市报他名字就有人想动手',
-      声名狼藉: '草莽看不起他，当成欺软怕硬的怂货，没人愿与之共事',
-      默默无闻: '道上没人认得他，江湖查无此人',
-      受人尊敬: '江湖上有几分名头，道上的人敬他三分有种',
-      万众敬仰: '草莽奉为豪杰，一句话能调动一方江湖人马',
+      天怒人怨: '该圈层普遍将其视为严重威胁，可能主动排斥或针对其行动',
+      声名狼藉: '该圈层评价明显负面，缺乏合作意愿并对其保持防备',
+      默默无闻: '该圈层对其缺乏了解，尚未形成明确评价',
+      受人尊敬: '该圈层总体评价正面，愿意提供有限合作或信息支持',
+      万众敬仰: '该圈层高度认可其能力与立场，具有较强协调和动员能力',
     },
     circuit: { // 同道之间 —— 技艺/守规/贡献 ↔ 砸招牌/背叛
-      天怒人怨: '同行视为行业败类，被逐出圈子，人人喊打',
-      声名狼藉: '同道鄙其手艺与人品，背了砸招牌、卖同行的名声',
-      默默无闻: '行当里没人知道这号人',
-      受人尊敬: '同行敬重其技艺与德行，是行里数得上的人物',
-      万众敬仰: '被尊为一代宗师，同道奉其为标杆',
+      天怒人怨: '该圈层评价极度负面，可能取消合作、排除其参与或公开追责',
+      声名狼藉: '该圈层评价明显负面，对其专业能力或行为可靠性缺乏信任',
+      默默无闻: '该圈层对其缺乏了解，尚未建立专业评价',
+      受人尊敬: '该圈层认可其专业能力与行为表现，愿意开展合作',
+      万众敬仰: '该圈层高度认可其专业能力与贡献，将其视为重要参考对象',
     },
   };
   // 旧存档兼容：六级时期的"小有名气"归入"受人尊敬"
   const REP_LEGACY = { 小有名气: '受人尊敬' };
+  const REP_LEVEL_NAME = {
+    天怒人怨: '极度负面',
+    声名狼藉: '明显负面',
+    默默无闻: '缺乏关注',
+    受人尊敬: '正面',
+    万众敬仰: '高度认可',
+  };
 
   // 势力运势判词：把运势词翻译成「这势力眼下什么处境、内部团不团结」
   const STATUS_VERDICT = {
-    鼎盛: '钱粮充裕、人手鼎盛，内部上下一心、铁板一块，行事带着不容置疑的底气与排场',
-    稳固: '运转如常、根基稳健，无明显内忧外患，按部就班地推进既定事务',
-    倾轧: '架子还撑着，内里却派系倾轧、核心不和，许多决策都因内斗而迟滞、自相掣肘',
-    困顿: '资源枯竭或被外部封锁，正咬牙硬撑，处处捉襟见肘，经不起再受打击',
-    衰落: '已失去关键支柱、地盘或核心人物，人心浮动、节节败退，正一步步滑向瓦解',
-    瓦解: '名存实亡、只剩空架子，号令难出、众叛亲离，随时可能彻底散伙',
+    鼎盛: '资源充足、人员稳定，组织协作顺畅，具备较强的持续行动能力',
+    稳固: '资源与组织结构保持稳定，能够正常推进既定事务',
+    倾轧: '基本组织结构仍在，但内部存在明显分歧，决策和执行效率下降',
+    困顿: '资源紧张或受到外部限制，正在维持基本运转，承受额外风险的能力较弱',
+    衰落: '持续失去关键资源、影响范围或核心成员，组织稳定性明显下降',
+    瓦解: '实际运作与协调能力很弱，组织结构接近解体',
   };
 
   // 势力关系判词：把关系词翻译成「这势力对{{user}}的行为倾向」
   const RELATION_VERDICT = {
-    血盟: '与{{user}}生死与共、绝对信任，会不惜代价相助，视其安危如自身存亡',
-    盟友: '与{{user}}地位平等、互为奥援，在共同利益上主动支援、共享情报，但各有底线',
-    友好: '认可{{user}}，愿意优先合作、行个方便、释放善意，尚未到结盟交心的地步',
-    中立: '对{{user}}不亲不疏，一切按自身利害行事，无既定立场',
-    冷淡: '已注意到{{user}}但兴致缺缺，保持距离、不愿深交，暂无主动行动的打算',
-    敌对: '与{{user}}公开对立，会在明处施压、阻挠、为难，乃至寻机正面冲突',
-    世仇: '与{{user}}不死不休，必欲除之而后快，会不择手段、持续寻隙下死手',
+    血盟: '与{{user}}建立高度信任的长期合作关系，会优先提供支持，并重视其安全与共同目标',
+    盟友: '与{{user}}保持稳定合作，在共同利益上主动支援并共享信息，但仍保留各自边界',
+    友好: '认可{{user}}，愿意优先合作并提供有限便利，但尚未建立稳定合作关系',
+    中立: '对{{user}}暂无明确倾向，会依据自身目标与利益决定行动',
+    冷淡: '已注意到{{user}}但合作意愿较低，倾向保持距离，暂无主动行动计划',
+    敌对: '与{{user}}公开对立，可能采取施压、阻碍或直接对抗行动',
+    世仇: '与{{user}}处于持续且强烈的敌对关系，可能长期采取高强度针对行动',
+  };
+  const RELATION_NAME = {
+    血盟: '高度互信',
+    盟友: '稳定合作',
+    友好: '倾向合作',
+    中立: '无明确立场',
+    冷淡: '保持距离',
+    敌对: '公开对立',
+    世仇: '强烈敌对',
   };
 
   // 经济气候判词：把单个气候词翻译成给正文模型看的市面描述
   const CLIMATE_VERDICT = {
-    繁荣: '市面繁盛，商路通畅、百业兴旺，钱货流转顺畅，物价稳中偏高',
-    平稳: '市面如常，物价随时节自然起落，没有大的波动',
-    衰退: '市面萧条，需求萎缩、商号接连倒闭，少数刚需之物反而紧俏涨价',
-    动荡: '经济秩序濒临崩坏，物价失控、商路受阻，人心惶惶，以物易物回潮',
+    繁荣: '市场活跃，流通顺畅，供需与就业保持较高水平',
+    平稳: '市场运行正常，价格与供需仅有常规波动',
+    衰退: '市场活动减少，需求与经营规模收缩，部分必要资源供应趋紧',
+    动荡: '市场秩序不稳定，价格和供应波动显著，正常交易受到影响',
   };
 
   function buildContext(worldState, tags) {
-    const rulesLoader = window.WORLD_ENGINE_RULES;
-    const rulesSummary = rulesLoader ? rulesLoader.getCoreRulesSummary() : '';
+    const rulesSummary = `
+【世界引擎·叙事行为规则】
+
+世界运行：
+- 世界中的个人、组织和事件按照各自目标持续发展，不以{{user}}为唯一中心。
+- 不在当前场景中的角色和事件仍可继续变化，并通过合理线索体现时间与环境的推进。
+- {{user}}只能得知亲历、被告知、调查获得或已传播到其所在范围的信息，不得直接获得未公开信息。
+
+事件：
+- 事件分为发展事件与冲突事件；等级表示影响规模，阶段与进度表示当前发展位置。
+- 本轮结果为“成功”时向前发展，为“受挫”时进展受阻，为“保持”时维持当前状态。
+- 事件应依据自身因果与参与者能力发展；暂时停滞不等于自动结束。
+
+组织与关系：
+- 组织根据自身目标、资源、活动范围和已知信息行动。
+- 组织对{{user}}的行为应符合当前关系；跨区域或跨权限行动必须具备合理条件。
+- 一般对立仍可能协商，强烈敌对关系则可能持续产生针对行动。
+
+全局动态：
+- 全局动态是长期、广域并能影响多方行为的背景变化，不等同于单个事件。
+- 其影响应体现在资源、出行、社会环境、组织决策与公众话题中，直到状态明确结束。
+
+公开信息与舆情：
+- 公告、消息、流言和舆情具有不同可靠性；公开发布只证明发布行为发生，不保证内容真实。
+- 信息只影响已经接触到它的地区、群体和角色，不得让范围外角色直接知情。
+- 角色获知信息必须具有目击、告知、证据、公开渠道或信息网络等合理来源。
+
+对立关系与区域动态：
+- 对立动机不等于行动能力；定位、接触、追踪和跨区域行动都需要时间、资源与有效线索。
+- 区域事件应按距离和传播路径体现影响，不得无因果地归因于{{user}}或现有组织。
+
+经济与社会评价：
+- 经济状态应通过价格、供应、需求、经营活动和公共环境体现，并受地域范围限制。
+- 社会评价按官方、公众、非正式网络和专业行业分别生效；不同圈层的评价互不自动同步。
+- 评价只在信息已经传播到相应圈层和地区时影响角色反应。
+
+未公开信息：
+- 未公开行为和资源只对明确知情者可见；其他角色不得据此行动、暗示知情或产生无来源判断。
+- 暴露程度越高，越可能通过调查、检查或线索传播而被发现；过期或失效资源不能继续发挥作用。
+    `.trim();
 
     // 事件链：Lv3/4 全注入，Lv1/2 仅已爆发/已完成终局注入
     const visibleEvents = (worldState.events || []).filter(e => {
@@ -77,8 +131,8 @@ window.WORLD_ENGINE_INJECT = (function() {
       return e.stage === '已爆发' || e.stage === '已完成';
     });
     const eventsText = visibleEvents.map(e => {
-      const typeName = e.type === 'progress' ? '推进型' : '冲突型';
-      let txt = `${e.name}(${typeName}, Lv.${e.level}) ${e.stage} ${e.stageRound||1}/9`;
+      const typeName = e.type === 'progress' ? '发展事件' : '冲突事件';
+      let txt = `${e.name}（${typeName}，等级 ${e.level}） ${e.stage} ${e.stageRound||1}/9`;
       if (e.evolveResult) txt += ` [${e.evolveResult}]`;
       return txt;
     }).join('；') || '无';
@@ -90,15 +144,16 @@ window.WORLD_ENGINE_INJECT = (function() {
     const allFactions = worldState.factions || [];
     const factionsText = allFactions.length
       ? '\n' + allFactions.map(f => {
-          const statusDesc = STATUS_VERDICT[f.status] || (f.status ? `处于「${f.status}」之中` : '处境不明');
+          const statusDesc = STATUS_VERDICT[f.status] || (f.status ? `当前状态为「${f.status}」` : '当前状态不明');
           const relation = f.relation || '中立';
+          const relationName = RELATION_NAME[relation] || relation;
           const relationDesc = RELATION_VERDICT[relation] || `对{{user}}的态度为「${relation}」`;
-          let s = `- ${f.name}眼下${statusDesc}；它对{{user}}的态度是${relation}——${relationDesc}。`;
-          if (f.scope) s += `其势力范围覆盖${f.scope}。`;
-          if (f.currentGoal) s += `当前正致力于${f.currentGoal}。`;
+          let s = `- ${f.name}：${statusDesc}；与{{user}}的关系为${relationName}——${relationDesc}。`;
+          if (f.scope) s += `活动或影响范围为${f.scope}。`;
+          if (f.currentGoal) s += `当前目标为${f.currentGoal}。`;
           const tail = [];
           if (f.core_person) tail.push(`核心人物是${f.core_person}`);
-          if (f.powerPillars?.length) tail.push(`赖以运转的根基是${formatPillars(f.powerPillars)}`);
+          if (f.powerPillars?.length) tail.push(`主要资源或能力来源为${formatPillars(f.powerPillars)}`);
           if (tail.length) s += tail.join('，') + '。';
           return s;
         }).join('\n')
@@ -108,12 +163,12 @@ window.WORLD_ENGINE_INJECT = (function() {
     const windTypeNames = { announcement: '公告', report: '消息', rumor: '流言', sentiment: '舆情' };
     const visibleWinds = (worldState.winds || []).filter(w => (w.level || 0) >= 3);
     const windsText = visibleWinds.map(w =>
-      `[${windTypeNames[w.type] || '风声'} Lv.${w.level || 1} ${w.scope || '?'}] ${w.content}`
+      `[${windTypeNames[w.type] || '信息'} 等级 ${w.level || 1} ${w.scope || '?'}] ${w.content}`
     ).join('；') || '无';
 
     // 天下大势
     const trendsText = (worldState.worldTrends || []).filter(t => t.status !== '已结束').map(t =>
-      `${t.name}（${t.scope || '天下'}）：${t.description}`
+      `${t.name}（${t.scope || '全局'}）：${t.description}`
     ).join('；') || '无';
 
     // 声誉：注入人话判词，而非光秃秃的等级标签
@@ -122,7 +177,7 @@ window.WORLD_ENGINE_INJECT = (function() {
       const lv = REP_LEGACY[rep[k]] || rep[k];
       const verdict = REP_VERDICT[k] && REP_VERDICT[k][lv];
       if (!verdict) return '';
-      return `在${REP_DIM_NAME[k]}${lv}，${verdict}`;
+      return `${REP_DIM_NAME[k]}：评价等级为${REP_LEVEL_NAME[lv] || lv}；${verdict}`;
     }).filter(Boolean).join('。') + '。';
     const repChange = rep.lastChange ? `（${rep.lastChange}）` : '';
 
@@ -130,14 +185,14 @@ window.WORLD_ENGINE_INJECT = (function() {
     const econ = worldState.economy || {};
     const signalsText = (econ.signals || []).map(s => `${s.summary}（${s.scope}）`).join('；');
     const climate = econ.climate || '平稳';
-    const climateText = `市面${climate}，${CLIMATE_VERDICT[climate] || CLIMATE_VERDICT['平稳']}`;
-    const econText = `${climateText}${signalsText ? '。信号:' + signalsText : ''}`;
+    const climateText = `市场状态为${climate}：${CLIMATE_VERDICT[climate] || CLIMATE_VERDICT['平稳']}`;
+    const econText = `${climateText}${signalsText ? '。市场信号：' + signalsText : ''}`;
 
     // 仇敌录
     let enemiesText = '无';
     if (worldState.enemies && worldState.enemies.length) {
       enemiesText = worldState.enemies.map(e =>
-        `${e.name}（${e.type==='blood'?'血仇':'恩怨'}，${e.status}，原因：${e.reason}）`
+        `${e.name}（${e.type==='blood'?'严重对立':'一般对立'}，${e.status}，原因：${e.reason}）`
       ).join('；');
     }
 
@@ -147,7 +202,7 @@ window.WORLD_ENGINE_INJECT = (function() {
     if (ri.active) {
       riText = `⚠️ ${ri.title || '区域突发事件'}（${ri.type || '?'}，${ri.scope || '?'}）— ${ri.impact || ''}`;
     } else {
-      riText = ri.title && ri.title.includes('重试') ? `⚠️ ${ri.title}` : '本轮无区域突发事件';
+      riText = ri.title && ri.title.includes('重试') ? `⚠️ ${ri.title}` : '本轮无新增区域事件';
     }
 
     // 信息黑盒：展示具体内容
@@ -157,29 +212,29 @@ window.WORLD_ENGINE_INJECT = (function() {
       const actionsText = blackbox.secretActions.map(a =>
         `[行为] ${a.action || '?'}（目击:${a.witnesses || '无'}）`
       ).join('；');
-      boxParts.push(`隐秘行为(${blackbox.secretActions.length}): ${actionsText}`);
+      boxParts.push(`未公开行为(${blackbox.secretActions.length})：${actionsText}`);
     }
     if (blackbox.secretAssets?.length) {
       const assetsText = blackbox.secretAssets.map(a =>
         `[资产] ${a.name || '?'}（暴露:${a.exposure || 0}%，${a.status || '有效'}）`
       ).join('；');
-      boxParts.push(`隐秘资产(${blackbox.secretAssets.length}): ${assetsText}`);
+      boxParts.push(`未公开资源(${blackbox.secretAssets.length})：${assetsText}`);
     }
-    const blackboxText = boxParts.length ? boxParts.join(' | ') : '无暗面信息';
+    const blackboxText = boxParts.length ? boxParts.join(' | ') : '无未公开信息';
 
     const context = `
-【世界状态】
-轮次：${worldState.round}
+【世界信息】
+更新轮次：${worldState.round}
 摘要：${worldState.worldDigest}
-天下大势：${trendsText}
-事件链：${eventsText}
-势力：${factionsText}
-风声：${windsText}
-仇敌：${enemiesText}
-声誉：${repText}${repChange}
+全局动态：${trendsText}
+进行中的事件：${eventsText}
+组织与关系：${factionsText}
+公开信息与舆情：${windsText}
+对立关系：${enemiesText}
+社会评价：${repText}${repChange}
 经济：${econText}
-区域事件：${riText}
-黑盒：${blackboxText}
+区域动态：${riText}
+未公开信息：${blackboxText}
 
 ${rulesSummary}
     `.trim();
