@@ -2256,6 +2256,9 @@ window.WORLD_ENGINE_UI = (function() {
     const numInput = (id, key, label, d, min, step) =>
       '<div class="we-input-group" style="flex:1;min-width:112px;margin-bottom:0;"><label>' + label + '</label>'
       + '<input type="number" id="' + id + '" min="' + min + '" step="' + step + '" value="' + mech(key, d) + '"></div>';
+    const compactNumInput = (id, key, label, d, min, step) =>
+      '<div class="we-input-group" style="flex:1 1 0;min-width:0;margin-bottom:0;"><label>' + label + '</label>'
+      + '<input type="number" id="' + id + '" min="' + min + '" step="' + step + '" value="' + mech(key, d) + '"></div>';
     const wideNumInput = (id, key, label, d, min, step) =>
       '<div class="we-input-group" style="width:100%;margin-bottom:0;"><label>' + label + '</label>'
       + '<input type="number" id="' + id + '" min="' + min + '" step="' + step + '" value="' + mech(key, d) + '"></div>';
@@ -2281,23 +2284,24 @@ window.WORLD_ENGINE_UI = (function() {
     const distantBody = `
       ${mechanicsResetButton('distant')}
       <div style="font-size:12px;color:var(--we-text2);line-height:1.6;margin-bottom:10px;">
-        当事件账本达到门槛后，本地每轮掷骰。命中时抽取部分历史账本作为去重参考，要求推演模型生成一条与主角及既有账本无直接关系的远方事件链或风声（Lv2/Lv3）。生成失败时会沿用同一批样本继续强制生成，成功后进入冷却。
+        生成一条与主角及既有账本无直接关系的远方事件链或风声（Lv2/Lv3）。<br>
+        账本门槛：至少积累多少轮账本后才启用；触发概率：每个可触发轮命中的概率；成功后冷却：成功生成后暂停掷骰的轮数；事件链占比：命中后生成事件链的概率，剩余比例生成风声。
       </div>
       <div class="we-input-group">
         <label>远方随机事件参数</label>
-        <div style="display:flex;gap:6px;flex-wrap:wrap;">
-          ${numInput('we-local-distant-threshold', 'localDistantEventLedgerThreshold', '账本门槛', 10, 1, '1')}
-          ${numInput('we-local-distant-chance', 'localDistantEventChancePercent', '触发概率 %', 20, 0, '0.1')}
-          ${numInput('we-local-distant-cooldown', 'localDistantEventCooldown', '成功后冷却', 5, 1, '1')}
-          ${numInput('we-local-distant-event-percent', 'localDistantEventEventPercent', '事件链占比 %', 50, 0, '0.1')}
+        <div style="display:flex;gap:6px;flex-wrap:nowrap;">
+          ${compactNumInput('we-local-distant-threshold', 'localDistantEventLedgerThreshold', '账本门槛', 10, 1, '1')}
+          ${compactNumInput('we-local-distant-chance', 'localDistantEventChancePercent', '触发概率 %', 20, 0, '0.1')}
+          ${compactNumInput('we-local-distant-cooldown', 'localDistantEventCooldown', '成功后冷却', 5, 1, '1')}
+          ${compactNumInput('we-local-distant-event-percent', 'localDistantEventEventPercent', '事件链占比 %', 50, 0, '0.1')}
         </div>
-        <div style="font-size:11px;color:var(--we-text3);margin-top:3px;">事件链占比默认 50%，风声占比为剩余比例；类型由本地选定，失败重试不会重新抽取。</div>
       </div>`;
 
     const nearBody = `
       ${mechanicsResetButton('near')}
       <div style="font-size:12px;color:var(--we-text2);line-height:1.6;margin-bottom:10px;">
-        本地按概率要求推演模型生成一条与当前对话、主角或所在区域有明确因果关系的近端事件链或风声（Lv2/Lv3）。事件链必须是可独立发展的新主事项，不能把已有事件的步骤强拆成新链；生成失败时保持原类型继续强制生成。
+        生成一条与当前对话、主角或所在区域有明确因果关系的近端事件链或风声（Lv2/Lv3）。<br>
+        触发概率：每个可触发轮命中的概率；成功后冷却：成功生成后暂停掷骰的轮数；事件链占比：命中后生成事件链的概率，剩余比例生成风声。
       </div>
       <div class="we-input-group">
         <label>近端随机事件参数</label>
@@ -2306,7 +2310,6 @@ window.WORLD_ENGINE_UI = (function() {
           ${numInput('we-local-near-cooldown', 'localNearEventCooldown', '成功后冷却', 5, 1, '1')}
           ${numInput('we-local-near-event-percent', 'localNearEventEventPercent', '事件链占比 %', 50, 0, '0.1')}
         </div>
-        <div style="font-size:11px;color:var(--we-text3);margin-top:3px;">事件链占比默认 50%，风声占比为剩余比例；类型由本地选定，失败重试不会重新抽取。</div>
       </div>`;
 
     const retryBody = `
