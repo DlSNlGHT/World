@@ -2267,7 +2267,7 @@ window.WORLD_ENGINE_UI = (function() {
         <div style="display:flex;gap:6px;flex-wrap:wrap;">
           ${numInput('we-local-ri-chance', 'localRegionalIncidentChancePercent', '触发概率 %', 3, 0, '0.1')}
           ${numInput('we-local-ri-duration', 'localRegionalIncidentDuration', '持续轮数', 5, 1, '1')}
-          ${numInput('we-local-ri-cooldown', 'localRegionalIncidentCooldown', '消散后冷却', 5, 0, '1')}
+          ${numInput('we-local-ri-cooldown', 'localRegionalIncidentCooldown', '消散后冷却', 5, 1, '1')}
         </div>
       </div>`;
 
@@ -2281,7 +2281,7 @@ window.WORLD_ENGINE_UI = (function() {
         <div style="display:flex;gap:6px;flex-wrap:wrap;">
           ${numInput('we-local-distant-threshold', 'localDistantEventLedgerThreshold', '账本门槛', 10, 1, '1')}
           ${numInput('we-local-distant-chance', 'localDistantEventChancePercent', '触发概率 %', 20, 0, '0.1')}
-          ${numInput('we-local-distant-cooldown', 'localDistantEventCooldown', '成功后冷却', 5, 0, '1')}
+          ${numInput('we-local-distant-cooldown', 'localDistantEventCooldown', '成功后冷却', 5, 1, '1')}
           ${numInput('we-local-distant-event-percent', 'localDistantEventEventPercent', '事件链占比 %', 50, 0, '0.1')}
         </div>
         <div style="font-size:11px;color:var(--we-text3);margin-top:3px;">事件链占比默认 50%，风声占比为剩余比例；类型由本地选定，失败重试不会重新抽取。</div>
@@ -3373,10 +3373,10 @@ window.WORLD_ENGINE_UI = (function() {
           evolveTimeMaxRounds: Math.max(1, parseInt(gv('we-time-maxrounds')) || 10),
           localRegionalIncidentChancePercent: Math.min(100, Math.max(0, parseFloat(gv('we-local-ri-chance')) || 0)),
           localRegionalIncidentDuration: Math.max(1, parseInt(gv('we-local-ri-duration')) || 5),
-          localRegionalIncidentCooldown: Math.max(0, parseInt(gv('we-local-ri-cooldown')) || 0),
+          localRegionalIncidentCooldown: Math.max(1, parseInt(gv('we-local-ri-cooldown')) || 1),
           localDistantEventLedgerThreshold: Math.max(1, parseInt(gv('we-local-distant-threshold')) || 10),
           localDistantEventChancePercent: Math.min(100, Math.max(0, parseFloat(gv('we-local-distant-chance')) || 0)),
-          localDistantEventCooldown: Math.max(0, parseInt(gv('we-local-distant-cooldown')) || 0),
+          localDistantEventCooldown: Math.max(1, parseInt(gv('we-local-distant-cooldown')) || 1),
           localDistantEventEventPercent: Math.min(100, Math.max(0, parseFloat(gv('we-local-distant-event-percent')) || 0)),
           localEventDiceModifier: Math.min(100, Math.max(-100, parseInt(gv('we-local-dice-mod')) || 0)),
           localEventSetbackRatioPercent: Math.min(100, Math.max(0, parseFloat(gv('we-local-setback-ratio')) || 0)),

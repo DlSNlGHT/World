@@ -230,7 +230,7 @@ type：${picked.type}
         incident.scope = '';
         incident.impact = '';
         incident.duration = 0;
-        incident.cooldown = intSetting('localRegionalIncidentCooldown', REGIONAL_INCIDENT_CONFIG.cooldownRounds, 0);
+        incident.cooldown = intSetting('localRegionalIncidentCooldown', REGIONAL_INCIDENT_CONFIG.cooldownRounds, 1);
         incident._retry = false;
         incident._retryType = '';
         console.log('[世界引擎] 区域突发事件已消散（持续期满）:', title);
@@ -471,7 +471,7 @@ ${JSON.stringify(sample || [], null, 2)}
     candidate.id = null;
     candidate.level = level;
     distant.pending = false;
-    distant.cooldown = intSetting('localDistantEventCooldown', 5, 0);
+    distant.cooldown = intSetting('localDistantEventCooldown', 5, 1);
     distant.sample = [];
     distant.requestedRound = 0;
     distant.requestedType = '';
