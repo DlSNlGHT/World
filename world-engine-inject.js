@@ -86,10 +86,17 @@ window.WORLD_ENGINE_INJECT = (function() {
   function buildContext(worldState, tags) {
     const rulesLoader = window.WORLD_ENGINE_RULES;
     const rulesSummary = rulesLoader ? rulesLoader.getCoreRulesSummary() : '';
+    let injectAllLevels = false;
+    try {
+      const api = window.WORLD_ENGINE_API;
+      const settings = api && api.getSettings ? api.getSettings() : {};
+      injectAllLevels = settings.injectAllLevels === true;
+    } catch (e) {}
 
-    // 事件链：Lv3/4 全注入，Lv1/2 仅已爆发/已完成终局注入
+    // 事件链：开启全等级时全部注入；否则 Lv3/4 全注入，Lv1/2 仅已爆发/已完成终局注入
     const visibleEvents = (worldState.events || []).filter(e => {
-      if (e.level >= 3) return true;
+      if (injectAllLevels) return true;
+      if ((e.level || 0) >= 3) return true;
       return e.stage === '已爆发' || e.stage === '已完成';
     });
     const eventsText = visibleEvents.map(e => {
@@ -121,9 +128,9 @@ window.WORLD_ENGINE_INJECT = (function() {
         }).join('\n')
       : '无';
 
-    // 风声：只注入 Lv3/4
+    // 风声：开启全等级时全部注入；否则只注入 Lv3/4
     const windTypeNames = { announcement: '公告', report: '消息', rumor: '流言', sentiment: '舆情' };
-    const visibleWinds = (worldState.winds || []).filter(w => (w.level || 0) >= 3);
+    const visibleWinds = (worldState.winds || []).filter(w => injectAllLevels || (w.level || 0) >= 3);
     const windsText = visibleWinds.map(w =>
       `[${windTypeNames[w.type] || '信息'} 等级 ${w.level || 1} ${w.scope || '?'}] ${w.content}`
     ).join('；') || '无';

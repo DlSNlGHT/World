@@ -2165,6 +2165,13 @@ window.WORLD_ENGINE_UI = (function() {
         <label>正文注入最大字符数</label>
         <input type="number" id="we-inject-max-chars" min="0" step="100" value="${injectMaxChars}" style="width:100%;">
         <div style="font-size:11px;color:var(--we-text3);margin-top:3px;">限制注入到正文 prompt 的世界状态长度。默认 5000；0 = 不限制。</div>
+      </div>
+      <div class="we-input-group">
+        <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
+          <input type="checkbox" id="we-inject-all-levels" ${settings.injectAllLevels === true ? 'checked' : ''}>
+          全等级注入
+        </label>
+        <div style="font-size:11px;color:var(--we-text3);margin-top:3px;">勾选后，事件链和风声的 Lv1–Lv4 全部注入正文；不勾选时，风声仅注入 Lv3/4，事件链注入 Lv3/4 以及 Lv1/2 中已爆发或已完成的事件。</div>
       </div>`;
 
     const displayMode = settings.displayMode === 'expand' ? 'expand' : 'mask';
@@ -3321,6 +3328,7 @@ window.WORLD_ENGINE_UI = (function() {
           connectionMode: document.getElementById('we-connection-mode')?.value === 'proxy' ? 'proxy' : 'direct',
           injectIntoPrompt: document.getElementById('we-inject-into-prompt')?.checked !== false,
           injectMaxChars: Math.max(0, parseInt(gv('we-inject-max-chars')) || 0),
+          injectAllLevels: document.getElementById('we-inject-all-levels')?.checked === true,
           syncToChat: document.getElementById('we-sync-to-chat')?.checked === true,
           autoBackup: document.getElementById('we-auto-backup')?.checked === true,
           evolveMode: (_modeRaw === 'manual' || _modeRaw === 'time') ? _modeRaw : 'auto',
@@ -3694,7 +3702,8 @@ window.WORLD_ENGINE_UI = (function() {
           apiTimeoutMs: Number.isFinite(parseFloat(document.getElementById('we-api-timeout-sec')?.value)) ? Math.max(0, Math.round(parseFloat(document.getElementById('we-api-timeout-sec')?.value) * 1000)) : 120000,
           connectionMode: document.getElementById('we-connection-mode')?.value === 'proxy' ? 'proxy' : 'direct',
           injectIntoPrompt: document.getElementById('we-inject-into-prompt')?.checked !== false,
-          injectMaxChars: Math.max(0, parseInt(document.getElementById('we-inject-max-chars')?.value) || 0)
+          injectMaxChars: Math.max(0, parseInt(document.getElementById('we-inject-max-chars')?.value) || 0),
+          injectAllLevels: document.getElementById('we-inject-all-levels')?.checked === true
         }));
         if (api.getSettings) api.getSettings(true);
         fetchBtn.disabled = true;
