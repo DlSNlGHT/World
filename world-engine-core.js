@@ -60,6 +60,12 @@ window.WORLD_ENGINE_CORE = (function() {
         _retry: false,
         _retryType: ''
       },
+      distantEvent: {
+        pending: false,
+        cooldown: 0,
+        sample: [],
+        requestedRound: 0
+      },
       blackbox: {
         secretActions: [],
         secretAssets: []
@@ -295,6 +301,13 @@ window.WORLD_ENGINE_CORE = (function() {
     if (state.regionalIncident.duration === undefined) state.regionalIncident.duration = 0;
     if (state.regionalIncident._retry === undefined) state.regionalIncident._retry = false;
     if (state.regionalIncident._retryType === undefined) state.regionalIncident._retryType = '';
+    if (!state.distantEvent || typeof state.distantEvent !== 'object') {
+      state.distantEvent = { pending: false, cooldown: 0, sample: [], requestedRound: 0 };
+    }
+    state.distantEvent.pending = state.distantEvent.pending === true || state.distantEvent.pending === 'true';
+    state.distantEvent.cooldown = Math.max(0, parseInt(state.distantEvent.cooldown) || 0);
+    state.distantEvent.sample = Array.isArray(state.distantEvent.sample) ? state.distantEvent.sample : [];
+    state.distantEvent.requestedRound = Math.max(0, parseInt(state.distantEvent.requestedRound) || 0);
     if (!state.blackbox) {
       state.blackbox = { secretActions: [], secretAssets: [] };
     } else {

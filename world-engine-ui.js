@@ -46,6 +46,11 @@ window.WORLD_ENGINE_UI = (function() {
       'we-local-ri-duration': 5,
       'we-local-ri-cooldown': 5
     },
+    distant: {
+      'we-local-distant-threshold': 10,
+      'we-local-distant-chance': 20,
+      'we-local-distant-cooldown': 5
+    },
     dice: {
       'we-local-dice-mod': 0,
       'we-local-setback-ratio': 40,
@@ -2265,6 +2270,20 @@ window.WORLD_ENGINE_UI = (function() {
         </div>
       </div>`;
 
+    const distantBody = `
+      ${mechanicsResetButton('distant')}
+      <div style="font-size:12px;color:var(--we-text2);line-height:1.6;margin-bottom:10px;">
+        当事件账本达到门槛后，本地每轮掷骰。命中时抽取部分历史账本作为去重参考，要求推演模型生成一条与主角及既有账本无直接关系的远方事件链或风声（Lv2/Lv3）。生成失败时会沿用同一批样本继续强制生成，成功后进入冷却。
+      </div>
+      <div class="we-input-group">
+        <label>远方随机事件参数</label>
+        <div style="display:flex;gap:6px;flex-wrap:wrap;">
+          ${numInput('we-local-distant-threshold', 'localDistantEventLedgerThreshold', '账本门槛', 10, 1, '1')}
+          ${numInput('we-local-distant-chance', 'localDistantEventChancePercent', '触发概率 %', 20, 0, '0.1')}
+          ${numInput('we-local-distant-cooldown', 'localDistantEventCooldown', '成功后冷却', 5, 0, '1')}
+        </div>
+      </div>`;
+
     const retryBody = `
       <div class="we-input-group">
         <label>API 异常自动重试次数（X）</label>
@@ -2354,6 +2373,7 @@ window.WORLD_ENGINE_UI = (function() {
       backfill: sec('set-backfill', '批量重填世界推演', backfillBody),
       retry: sec('set-api-retry', 'API 自动重试', retryBody),
       mechanics: sec('set-regional', '区域事件', regionalBody)
+        + sec('set-distant', '远方随机事件', distantBody)
         + sec('set-dice', '事件骰子', diceBody)
         + sec('set-winddecay', '风声消散', winddecayBody)
         + sec('set-retention', '保留上限', retentionBody),
@@ -3351,6 +3371,9 @@ window.WORLD_ENGINE_UI = (function() {
           localRegionalIncidentChancePercent: Math.min(100, Math.max(0, parseFloat(gv('we-local-ri-chance')) || 0)),
           localRegionalIncidentDuration: Math.max(1, parseInt(gv('we-local-ri-duration')) || 5),
           localRegionalIncidentCooldown: Math.max(0, parseInt(gv('we-local-ri-cooldown')) || 0),
+          localDistantEventLedgerThreshold: Math.max(1, parseInt(gv('we-local-distant-threshold')) || 10),
+          localDistantEventChancePercent: Math.min(100, Math.max(0, parseFloat(gv('we-local-distant-chance')) || 0)),
+          localDistantEventCooldown: Math.max(0, parseInt(gv('we-local-distant-cooldown')) || 0),
           localEventDiceModifier: Math.min(100, Math.max(-100, parseInt(gv('we-local-dice-mod')) || 0)),
           localEventSetbackRatioPercent: Math.min(100, Math.max(0, parseFloat(gv('we-local-setback-ratio')) || 0)),
           localProgressFailBase: Math.max(0, parseInt(gv('we-local-progress-fail-base')) || 0),
