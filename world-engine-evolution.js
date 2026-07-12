@@ -397,7 +397,7 @@ type：${picked.type}
 ${JSON.stringify(sample || [], null, 2)}
 
 本地系统已经指定本轮远方动态的类型：${wantsEvent ? '事件链 events' : '风声 winds'}。
-结合当前世界状态、世界书、时代背景、地理结构和角色生态，为本次远方动态独立新增且仅新增${targetText}（不影响你对其他已有世界状态的正常更新）。不得改成另一种类型。
+结合当前世界状态、世界书、时代背景、地理结构和角色生态，为本次远方动态独立新增${targetText}（不影响你对其他已有世界状态的正常更新）。不得改成另一种类型。
 
 强制要求：
 - 新对象等级只能是 Lv2 或 Lv3。
@@ -407,7 +407,7 @@ ${JSON.stringify(sample || [], null, 2)}
 - 不得由上述账本中的既有事件、势力冲突或风声直接引发，也不得复刻其主题与结构。
 - 必须扎根于当前世界观和已有世界条件，发生在合理存在的远方区域、群体或社会系统中，不能成为无因果的随机噪音。
 - ${wantsEvent ? '必须满足 events 的一般准入规则，并填写完整的新事件字段。' : '必须满足 winds 的一般准入规则，并填写完整的新风声字段。'}
-- 本次远方动态只能有一个带临时标记的新对象。
+- 本次远方动态只能有一个带 "_distanceGenerated" 标记的新对象；若同轮还有其他本地强制指令，应分别完成，不计入本机制的一个对象限制。
 `;
   }
 
@@ -459,7 +459,7 @@ ${JSON.stringify(sample || [], null, 2)}
     const validShape = isEvent
       ? !!(candidate.name && ['conflict', 'progress'].includes(candidate.type))
       : !!(candidate && candidate.topic && candidate.content);
-    const valid = !!candidate && typeMatches && (level === 2 || level === 3) && validShape;
+    const valid = !!candidate && candidate._nearGenerated !== true && typeMatches && (level === 2 || level === 3) && validShape;
 
     if (!valid) {
       update.events = (update.events || []).filter(item => !markedEvents.includes(item));
@@ -476,6 +476,102 @@ ${JSON.stringify(sample || [], null, 2)}
     distant.requestedRound = 0;
     distant.requestedType = '';
     console.log('[世界引擎] 远方随机事件生成成功:', isEvent ? candidate.name : candidate.topic);
+    return true;
+  }
+
+  // ========== 近端随机事件（当前剧情驱动、本地骰子、失败持续重试） ==========
+  function ensureNearEvent(state) {
+    if (!state.nearEvent || typeof state.nearEvent !== 'object') {
+      state.nearEvent = { pending: false, cooldown: 0, requestedRound: 0, requestedType: '' };
+    }
+    state.nearEvent.pending = state.nearEvent.pending === true;
+    state.nearEvent.cooldown = Math.max(0, parseInt(state.nearEvent.cooldown) || 0);
+    state.nearEvent.requestedRound = Math.max(0, parseInt(state.nearEvent.requestedRound) || 0);
+    state.nearEvent.requestedType = ['event', 'wind'].includes(state.nearEvent.requestedType) ? state.nearEvent.requestedType : '';
+    return state.nearEvent;
+  }
+
+  function pickNearEventType(randomFn = Math.random) {
+    const eventChance = numSetting('localNearEventEventPercent', 50, 0, 100) / 100;
+    return randomFn() < eventChance ? 'event' : 'wind';
+  }
+
+  function buildNearEventPrompt(requestedType) {
+    const wantsEvent = requestedType === 'event';
+    const targetText = wantsEvent ? '一条新的 events 事件链' : '一条新的 winds 风声';
+    return `
+【本地随机机制强制指令：本轮必须生成一条近端动态】
+本地系统已经指定本轮近端动态的类型：${wantsEvent ? '事件链 events' : '风声 winds'}。
+结合当前世界状态、世界书和近期对话，为本次近端动态新增${targetText}。不得改成另一种类型。
+
+强制要求：
+- 新对象等级只能是 Lv2 或 Lv3。
+- 新对象必须设置 "id": null，并额外设置临时标记 "_nearGenerated": true。
+- 该临时标记仅供本地确认生成成功；不得添加到其他对象，也不得与 "_distanceGenerated" 同时使用。
+- 内容必须与 {{user}} 的当前行动、接触对象、所在区域、当前场景或正在发展的事项存在明确且可追溯的因果关系，不能只是同处一地或题材相似。
+- 不得替 {{user}} 做决定，不得虚构目击、传播、情报来源或其他关键条件。
+- ${wantsEvent
+      ? '必须满足 events 的创建与归并规则：它应是可独立跨轮发展的新主事项，不得把已有事件的步骤、阻碍、局部结果或善后拆成新链。'
+      : '必须满足 winds 的传播规则：信息已经通过合法节点开始传播，并写明实际 scope 与 source。'}
+- 本次近端动态只能有一个带 "_nearGenerated" 标记的新对象；若同轮还有其他本地强制指令，应分别完成，不计入本机制的一个对象限制。
+`;
+  }
+
+  function rollNearEvent(state, randomFn = Math.random) {
+    const near = ensureNearEvent(state);
+    if (near.pending) {
+      if (!near.requestedType) near.requestedType = pickNearEventType(randomFn);
+      return { triggered: true, retry: true, requestedType: near.requestedType, injectPrompt: buildNearEventPrompt(near.requestedType), reason: 'retry' };
+    }
+    if (near.cooldown > 0) {
+      near.cooldown = Math.max(0, near.cooldown - 1);
+      return { triggered: false, injectPrompt: '', reason: 'cooldown' };
+    }
+
+    const chance = numSetting('localNearEventChancePercent', 20, 0, 100) / 100;
+    const dice = randomFn();
+    if (dice >= chance) return { triggered: false, injectPrompt: '', chance, dice, reason: 'miss' };
+
+    near.pending = true;
+    near.requestedRound = state.round;
+    near.requestedType = pickNearEventType(randomFn);
+    return { triggered: true, retry: false, requestedType: near.requestedType, injectPrompt: buildNearEventPrompt(near.requestedType), chance, dice, reason: 'hit' };
+  }
+
+  function acceptNearEventResult(state, update) {
+    const near = ensureNearEvent(state);
+    const markedEvents = (update.events || []).filter(item => item && item._nearGenerated === true);
+    const markedWinds = (update.winds || []).filter(item => item && item._nearGenerated === true);
+    const marked = markedEvents.concat(markedWinds);
+
+    for (const item of [...(update.events || []), ...(update.winds || [])]) {
+      if (item && Object.prototype.hasOwnProperty.call(item, '_nearGenerated')) delete item._nearGenerated;
+    }
+    if (!near.pending) return false;
+
+    const candidate = marked.length === 1 ? marked[0] : null;
+    const isEvent = candidate && markedEvents.includes(candidate);
+    const typeMatches = !!candidate && ((near.requestedType === 'event' && isEvent) || (near.requestedType === 'wind' && !isEvent));
+    const level = candidate ? parseInt(candidate.level) : 0;
+    const validShape = isEvent
+      ? !!(candidate.name && ['conflict', 'progress'].includes(candidate.type))
+      : !!(candidate && candidate.topic && candidate.content);
+    const valid = !!candidate && typeMatches && (level === 2 || level === 3) && validShape;
+
+    if (!valid) {
+      update.events = (update.events || []).filter(item => !markedEvents.includes(item));
+      update.winds = (update.winds || []).filter(item => !markedWinds.includes(item));
+      console.warn('[世界引擎] 近端随机事件生成未通过校验，下轮继续强制生成');
+      return false;
+    }
+
+    candidate.id = null;
+    candidate.level = level;
+    near.pending = false;
+    near.cooldown = intSetting('localNearEventCooldown', 5, 1);
+    near.requestedRound = 0;
+    near.requestedType = '';
+    console.log('[世界引擎] 近端随机事件生成成功:', isEvent ? candidate.name : candidate.topic);
     return true;
   }
 
@@ -1027,14 +1123,18 @@ ${JSON.stringify(sample || [], null, 2)}
       // 第4步：账本驱动的远方随机事件骰子（pending 时跳过骰子并持续重试）
       const distantEventRoll = rollDistantEvent(state);
 
-      // 第5步：喂给 API 做叙事更新
-      const extraInstructions = [regionalIncidentRoll.injectPrompt, distantEventRoll.injectPrompt].filter(Boolean).join('\n\n');
+      // 第5步：当前剧情驱动的近端随机事件骰子
+      const nearEventRoll = rollNearEvent(state);
+
+      // 第6步：喂给 API 做叙事更新
+      const extraInstructions = [regionalIncidentRoll.injectPrompt, distantEventRoll.injectPrompt, nearEventRoll.injectPrompt].filter(Boolean).join('\n\n');
       const update = await callEvolutionAPI(state, userMsg, aiMsg, extraInstructions, (opts && opts.dialogueText) || '');
 
-      // 远方对象先识别并清洗临时标记，再进入既有实体 ID 分配与合并流程。
+      // 随机对象先识别并清洗临时标记，再进入既有实体 ID 分配与合并流程。
       acceptDistantEventResult(state, update);
+      acceptNearEventResult(state, update);
 
-      // 第6步：合并 API 返回
+      // 第7步：合并 API 返回
       for (const ev of update.events) {
         const existingIndex = core.findEntityIndex(state.events, ev, core.ENTITY_ID_PREFIXES.events, 'name');
         const existing = existingIndex !== -1 ? state.events[existingIndex] : null;
@@ -1235,10 +1335,14 @@ ${JSON.stringify(sample || [], null, 2)}
       const pendingDistant = state.distantEvent && state.distantEvent.pending
         ? JSON.parse(JSON.stringify(state.distantEvent))
         : null;
+      const pendingNear = state.nearEvent && state.nearEvent.pending
+        ? JSON.parse(JSON.stringify(state.nearEvent))
+        : null;
       // 恢复前状态；恢复语句本身可能抛错（如 IDB 在内存压力下写失败），吞掉以免跳过 finally 复位
       try {
         Object.assign(state, backup);
         if (pendingDistant) state.distantEvent = pendingDistant;
+        if (pendingNear) state.nearEvent = pendingNear;
         core.saveState(state);
       } catch (_) {}
       return false;

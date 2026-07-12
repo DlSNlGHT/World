@@ -52,6 +52,11 @@ window.WORLD_ENGINE_UI = (function() {
       'we-local-distant-cooldown': 5,
       'we-local-distant-event-percent': 50
     },
+    near: {
+      'we-local-near-chance': 20,
+      'we-local-near-cooldown': 5,
+      'we-local-near-event-percent': 50
+    },
     dice: {
       'we-local-dice-mod': 0,
       'we-local-setback-ratio': 40,
@@ -2288,6 +2293,21 @@ window.WORLD_ENGINE_UI = (function() {
         <div style="font-size:11px;color:var(--we-text3);margin-top:3px;">事件链占比默认 50%，风声占比为剩余比例；类型由本地选定，失败重试不会重新抽取。</div>
       </div>`;
 
+    const nearBody = `
+      ${mechanicsResetButton('near')}
+      <div style="font-size:12px;color:var(--we-text2);line-height:1.6;margin-bottom:10px;">
+        本地按概率要求推演模型生成一条与当前对话、主角或所在区域有明确因果关系的近端事件链或风声（Lv2/Lv3）。事件链必须是可独立发展的新主事项，不能把已有事件的步骤强拆成新链；生成失败时保持原类型继续强制生成。
+      </div>
+      <div class="we-input-group">
+        <label>近端随机事件参数</label>
+        <div style="display:flex;gap:6px;flex-wrap:wrap;">
+          ${numInput('we-local-near-chance', 'localNearEventChancePercent', '触发概率 %', 20, 0, '0.1')}
+          ${numInput('we-local-near-cooldown', 'localNearEventCooldown', '成功后冷却', 5, 1, '1')}
+          ${numInput('we-local-near-event-percent', 'localNearEventEventPercent', '事件链占比 %', 50, 0, '0.1')}
+        </div>
+        <div style="font-size:11px;color:var(--we-text3);margin-top:3px;">事件链占比默认 50%，风声占比为剩余比例；类型由本地选定，失败重试不会重新抽取。</div>
+      </div>`;
+
     const retryBody = `
       <div class="we-input-group">
         <label>API 异常自动重试次数（X）</label>
@@ -2377,6 +2397,7 @@ window.WORLD_ENGINE_UI = (function() {
       backfill: sec('set-backfill', '批量重填世界推演', backfillBody),
       retry: sec('set-api-retry', 'API 自动重试', retryBody),
       mechanics: sec('set-regional', '区域事件', regionalBody)
+        + sec('set-near', '近端随机事件', nearBody)
         + sec('set-distant', '远方随机事件', distantBody)
         + sec('set-dice', '事件骰子', diceBody)
         + sec('set-winddecay', '风声消散', winddecayBody)
@@ -3379,6 +3400,9 @@ window.WORLD_ENGINE_UI = (function() {
           localDistantEventChancePercent: Math.min(100, Math.max(0, parseFloat(gv('we-local-distant-chance')) || 0)),
           localDistantEventCooldown: Math.max(1, parseInt(gv('we-local-distant-cooldown')) || 1),
           localDistantEventEventPercent: Math.min(100, Math.max(0, parseFloat(gv('we-local-distant-event-percent')) || 0)),
+          localNearEventChancePercent: Math.min(100, Math.max(0, parseFloat(gv('we-local-near-chance')) || 0)),
+          localNearEventCooldown: Math.max(1, parseInt(gv('we-local-near-cooldown')) || 1),
+          localNearEventEventPercent: Math.min(100, Math.max(0, parseFloat(gv('we-local-near-event-percent')) || 0)),
           localEventDiceModifier: Math.min(100, Math.max(-100, parseInt(gv('we-local-dice-mod')) || 0)),
           localEventSetbackRatioPercent: Math.min(100, Math.max(0, parseFloat(gv('we-local-setback-ratio')) || 0)),
           localProgressFailBase: Math.max(0, parseInt(gv('we-local-progress-fail-base')) || 0),

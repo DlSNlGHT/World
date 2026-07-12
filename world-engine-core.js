@@ -67,6 +67,12 @@ window.WORLD_ENGINE_CORE = (function() {
         requestedRound: 0,
         requestedType: ''
       },
+      nearEvent: {
+        pending: false,
+        cooldown: 0,
+        requestedRound: 0,
+        requestedType: ''
+      },
       blackbox: {
         secretActions: [],
         secretAssets: []
@@ -310,6 +316,13 @@ window.WORLD_ENGINE_CORE = (function() {
     state.distantEvent.sample = Array.isArray(state.distantEvent.sample) ? state.distantEvent.sample : [];
     state.distantEvent.requestedRound = Math.max(0, parseInt(state.distantEvent.requestedRound) || 0);
     state.distantEvent.requestedType = ['event', 'wind'].includes(state.distantEvent.requestedType) ? state.distantEvent.requestedType : '';
+    if (!state.nearEvent || typeof state.nearEvent !== 'object') {
+      state.nearEvent = { pending: false, cooldown: 0, requestedRound: 0, requestedType: '' };
+    }
+    state.nearEvent.pending = state.nearEvent.pending === true || state.nearEvent.pending === 'true';
+    state.nearEvent.cooldown = Math.max(0, parseInt(state.nearEvent.cooldown) || 0);
+    state.nearEvent.requestedRound = Math.max(0, parseInt(state.nearEvent.requestedRound) || 0);
+    state.nearEvent.requestedType = ['event', 'wind'].includes(state.nearEvent.requestedType) ? state.nearEvent.requestedType : '';
     if (!state.blackbox) {
       state.blackbox = { secretActions: [], secretAssets: [] };
     } else {
