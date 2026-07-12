@@ -357,13 +357,19 @@ type：${picked.type}
   // ========== 远方随机事件（账本驱动、本地骰子、失败持续重试） ==========
   function ensureDistantEvent(state) {
     if (!state.distantEvent || typeof state.distantEvent !== 'object') {
-      state.distantEvent = { pending: false, cooldown: 0, sample: [], requestedRound: 0 };
+      state.distantEvent = { pending: false, cooldown: 0, sample: [], requestedRound: 0, requestedType: '' };
     }
     state.distantEvent.pending = state.distantEvent.pending === true;
     state.distantEvent.cooldown = Math.max(0, parseInt(state.distantEvent.cooldown) || 0);
     state.distantEvent.sample = Array.isArray(state.distantEvent.sample) ? state.distantEvent.sample : [];
     state.distantEvent.requestedRound = Math.max(0, parseInt(state.distantEvent.requestedRound) || 0);
+    state.distantEvent.requestedType = ['event', 'wind'].includes(state.distantEvent.requestedType) ? state.distantEvent.requestedType : '';
     return state.distantEvent;
+  }
+
+  function pickDistantEventType(randomFn = Math.random) {
+    const eventChance = numSetting('localDistantEventEventPercent', 50, 0, 100) / 100;
+    return randomFn() < eventChance ? 'event' : 'wind';
   }
 
   function sampleDistantLedger(state, randomFn = Math.random) {
@@ -382,15 +388,16 @@ type：${picked.type}
     }));
   }
 
-  function buildDistantEventPrompt(sample) {
+  function buildDistantEventPrompt(sample, requestedType) {
+    const wantsEvent = requestedType === 'event';
+    const targetText = wantsEvent ? '一条新的 events 事件链' : '一条新的 winds 风声';
     return `
 【本地随机机制强制指令：本轮必须生成一条远方动态】
 以下是部分历史账本，仅用于识别已经使用过的事件主题、冲突结构和风声内容。不得续写、改写、复刻或直接关联这些记录：
 ${JSON.stringify(sample || [], null, 2)}
 
-结合当前世界状态、世界书、时代背景、地理结构和角色生态，为本次远方动态独立新增且仅新增以下二者之一（不影响你对其他已有世界状态的正常更新）：
-1. 一条新的 events 事件链；或
-2. 一条新的 winds 风声。
+本地系统已经指定本轮远方动态的类型：${wantsEvent ? '事件链 events' : '风声 winds'}。
+结合当前世界状态、世界书、时代背景、地理结构和角色生态，为本次远方动态独立新增且仅新增${targetText}（不影响你对其他已有世界状态的正常更新）。不得改成另一种类型。
 
 强制要求：
 - 新对象等级只能是 Lv2 或 Lv3。
@@ -399,9 +406,8 @@ ${JSON.stringify(sample || [], null, 2)}
 - 与 {{user}} 的当前行为、资产、名声、仇敌及所在场景没有直接因果关系，不得强行打断 {{user}} 当前行动。
 - 不得由上述账本中的既有事件、势力冲突或风声直接引发，也不得复刻其主题与结构。
 - 必须扎根于当前世界观和已有世界条件，发生在合理存在的远方区域、群体或社会系统中，不能成为无因果的随机噪音。
-- 若生成事件链，必须满足 events 的一般准入规则，并填写完整的新事件字段。
-- 若生成风声，必须满足 winds 的一般准入规则，并填写完整的新风声字段。
-- events 与 winds 二选一；本次远方动态只能有一个带临时标记的新对象。
+- ${wantsEvent ? '必须满足 events 的一般准入规则，并填写完整的新事件字段。' : '必须满足 winds 的一般准入规则，并填写完整的新风声字段。'}
+- 本次远方动态只能有一个带临时标记的新对象。
 `;
   }
 
@@ -411,7 +417,9 @@ ${JSON.stringify(sample || [], null, 2)}
 
     if (distant.pending) {
       if (!distant.sample.length && ledgerEntries.length) distant.sample = sampleDistantLedger(state, randomFn);
-      return { triggered: true, retry: true, injectPrompt: buildDistantEventPrompt(distant.sample), reason: 'retry' };
+      // 兼容功能上线初期已进入 pending、但尚未保存目标类型的存档。
+      if (!distant.requestedType) distant.requestedType = pickDistantEventType(randomFn);
+      return { triggered: true, retry: true, requestedType: distant.requestedType, injectPrompt: buildDistantEventPrompt(distant.sample, distant.requestedType), reason: 'retry' };
     }
     if (distant.cooldown > 0) {
       distant.cooldown = Math.max(0, distant.cooldown - 1);
@@ -428,7 +436,8 @@ ${JSON.stringify(sample || [], null, 2)}
     distant.pending = true;
     distant.sample = sampleDistantLedger(state, randomFn);
     distant.requestedRound = state.round;
-    return { triggered: true, retry: false, injectPrompt: buildDistantEventPrompt(distant.sample), chance, dice, reason: 'hit' };
+    distant.requestedType = pickDistantEventType(randomFn);
+    return { triggered: true, retry: false, requestedType: distant.requestedType, injectPrompt: buildDistantEventPrompt(distant.sample, distant.requestedType), chance, dice, reason: 'hit' };
   }
 
   function acceptDistantEventResult(state, update) {
@@ -445,11 +454,12 @@ ${JSON.stringify(sample || [], null, 2)}
 
     const candidate = marked.length === 1 ? marked[0] : null;
     const isEvent = candidate && markedEvents.includes(candidate);
+    const typeMatches = !!candidate && ((distant.requestedType === 'event' && isEvent) || (distant.requestedType === 'wind' && !isEvent));
     const level = candidate ? parseInt(candidate.level) : 0;
     const validShape = isEvent
       ? !!(candidate.name && ['conflict', 'progress'].includes(candidate.type))
       : !!(candidate && candidate.topic && candidate.content);
-    const valid = !!candidate && (level === 2 || level === 3) && validShape;
+    const valid = !!candidate && typeMatches && (level === 2 || level === 3) && validShape;
 
     if (!valid) {
       update.events = (update.events || []).filter(item => !markedEvents.includes(item));
@@ -464,6 +474,7 @@ ${JSON.stringify(sample || [], null, 2)}
     distant.cooldown = intSetting('localDistantEventCooldown', 5, 0);
     distant.sample = [];
     distant.requestedRound = 0;
+    distant.requestedType = '';
     console.log('[世界引擎] 远方随机事件生成成功:', isEvent ? candidate.name : candidate.topic);
     return true;
   }

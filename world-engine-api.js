@@ -47,6 +47,7 @@ window.WORLD_ENGINE_API = (function() {
       localDistantEventLedgerThreshold: 10,
       localDistantEventChancePercent: 20,
       localDistantEventCooldown: 5,
+      localDistantEventEventPercent: 50,
       localEventDiceModifier: 0,
       localEventSetbackRatioPercent: 40,
       localProgressFailBase: 2,
