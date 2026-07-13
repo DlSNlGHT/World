@@ -15,12 +15,18 @@ window.MEMORY_ENGINE_DATA = (function() {
     try { return JSON.parse(raw); } catch (error) { return clone(fallback); }
   }
 
-  function defaultState() { return { personal_memory: [] }; }
+  function defaultState() {
+    return { personal_memory: [], knowledge_index: {}, round: 0, chatLayer: null };
+  }
   function hasState() { return window.WORLD_ENGINE_STORE?.getItem(key(STATE_PREFIX)) !== null; }
   function loadState() { return parse(window.WORLD_ENGINE_STORE?.getItem(key(STATE_PREFIX)), defaultState()); }
   function saveState(state) {
     const next = state && typeof state === 'object' && !Array.isArray(state) ? clone(state) : defaultState();
     if (!Array.isArray(next.personal_memory)) next.personal_memory = [];
+    if (!next.knowledge_index || typeof next.knowledge_index !== 'object' || Array.isArray(next.knowledge_index)) next.knowledge_index = {};
+    next.round = Math.max(0, parseInt(next.round) || 0);
+    next.chatLayer = next.chatLayer !== null && next.chatLayer !== '' && Number.isFinite(Number(next.chatLayer))
+      ? Number(next.chatLayer) : null;
     window.WORLD_ENGINE_STORE?.setItem(key(STATE_PREFIX), JSON.stringify(next));
     return clone(next);
   }

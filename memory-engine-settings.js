@@ -10,6 +10,7 @@ window.MEMORY_ENGINE_SETTINGS = (function() {
     temperature: 0.2,
     maxTokens: 2000,
     apiTimeoutMs: 120000,
+    engineEnabled: true,
     evolveMode: 'auto',
     evolveEveryX: 5,
     evolveReadRounds: 5,

@@ -7,7 +7,7 @@
     'world-engine-store.js',
     'memory-engine-settings.js',  // 记忆引擎独立设置命名空间
     'memory-engine-data.js',      // 记忆引擎按聊天隔离的数据、存档点与命名存档
-    'memory-engine-prompt.js',    // 记忆引擎：独立主观记忆提取提示词（执行链后续接入）
+    'memory-engine-prompt.js',    // 记忆引擎：独立主观记忆提取提示词
     'world-engine-preset.js',       // ← 新增：引擎预设系统（紧跟 store，在 evolution 之前；运行时引用 evolution 默认段）
     'world-engine-core.js',
     'world-engine-api.js',
@@ -18,6 +18,7 @@
     'world-engine-evolution.js',
     'world-engine-inject.js',
     'world-engine-inject-inspector.js', // ← 新增：注入自检查看器（解耦/只读，订阅 prompt-ready 事件核对注入是否真进正文）
+    'memory-engine.js',
     'world-engine-diag.js',
     'world-engine-ui.js'
   ];
@@ -75,6 +76,10 @@
       // 注入自检查看器：只读订阅 ST prompt-ready 事件，核对世界状态是否真进了最终 prompt（解耦，订阅失败不阻断启动）
       if (window.WORLD_ENGINE_INJECT_INSPECTOR) {
         try { window.WORLD_ENGINE_INJECT_INSPECTOR.init(); } catch (e) { console.warn('[世界引擎] 注入自检初始化失败（非致命）', e); }
+      }
+
+      if (window.MEMORY_ENGINE) {
+        try { window.MEMORY_ENGINE.init(); } catch (e) { console.warn('[记忆引擎] 初始化失败（非致命）', e); }
       }
 
       const core = window.WORLD_ENGINE_CORE;
@@ -200,6 +205,10 @@
       //   往前删到旧层（chatLayer < state.chatLayer）→ 注入存档点；
       //   否则（新生成/新轮次/续写）→ 注入当前状态。
       function applyInjectionForCurrentRound(opts) {
+        if (api.getSettings(true).engineEnabled === false) {
+          unregisterInjection();
+          return;
+        }
         const state = core.loadState();
         const chatLayer = core.getChatLayer();
         const isReroll = !!(opts && opts.isReroll);
@@ -276,6 +285,7 @@
 
       async function runAutoEvolution(expectedKey, expectedText) {
         autoEvolveTimer = null;
+        if (api.getSettings(true).engineEnabled === false) return;
         if (isEvolving || lastProcessedMessageKey === expectedKey) return;
         // 已有推演（如手动触发）在跑：跳过本次自动推演，避免 evolve() 因 busy 返回 false 被误报为「推演失败」
         if (evolution.isRunning && evolution.isRunning()) return;
@@ -450,6 +460,7 @@
       }
 
       async function manualEvolve(mode, scope) {
+        if (api.getSettings(true).engineEnabled === false) { setStatus('世界引擎已关闭'); return false; }
         if (isEvolving) return false;
         if (evolution.isRunning && evolution.isRunning()) { setStatus('已有推演进行中...'); return false; }
         const ctx = SillyTavern.getContext();
@@ -470,6 +481,7 @@
 
       // 设置页「本轮对话时间」手填保存后：判断是否够时间，够则推演。
       async function manualTimeEvolve(currentDay) {
+        if (api.getSettings(true).engineEnabled === false) { setStatus('世界引擎已关闭'); return; }
         if (currentDay == null || isEvolving) return;
         if (evolution.isRunning && evolution.isRunning()) { setStatus('已有推演进行中...'); return; }
         const settings = api.getSettings(true);

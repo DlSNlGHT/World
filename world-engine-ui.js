@@ -484,6 +484,13 @@ window.WORLD_ENGINE_UI = (function() {
 
     const modeBody = `
       <div class="we-input-group">
+        <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
+          <input type="checkbox" id="we-memory-engine-enabled" ${settings.engineEnabled !== false ? 'checked' : ''}>
+          启用记忆引擎
+        </label>
+        <div style="font-size:11px;color:var(--we-text3);margin-top:3px;">关闭后停止记忆提取与记忆注入，不影响世界引擎。</div>
+      </div>
+      <div class="we-input-group">
         <label>记忆推演模式</label>
         <select id="we-memory-evolve-mode" style="width:100%;">
           <option value="auto" ${mode === 'auto' ? 'selected' : ''}>自动 · 按轮（每 X 轮提取一次）</option>
@@ -502,6 +509,9 @@ window.WORLD_ENGINE_UI = (function() {
       <div class="we-input-group" id="we-memory-manual-readrounds-group" style="${mode === 'manual' ? '' : 'display:none;'}">
         <label>手动提取读取最近几轮对话</label>
         <input type="number" id="we-memory-manual-readrounds" min="1" step="1" value="${manualReadRounds}" style="width:100%;">
+      </div>
+      <div class="we-input-group">
+        <button class="we-btn we-btn-primary" id="we-memory-run-now" type="button">立即提取记忆</button>
       </div>`;
 
     const injectBody = `
@@ -524,7 +534,7 @@ window.WORLD_ENGINE_UI = (function() {
       </div>`;
 
     const backfillBody = `
-      <div style="font-size:11px;color:var(--we-text3);margin-bottom:6px;">从第 1 个 AI 楼层开始，分批重新提取人物主观记忆。记忆执行链接入后，此入口只会重建 personal_memory，不会清空或改写世界引擎状态。</div>
+      <div style="font-size:11px;color:var(--we-text3);margin-bottom:6px;">从第 1 个 AI 楼层开始，分批重新提取人物主观记忆。只会重建记忆引擎数据，不会清空或改写世界引擎状态。</div>
       <div style="display:flex;gap:6px;flex-wrap:wrap;">
         <div class="we-input-group" style="flex:1;min-width:90px;margin-bottom:0;"><label>每批 AI 楼层数</label>
           <input type="number" id="we-memory-backfill-batch" min="1" step="1" value="${backfillBatch}"></div>
@@ -2623,6 +2633,13 @@ window.WORLD_ENGINE_UI = (function() {
 
     const evolveBody = `
       <div class="we-input-group">
+        <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
+          <input type="checkbox" id="we-world-engine-enabled" ${settings.engineEnabled !== false ? 'checked' : ''}>
+          启用世界引擎
+        </label>
+        <div style="font-size:11px;color:var(--we-text3);margin-top:3px;">关闭后停止世界推演与世界状态注入，不影响记忆引擎。</div>
+      </div>
+      <div class="we-input-group">
         <label>推演模式</label>
         <select id="we-evolve-mode" style="width:100%;">
           <option value="auto" ${mode === 'auto' ? 'selected' : ''}>自动 · 按轮（每 X 轮推演一次）</option>
@@ -3935,6 +3952,7 @@ window.WORLD_ENGINE_UI = (function() {
         const everyX = Math.max(1, parseInt(gv('we-memory-everyx')) || 5);
         const memorySettings = {
           ...memoryCurrent,
+          engineEnabled: document.getElementById('we-memory-engine-enabled')?.checked !== false,
           apiUrl: gv('we-api-url') || '',
           apiKey: gv('we-api-key') || '',
           model: gv('we-model') || 'gpt-3.5-turbo',
@@ -3961,6 +3979,7 @@ window.WORLD_ENGINE_UI = (function() {
           backfillRetries: Math.max(0, parseInt(gv('we-memory-backfill-retries')) || 0)
         };
         window.MEMORY_ENGINE_SETTINGS?.saveSettings(memorySettings);
+        window.MEMORY_ENGINE?.applyInjection?.();
         showToast('记忆引擎设置已保存');
       };
     }
@@ -4089,10 +4108,23 @@ window.WORLD_ENGINE_UI = (function() {
     if (memoryBackfillStart) {
       memoryBackfillStart.onclick = async () => {
         if (window.MEMORY_ENGINE && typeof window.MEMORY_ENGINE.backfill === 'function') {
-          await window.MEMORY_ENGINE.backfill();
+          try { await window.MEMORY_ENGINE.backfill(); }
+          catch (error) { showToast(`记忆重填失败：${error?.message || error}`, true); }
           return;
         }
-        showToast('记忆提取执行链尚未接入；当前已完成提示词和设置结构', true);
+        showToast('记忆引擎尚未加载', true);
+      };
+    }
+    const memoryRunNow = document.getElementById('we-memory-run-now');
+    if (memoryRunNow) {
+      memoryRunNow.onclick = async () => {
+        if (!window.MEMORY_ENGINE?.manualExtract) { showToast('记忆引擎尚未加载', true); return; }
+        memoryRunNow.disabled = true;
+        try {
+          const result = await window.MEMORY_ENGINE.manualExtract();
+          showToast(`记忆提取完成，新增 ${result?.added || 0} 条`);
+        } catch (error) { showToast(`记忆提取失败：${error?.message || error}`, true); }
+        finally { memoryRunNow.disabled = false; }
       };
     }
     const memoryBackfillStop = document.getElementById('we-memory-backfill-stop');
@@ -4115,6 +4147,7 @@ window.WORLD_ENGINE_UI = (function() {
         const timeoutSecRaw = parseFloat(gv('we-api-timeout-sec'));
         const ns = {
           ...(window.WORLD_ENGINE_API ? window.WORLD_ENGINE_API.getSettings(true) : {}),
+          engineEnabled: document.getElementById('we-world-engine-enabled')?.checked !== false,
           apiUrl: document.getElementById('we-api-url')?.value || '',
           apiKey: document.getElementById('we-api-key')?.value || '',
           model: document.getElementById('we-model')?.value || 'gpt-3.5-turbo',
@@ -5173,6 +5206,7 @@ window.WORLD_ENGINE_UI = (function() {
     if (evolution.isRunning?.()) { showToast('已有推演进行中，请稍候'); return; }
 
     const st = window.WORLD_ENGINE_API ? window.WORLD_ENGINE_API.getSettings(true) : {};
+    if (st.engineEnabled === false) { showToast('世界引擎已关闭', true); return; }
     const batchSize = Math.max(1, parseInt(st.backfillBatchSize) || 1);
     const retries = Math.max(0, parseInt(st.backfillRetries) || 0);
     let endLayer = Math.max(0, parseInt(st.backfillEndLayer) || 0);
@@ -5500,17 +5534,12 @@ window.WORLD_ENGINE_UI = (function() {
     wire('we-sat-redo', () => runManualEvolve('redo', 'checkpoint'));
     wire('we-sat-abort', () => { evolution.abort(); showToast('已发送停止信号'); });
 
-    // 「插头」总开关(球左侧第四卫星):一键联动 evolveMode + injectIntoPrompt
-    //   关闭态(插上)= evolveMode='manual'(不自动推演) + injectIntoPrompt=false(不注入)；
-    //   不新增设置字段:状态从这俩字段反推(`manual && inject===false` = 关)。
-    //   立即生效:切完调 applyInjection 让 inject 守卫(world-engine.js:148) 生效(关→unregister,开→重注入)。
-    //   持久化:走 persist 同模式(setKV 内联,见 ui.js:3393 persist 体),改的是已持久化字段。
-    //   manual 自带拦 pending autoEvolveTimer 能力(world-engine.js:282 守卫),无需额外 engineEnabled 守卫
-    //   (吸取 PR#26 隐患 A 教训:不靠 engineEnabled,靠 manual 自然拦 timer fire)。
+    // 「插头」是世界引擎独立总开关；不改写用户选好的推演模式与注入选项。
+    // 记忆引擎使用自己的 memory_engine_settings.engineEnabled，二者互不联动。
     //   不用 we-sat-off(wire 内会拦 we-sat-off 不可点);用 .on class 标关闭态,power 永远可点。
     const wapi = window.WORLD_ENGINE_API;
     const readSettings = () => (wapi && wapi.getSettings ? wapi.getSettings(true) : {}) || {};
-    const isPowerOff = (s) => s.evolveMode === 'manual' && s.injectIntoPrompt === false;
+    const isPowerOff = (s) => s.engineEnabled === false;
     const syncPowerState = () => {
       const el = ball.querySelector('#we-sat-power');
       if (el) el.classList.toggle('on', isPowerOff(readSettings()));
@@ -5523,8 +5552,7 @@ window.WORLD_ENGINE_UI = (function() {
         window.WORLD_ENGINE_STORE.setItem('world_engine_settings', JSON.stringify({ ...c, [k]: v }));
         if (wapi && wapi.getSettings) wapi.getSettings(true);
       };
-      setKV('evolveMode', turnOff ? 'manual' : 'auto');
-      setKV('injectIntoPrompt', !turnOff); // 关=false, 开=true
+      setKV('engineEnabled', !turnOff);
       window.WORLD_ENGINE?.applyInjection?.(); // 立即重注入:关→unregisterInjection,开→重新注入
       syncPowerState(); // 更新 .on 视觉态
       showToast(turnOff ? '已关闭推演与注入' : '已开启推演与注入');
