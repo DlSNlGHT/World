@@ -7,6 +7,8 @@ window.WORLD_ENGINE_UI = (function() {
   let panelBodyElement = null;
   let panelVisible = false;
   let _engineFace = 'world';
+  const _engineFaceOrder = [];
+  const _engineFaceRegistry = new Map();
   let _memorySettingsOpen = false;
   let _panelFlipping = false;
   let isEvolving = false;
@@ -33,6 +35,70 @@ window.WORLD_ENGINE_UI = (function() {
   let _wbCachedChatId = null;
   let _wbCachedScope = null;
   let _wbScrollTop = 0;
+
+  // 引擎面扩展点：新增引擎按注册顺序进入“下一界面”循环。
+  // 可提供 render/bind、主题/版本、设置、运行状态、球体 class 与卫星按钮动作等钩子。
+  function registerEngineFace(definition) {
+    const face = definition && typeof definition === 'object' ? definition : {};
+    const id = String(face.id || '').trim();
+    if (!id) throw new Error('引擎界面必须提供 id');
+    const existed = _engineFaceRegistry.has(id);
+    _engineFaceRegistry.set(id, { id, label: id, ...face });
+    if (!existed) _engineFaceOrder.push(id);
+    if (panelElement) updateEngineFaceChrome();
+    return id;
+  }
+
+  function ensureBuiltinEngineFaces() {
+    if (_engineFaceRegistry.has('world')) return;
+    registerEngineFace({
+      id: 'world', label: '世界引擎',
+      getTheme: () => getStoredTheme(),
+      getVersion: () => window.WORLD_ENGINE_VERSION,
+      getSettings: () => window.WORLD_ENGINE_API?.getSettings(true) || {},
+      setEnabled: enabled => {
+        const api = window.WORLD_ENGINE_API;
+        const current = api?.getSettings?.(true) || {};
+        window.WORLD_ENGINE_STORE.setItem('world_engine_settings', JSON.stringify({ ...current, engineEnabled: enabled }));
+        api?.getSettings?.(true);
+        window.WORLD_ENGINE?.applyInjection?.();
+      },
+      isRunning: () => Boolean(_evolving),
+      showForward: true,
+      forward: () => runManualEvolve('forward', 'state'),
+      redo: () => runManualEvolve('redo', 'checkpoint'),
+      abort: () => evolution.abort()
+    });
+    registerEngineFace({
+      id: 'memory', label: '记忆引擎', ballClass: 'we-ball-memory-face', panelClass: 'we-memory-face',
+      getTheme: () => getStoredMemoryTheme(),
+      getVersion: () => window.MEMORY_ENGINE_SETTINGS?.VERSION,
+      getSettings: () => window.MEMORY_ENGINE_SETTINGS?.getSettings(true) || {},
+      setEnabled: enabled => {
+        window.MEMORY_ENGINE_SETTINGS?.patchSettings({ engineEnabled: enabled });
+        window.MEMORY_ENGINE?.applyInjection?.();
+      },
+      isRunning: () => Boolean(window.MEMORY_ENGINE?.isRunning?.()),
+      render: () => renderMemoryView(),
+      openSettings: () => { _memorySettingsOpen = !_memorySettingsOpen; },
+      isSettingsOpen: () => _memorySettingsOpen,
+      onSettingsTab: key => { _memorySettingsTab = key; },
+      refreshDebug: () => refreshMemoryDebugRender(),
+      redo: () => runMemoryReextract(),
+      abort: () => window.MEMORY_ENGINE?.abort?.()
+    });
+  }
+
+  function getEngineFace(id) {
+    ensureBuiltinEngineFaces();
+    return _engineFaceRegistry.get(id || _engineFace) || _engineFaceRegistry.get('world');
+  }
+
+  function getNextEngineFace() {
+    ensureBuiltinEngineFaces();
+    const index = Math.max(0, _engineFaceOrder.indexOf(_engineFace));
+    return getEngineFace(_engineFaceOrder[(index + 1) % _engineFaceOrder.length]);
+  }
 
   // 六套纯 CSS 变量主题。写在 <html> 上，面板、悬浮球和顶部状态条同步换色。
   const WE_THEME_KEY = 'we-theme';
@@ -138,7 +204,8 @@ window.WORLD_ENGINE_UI = (function() {
   }
 
   function applyEngineFaceTheme() {
-    applyTheme(_engineFace === 'memory' ? getStoredMemoryTheme() : getStoredTheme());
+    const face = getEngineFace();
+    applyTheme(typeof face.getTheme === 'function' ? face.getTheme() : getStoredTheme());
   }
 
   // 模块加载时立即恢复主题，避免面板和悬浮球先闪默认色。
@@ -239,7 +306,7 @@ window.WORLD_ENGINE_UI = (function() {
     panel.querySelector('.we-panel-close').onclick = () => hidePanel();
     panel.querySelector('.we-engine-face-toggle').onclick = (event) => {
       event.stopPropagation();
-      flipEngineFace();
+      advanceEngineFace();
     };
     initDrag(panel, panel.querySelector('.we-panel-header'));
 
@@ -692,37 +759,38 @@ window.WORLD_ENGINE_UI = (function() {
 
   function updateEngineFaceChrome() {
     if (!panelElement) return;
-    const isMemory = _engineFace === 'memory';
-    panelElement.classList.toggle('we-memory-face', isMemory);
+    const face = getEngineFace();
+    for (const registered of _engineFaceRegistry.values()) {
+      if (registered.panelClass) panelElement.classList.remove(registered.panelClass);
+    }
+    if (face.panelClass) panelElement.classList.add(face.panelClass);
     const title = panelElement.querySelector('.we-engine-face-toggle');
     if (title) {
-      title.textContent = isMemory ? '记忆引擎' : '世界引擎';
-      const target = isMemory ? '世界引擎' : '记忆引擎';
-      title.title = '切换到' + target;
-      title.setAttribute('aria-label', '切换到' + target);
+      const next = getNextEngineFace();
+      title.textContent = face.label;
+      title.title = '切换到下一界面：' + next.label;
+      title.setAttribute('aria-label', title.title);
     }
     const settings = panelElement.querySelector('#we-btn-settings-open');
     if (settings) {
-      settings.classList.toggle('is-active', isMemory && _memorySettingsOpen);
-      settings.title = isMemory ? '记忆引擎设置' : '设置';
+      settings.classList.toggle('is-active', Boolean(face.isSettingsOpen?.()));
+      settings.title = face.label + '设置';
     }
     const version = panelElement.querySelector('#we-panel-version');
     if (version) {
-      const value = isMemory
-        ? window.MEMORY_ENGINE_SETTINGS?.VERSION
-        : window.WORLD_ENGINE_VERSION;
+      const value = typeof face.getVersion === 'function' ? face.getVersion() : '';
       version.textContent = value ? 'v' + value : '';
       version.style.display = value ? '' : 'none';
     }
     syncBallFace();
   }
 
-  function flipEngineFace() {
+  function advanceEngineFace() {
     if (!panelElement || _panelFlipping) return;
     _panelFlipping = true;
     panelElement.classList.add('we-panel-flip-out');
     window.setTimeout(() => {
-      _engineFace = _engineFace === 'world' ? 'memory' : 'world';
+      _engineFace = getNextEngineFace().id;
       applyEngineFaceTheme();
       syncBallFace();
       panelElement.classList.remove('we-panel-flip-out');
@@ -806,9 +874,13 @@ window.WORLD_ENGINE_UI = (function() {
   function refresh(auto) {
     if (!panelElement || !panelVisible) return;
     updateEngineFaceChrome();
-    if (_engineFace === 'memory') {
-      if (panelBodyElement) panelBodyElement.innerHTML = renderMemoryView();
+    const currentFace = getEngineFace();
+    if (currentFace.id !== 'world') {
+      if (panelBodyElement) panelBodyElement.innerHTML = typeof currentFace.render === 'function'
+        ? currentFace.render()
+        : '<div class="we-empty">该引擎界面尚未提供渲染器</div>';
       bindEvents(null);
+      currentFace.bind?.(panelBodyElement);
       return;
     }
     // 后台自动刷新会整块重建 DOM：设置页或任何编辑器正在输入时必须暂缓，
@@ -3646,11 +3718,9 @@ window.WORLD_ENGINE_UI = (function() {
 
     const settingsOpenBtn = document.getElementById('we-btn-settings-open');
     if (settingsOpenBtn) settingsOpenBtn.onclick = () => {
-      if (_engineFace === 'memory') {
-        _memorySettingsOpen = !_memorySettingsOpen;
-      } else {
-        _currentView = 'settings';
-      }
+      const face = getEngineFace();
+      if (typeof face.openSettings === 'function') face.openSettings();
+      else if (face.id === 'world') _currentView = 'settings';
       refresh();
     };
 
@@ -3696,7 +3766,8 @@ window.WORLD_ENGINE_UI = (function() {
     document.querySelectorAll('.we-settings-tab').forEach(tab => {
       tab.onclick = () => {
         const key = tab.dataset.tab;
-        if (_engineFace === 'memory') _memorySettingsTab = key;
+        const face = getEngineFace();
+        if (typeof face.onSettingsTab === 'function') face.onSettingsTab(key);
         else _settingsTab = key;
         document.querySelectorAll('.we-settings-tab').forEach(t =>
           t.classList.toggle('we-settings-tab--active', t.dataset.tab === key));
@@ -3705,7 +3776,7 @@ window.WORLD_ENGINE_UI = (function() {
         tab.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' });
         // [FIX] 切到调试 tab 时，局部刷新 renderDebug 拉最新一轮推演数据（不动其它 tab 输入）
         if (key === 'debug') {
-          if (_engineFace === 'memory') refreshMemoryDebugRender();
+          if (typeof face.refreshDebug === 'function') face.refreshDebug();
           else { refreshDebugRender(); refreshPresetManage(); }
         }
       };
@@ -4286,7 +4357,7 @@ window.WORLD_ENGINE_UI = (function() {
     const worldbookList = document.getElementById('we-worldbook-list');
     if (worldbookList) {
       const worldbook = window.WORLD_ENGINE_WORLDBOOK;
-      const worldbookScope = _engineFace === 'memory' ? 'memory' : 'world';
+      const worldbookScope = _engineFace;
       const summary = document.getElementById('we-worldbook-summary');
       const reloadBtn = document.getElementById('we-worldbook-reload');
       const selectAllBtn = document.getElementById('we-worldbook-select-all');
@@ -5300,35 +5371,35 @@ window.WORLD_ENGINE_UI = (function() {
   let _ballStatusTimer = null;
 
   function getFaceSettings() {
-    return _engineFace === 'memory'
-      ? (window.MEMORY_ENGINE_SETTINGS?.getSettings(true) || {})
-      : (window.WORLD_ENGINE_API?.getSettings(true) || {});
+    const face = getEngineFace();
+    return typeof face.getSettings === 'function' ? face.getSettings() : {};
   }
 
   function updateBallControls() {
     const ball = document.getElementById('we-input-btn');
     if (!ball) return;
-    const memory = _engineFace === 'memory';
-    const active = memory ? Boolean(window.MEMORY_ENGINE?.isRunning?.()) : Boolean(_evolving);
+    const face = getEngineFace();
+    const active = typeof face.isRunning === 'function' ? Boolean(face.isRunning()) : false;
     const fwd = ball.querySelector('#we-sat-forward');
     const redo = ball.querySelector('#we-sat-redo');
     const abort = ball.querySelector('#we-sat-abort');
     const power = ball.querySelector('#we-sat-power');
     if (fwd) {
-      fwd.style.display = memory ? 'none' : '';
+      fwd.style.display = face.showForward === true ? '' : 'none';
       fwd.classList.toggle('we-sat-off', active);
     }
     if (redo) {
       redo.classList.toggle('we-sat-off', active);
-      redo.title = memory ? '重新推演记忆' : '重新推进世界';
+      redo.title = `重新推演${face.label}`;
     }
     if (abort) {
       abort.classList.toggle('we-sat-off', !active);
-      abort.title = memory ? '停止记忆推演' : '停止世界推演';
+      abort.title = `停止${face.label}推演`;
     }
     if (power) {
       power.classList.toggle('on', getFaceSettings().engineEnabled === false);
-      power.title = memory ? '开关记忆推演与注入' : '开关世界推演与注入';
+      power.style.display = typeof face.setEnabled === 'function' ? '' : 'none';
+      power.title = `开关${face.label}推演与注入`;
     }
     ball.classList.toggle('we-ball-evolving', active);
     if (active) ball.classList.remove('we-ball-success', 'we-ball-fail');
@@ -5337,9 +5408,13 @@ window.WORLD_ENGINE_UI = (function() {
   function syncBallFace() {
     const ball = document.getElementById('we-input-btn');
     if (!ball) return;
-    const memory = _engineFace === 'memory';
-    ball.classList.toggle('we-ball-memory-face', memory);
-    ball.title = `${memory ? '记忆引擎' : '世界引擎'}：单击打开，双击翻转`;
+    const face = getEngineFace();
+    for (const registered of _engineFaceRegistry.values()) {
+      if (registered.ballClass) ball.classList.remove(registered.ballClass);
+    }
+    if (face.ballClass) ball.classList.add(face.ballClass);
+    ball.dataset.engineFace = face.id;
+    ball.title = `${face.label}：单击打开，双击切换到下一引擎`;
     ball.setAttribute('aria-label', ball.title);
     updateBallControls();
   }
@@ -5575,36 +5650,25 @@ window.WORLD_ENGINE_UI = (function() {
       });
     };
     wire('we-sat-forward', () => {
-      if (_engineFace === 'world') runManualEvolve('forward', 'state');
+      getEngineFace().forward?.();
     });
     wire('we-sat-redo', () => {
-      if (_engineFace === 'memory') runMemoryReextract();
-      else runManualEvolve('redo', 'checkpoint');
+      getEngineFace().redo?.();
     });
     wire('we-sat-abort', () => {
-      if (_engineFace === 'memory') window.MEMORY_ENGINE?.abort?.();
-      else evolution.abort();
+      getEngineFace().abort?.();
       showToast('已发送停止信号');
     });
 
     // 「插头」跟随当前球面：世界面改 world_engine_settings，记忆面改 memory_engine_settings。
-    // 两边都是独立总开关，且不改写用户选好的推演模式与注入选项。
+    // 每个已注册引擎各自管理总开关，且不改写用户选好的推演模式与注入选项。
     //   不用 we-sat-off(wire 内会拦 we-sat-off 不可点);用 .on class 标关闭态,power 永远可点。
     wire('we-sat-power', () => {
-      const memory = _engineFace === 'memory';
+      const face = getEngineFace();
       const turnOff = getFaceSettings().engineEnabled !== false;
-      if (memory) {
-        window.MEMORY_ENGINE_SETTINGS?.patchSettings({ engineEnabled: !turnOff });
-        window.MEMORY_ENGINE?.applyInjection?.();
-      } else {
-        const wapi = window.WORLD_ENGINE_API;
-        const current = wapi?.getSettings?.(true) || {};
-        window.WORLD_ENGINE_STORE.setItem('world_engine_settings', JSON.stringify({ ...current, engineEnabled: !turnOff }));
-        wapi?.getSettings?.(true);
-        window.WORLD_ENGINE?.applyInjection?.();
-      }
+      face.setEnabled?.(!turnOff);
       updateBallControls();
-      showToast(turnOff ? `已关闭${memory ? '记忆' : '世界'}推演与注入` : `已开启${memory ? '记忆' : '世界'}推演与注入`);
+      showToast(turnOff ? `已关闭${face.label}推演与注入` : `已开启${face.label}推演与注入`);
       if (typeof _currentView !== 'undefined' && _currentView === 'settings') refresh();
     });
   }
@@ -5639,7 +5703,7 @@ window.WORLD_ENGINE_UI = (function() {
       btn.ondblclick = (event) => {
         event.preventDefault();
         clearTimeout(clickTimer);
-        flipEngineFace();
+        advanceEngineFace();
       };
       document.body.appendChild(btn);
       wireSatellites(btn);
@@ -5678,6 +5742,9 @@ window.WORLD_ENGINE_UI = (function() {
 
   return {
     buildPanel, buildInputButton, showPanel, hidePanel, togglePanel, refresh, setStatus,
-    setEvolvingUI, setMemoryEvolvingUI, setInjectedScope
+    setEvolvingUI, setMemoryEvolvingUI, setInjectedScope,
+    registerEngineFace,
+    listEngineFaces: () => { ensureBuiltinEngineFaces(); return _engineFaceOrder.map(id => ({ ...getEngineFace(id) })); },
+    advanceEngineFace
   };
 })();
