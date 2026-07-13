@@ -236,7 +236,138 @@ window.WORLD_ENGINE_UI = (function() {
 
   function renderMemoryView() {
     if (!_memorySettingsOpen) return '';
-    return '<div class="we-memory-settings-empty" aria-label="记忆引擎设置"><span>设置</span></div>';
+    return renderMemorySettingsView();
+  }
+
+  const MEMORY_SETTINGS_TABS = [
+    { key: 'common', label: '常用' },
+    { key: 'advanced', label: '高级' },
+    { key: 'worldbook', label: '世界书' }
+  ];
+
+  function renderMemorySettingsView() {
+    const settings = window.WORLD_ENGINE_API
+      ? window.WORLD_ENGINE_API.getSettings(true)
+      : JSON.parse(window.WORLD_ENGINE_STORE.getItem('world_engine_settings') || '{}');
+    const shared = renderSettingsForm();
+    const extra = renderSettingsAfterCheckpoint();
+    const sec = (id, title, body) =>
+      '<div class="we-section"><div class="we-section-title">' + sectionHeader(title, id) + '</div>'
+      + sectionBody(id, body) + '</div>';
+    const mode = settings.memoryEvolveMode === 'manual' ? 'manual' : 'auto';
+    const everyX = Math.max(1, parseInt(settings.memoryEvolveEveryX) || 5);
+    const readRounds = Math.min(everyX, Math.max(1, parseInt(settings.memoryEvolveReadRounds) || everyX));
+    const manualReadRounds = Math.max(1, parseInt(settings.memoryManualReadRounds) || 5);
+    const searchDepth = Math.max(1, parseInt(settings.memorySearchDepth) || 5);
+    const maxPerCharacter = Math.max(1, parseInt(settings.memoryMaxPerCharacter) || 20);
+    const backfillBatch = Math.max(1, parseInt(settings.memoryBackfillBatchSize) || 5);
+    const backfillEnd = Math.max(0, parseInt(settings.memoryBackfillEndLayer) || 0);
+    const backfillRetries = Math.max(0, parseInt(settings.memoryBackfillRetries) || 0);
+
+    const modeBody = `
+      <div class="we-input-group">
+        <label>记忆推演模式</label>
+        <select id="we-memory-evolve-mode" style="width:100%;">
+          <option value="auto" ${mode === 'auto' ? 'selected' : ''}>自动 · 按轮（每 X 轮提取一次）</option>
+          <option value="manual" ${mode === 'manual' ? 'selected' : ''}>手动（仅手动触发记忆推演）</option>
+        </select>
+      </div>
+      <div class="we-input-group" id="we-memory-everyx-group" style="${mode === 'auto' ? '' : 'display:none;'}">
+        <label>每几轮提取一次（X）</label>
+        <input type="number" id="we-memory-everyx" min="1" step="1" value="${everyX}" style="width:100%;">
+        <div style="font-size:11px;color:var(--we-text3);margin-top:3px;">重 roll 不计入新轮次；到达 X 轮时只调用一次 LLM 提取人物主观记忆。</div>
+      </div>
+      <div class="we-input-group" id="we-memory-readrounds-group" style="${mode === 'auto' ? '' : 'display:none;'}">
+        <label>每次提取读取最近几轮对话</label>
+        <input type="number" id="we-memory-readrounds" min="1" max="${everyX}" step="1" value="${readRounds}" style="width:100%;">
+      </div>
+      <div class="we-input-group" id="we-memory-manual-readrounds-group" style="${mode === 'manual' ? '' : 'display:none;'}">
+        <label>手动提取读取最近几轮对话</label>
+        <input type="number" id="we-memory-manual-readrounds" min="1" step="1" value="${manualReadRounds}" style="width:100%;">
+      </div>`;
+
+    const injectBody = `
+      <div class="we-input-group">
+        <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
+          <input type="checkbox" id="we-memory-inject" ${settings.memoryInjectIntoPrompt !== false ? 'checked' : ''}>
+          注入人物记忆
+        </label>
+        <div style="font-size:11px;color:var(--we-text3);margin-top:3px;">生成回复前扫描最近 N 层正文中的人物名称与别名，再注入对应人物的主观记忆。</div>
+      </div>
+      <div class="we-input-group" style="display:flex;gap:6px;">
+        <div style="flex:1;">
+          <label>人物搜寻层数（N）</label>
+          <input type="number" id="we-memory-search-depth" min="1" step="1" value="${searchDepth}" style="width:100%;">
+        </div>
+        <div style="flex:1;">
+          <label>每个人物最多注入</label>
+          <input type="number" id="we-memory-max-per-character" min="1" step="1" value="${maxPerCharacter}" style="width:100%;">
+        </div>
+      </div>`;
+
+    const backfillBody = `
+      <div style="font-size:11px;color:var(--we-text3);margin-bottom:6px;">从第 1 个 AI 楼层开始，分批重新提取人物主观记忆。记忆执行链接入后，此入口只会重建 personal_memory，不会清空或改写世界引擎状态。</div>
+      <div style="display:flex;gap:6px;flex-wrap:wrap;">
+        <div class="we-input-group" style="flex:1;min-width:90px;margin-bottom:0;"><label>每批 AI 楼层数</label>
+          <input type="number" id="we-memory-backfill-batch" min="1" step="1" value="${backfillBatch}"></div>
+        <div class="we-input-group" style="flex:1;min-width:90px;margin-bottom:0;"><label>结束楼层（0=全部）</label>
+          <input type="number" id="we-memory-backfill-end" min="0" step="1" value="${backfillEnd}"></div>
+        <div class="we-input-group" style="flex:1;min-width:90px;margin-bottom:0;"><label>每批重试次数</label>
+          <input type="number" id="we-memory-backfill-retries" min="0" step="1" value="${backfillRetries}"></div>
+      </div>
+      <div class="we-hint" id="we-memory-backfill-status" style="margin:6px 0;"></div>
+      <div style="display:flex;gap:6px;flex-wrap:wrap;margin:6px 0;">
+        <button class="we-btn we-btn-primary" id="we-memory-backfill-start">▶ 开始重填记忆推演</button>
+        <button class="we-btn" id="we-memory-backfill-stop">■ 停止</button>
+      </div>`;
+
+    const promptText = window.MEMORY_ENGINE_PROMPT?.SYSTEM_PROMPT || '记忆提示词模块未加载';
+    const promptBody = `
+      <div style="font-size:11px;color:var(--we-text3);margin-bottom:6px;">内置提示词位于 memory-engine-prompt.js。当前只读，后续接入预设系统时再开放自定义。</div>
+      <textarea readonly style="width:100%;min-height:220px;resize:vertical;">${h(promptText)}</textarea>`;
+
+    const memoryWorldbookBody = `
+      <div class="we-input-group">
+        <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
+          <input type="checkbox" id="we-memory-worldbook-enabled" ${settings.memoryWorldbookEnabled === true ? 'checked' : ''}>
+          启用记忆推演世界书
+        </label>
+        <div style="font-size:11px;color:var(--we-text3);margin-top:3px;">默认关闭。开启后才会把下方选中的世界书条目作为人物与背景参考；世界书内容不会被直接当作新记忆。</div>
+      </div>`;
+
+    const worldbook = String(extra.worldbook || '')
+      .replace(/后台推演世界书/g, '记忆推演世界书')
+      .replace(/注入推演/g, '注入记忆推演');
+    const panelContent = {
+      common: shared.api
+        + sec('set-memory-evolve', '记忆提取模式', modeBody)
+        + sec('set-memory-inject', '人物记忆注入', injectBody),
+      advanced: shared.retry
+        + sec('set-memory-backfill', '批量重填记忆推演', backfillBody)
+        + sec('set-memory-prompt', '记忆提取提示词', promptBody),
+      worldbook: sec('set-memory-worldbook-enabled', '世界书总开关', memoryWorldbookBody) + worldbook
+    };
+
+    if (!MEMORY_SETTINGS_TABS.some(tab => tab.key === _settingsTab)) _settingsTab = 'common';
+    const tabBar = '<div class="we-settings-tabs-shell">'
+      + '<button class="we-settings-tab-scroll" data-dir="-1" title="向左滚动"><i class="fa-solid fa-chevron-left"></i></button>'
+      + '<div class="we-settings-tabs" id="we-settings-tabs">'
+      + MEMORY_SETTINGS_TABS.map(tab =>
+          '<button class="we-settings-tab' + (tab.key === _settingsTab ? ' we-settings-tab--active' : '')
+          + '" data-tab="' + tab.key + '">' + tab.label + '</button>').join('')
+      + '</div>'
+      + '<button class="we-settings-tab-scroll" data-dir="1" title="向右滚动"><i class="fa-solid fa-chevron-right"></i></button>'
+      + '</div>';
+    const panels = MEMORY_SETTINGS_TABS.map(tab =>
+      '<div class="we-settings-panel" data-tab="' + tab.key + '"'
+      + (tab.key === _settingsTab ? '' : ' style="display:none;"') + '>'
+      + (panelContent[tab.key] || '') + '</div>').join('');
+
+    return '<div class="we-sub-topbar"><span class="we-sub-title">记忆引擎设置</span></div>'
+      + tabBar + panels
+      + '<div class="we-settings-save-actions we-settings-save-sticky">'
+      + '<button class="we-btn" id="we-save-memory-settings">保存记忆设置</button>'
+      + '</div>';
   }
 
   function updateEngineFaceChrome() {
@@ -3416,6 +3547,89 @@ window.WORLD_ENGINE_UI = (function() {
 
     // 初始化：打开设置页时从已存字段反解析出勾选状态
     syncTagsFromTextarea();
+
+    const memorySaveBtn = document.getElementById('we-save-memory-settings');
+    if (memorySaveBtn) {
+      memorySaveBtn.onclick = () => {
+        const gv = id => document.getElementById(id)?.value;
+        const current = window.WORLD_ENGINE_API ? window.WORLD_ENGINE_API.getSettings(true) : {};
+        const temperatureRaw = parseFloat(gv('we-temperature'));
+        const timeoutSecRaw = parseFloat(gv('we-api-timeout-sec'));
+        const everyX = Math.max(1, parseInt(gv('we-memory-everyx')) || 5);
+        const ns = {
+          ...current,
+          // API 连接由世界引擎与记忆引擎共用。
+          apiUrl: gv('we-api-url') || '',
+          apiKey: gv('we-api-key') || '',
+          model: gv('we-model') || 'gpt-3.5-turbo',
+          temperature: Number.isFinite(temperatureRaw) ? Math.max(0, temperatureRaw) : 0.7,
+          maxTokens: Math.max(1, parseInt(gv('we-max-tokens')) || 2000),
+          apiAutoRetries: Math.max(0, parseInt(gv('we-api-auto-retries')) || 0),
+          apiTimeoutMs: Number.isFinite(timeoutSecRaw) ? Math.max(0, Math.round(timeoutSecRaw * 1000)) : 120000,
+          connectionMode: document.getElementById('we-connection-mode')?.value === 'proxy' ? 'proxy' : 'direct',
+          // 调度与注入参数独立保存，执行时复用世界引擎现有机制。
+          memoryEvolveMode: gv('we-memory-evolve-mode') === 'manual' ? 'manual' : 'auto',
+          memoryEvolveEveryX: everyX,
+          memoryEvolveReadRounds: Math.min(everyX, Math.max(1, parseInt(gv('we-memory-readrounds')) || everyX)),
+          memoryManualReadRounds: Math.max(1, parseInt(gv('we-memory-manual-readrounds')) || 5),
+          memoryInjectIntoPrompt: document.getElementById('we-memory-inject')?.checked !== false,
+          memorySearchDepth: Math.max(1, parseInt(gv('we-memory-search-depth')) || 5),
+          memoryMaxPerCharacter: Math.max(1, parseInt(gv('we-memory-max-per-character')) || 20),
+          memoryWorldbookEnabled: document.getElementById('we-memory-worldbook-enabled')?.checked === true,
+          memoryBackfillBatchSize: Math.max(1, parseInt(gv('we-memory-backfill-batch')) || 5),
+          memoryBackfillEndLayer: Math.max(0, parseInt(gv('we-memory-backfill-end')) || 0),
+          memoryBackfillRetries: Math.max(0, parseInt(gv('we-memory-backfill-retries')) || 0)
+        };
+        window.WORLD_ENGINE_STORE.setItem('world_engine_settings', JSON.stringify(ns));
+        if (window.WORLD_ENGINE_API) window.WORLD_ENGINE_API.getSettings(true);
+        showToast('记忆引擎设置已保存');
+      };
+    }
+
+    const memoryModeSelect = document.getElementById('we-memory-evolve-mode');
+    if (memoryModeSelect) {
+      memoryModeSelect.onchange = () => {
+        const automatic = memoryModeSelect.value !== 'manual';
+        const everyXGroup = document.getElementById('we-memory-everyx-group');
+        const readRoundsGroup = document.getElementById('we-memory-readrounds-group');
+        const manualGroup = document.getElementById('we-memory-manual-readrounds-group');
+        if (everyXGroup) everyXGroup.style.display = automatic ? '' : 'none';
+        if (readRoundsGroup) readRoundsGroup.style.display = automatic ? '' : 'none';
+        if (manualGroup) manualGroup.style.display = automatic ? 'none' : '';
+      };
+    }
+
+    const memoryEveryX = document.getElementById('we-memory-everyx');
+    if (memoryEveryX) {
+      memoryEveryX.oninput = () => {
+        const max = Math.max(1, parseInt(memoryEveryX.value) || 1);
+        const read = document.getElementById('we-memory-readrounds');
+        if (!read) return;
+        read.max = String(max);
+        if ((parseInt(read.value) || 1) > max) read.value = String(max);
+      };
+    }
+
+    const memoryBackfillStart = document.getElementById('we-memory-backfill-start');
+    if (memoryBackfillStart) {
+      memoryBackfillStart.onclick = async () => {
+        if (window.MEMORY_ENGINE && typeof window.MEMORY_ENGINE.backfill === 'function') {
+          await window.MEMORY_ENGINE.backfill();
+          return;
+        }
+        showToast('记忆提取执行链尚未接入；当前已完成提示词和设置结构', true);
+      };
+    }
+    const memoryBackfillStop = document.getElementById('we-memory-backfill-stop');
+    if (memoryBackfillStop) {
+      memoryBackfillStop.onclick = () => {
+        if (window.MEMORY_ENGINE && typeof window.MEMORY_ENGINE.stopBackfill === 'function') {
+          window.MEMORY_ENGINE.stopBackfill();
+          return;
+        }
+        showToast('当前没有运行中的记忆重填任务');
+      };
+    }
 
     const saveBtn = document.getElementById('we-save-settings');
     if (saveBtn) {

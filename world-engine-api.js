@@ -30,6 +30,18 @@ window.WORLD_ENGINE_API = (function() {
       evolveEveryX: 1,
       evolveReadRounds: 1,
       manualReadRounds: 1,
+      // 记忆引擎复用同一套 API / 调度机制，但保留独立的运行参数。
+      memoryEvolveMode: 'auto',
+      memoryEvolveEveryX: 5,
+      memoryEvolveReadRounds: 5,
+      memoryManualReadRounds: 5,
+      memoryInjectIntoPrompt: true,
+      memorySearchDepth: 5,
+      memoryMaxPerCharacter: 20,
+      memoryWorldbookEnabled: false,
+      memoryBackfillBatchSize: 5,
+      memoryBackfillRetries: 2,
+      memoryBackfillEndLayer: 0,
       evolveFilterRegex: '',
       tonePrompt: '',
       // 按时间推演模式

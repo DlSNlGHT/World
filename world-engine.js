@@ -5,6 +5,7 @@
 
   const MODULES = [
     'world-engine-store.js',
+    'memory-engine-prompt.js',    // 记忆引擎：独立主观记忆提取提示词（执行链后续接入）
     'world-engine-preset.js',       // ← 新增：引擎预设系统（紧跟 store，在 evolution 之前；运行时引用 evolution 默认段）
     'world-engine-core.js',
     'world-engine-api.js',
