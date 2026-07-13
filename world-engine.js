@@ -3,25 +3,37 @@
   if (window.__WORLD_ENGINE_LOADED__) return;
   window.__WORLD_ENGINE_LOADED__ = true;
 
-  const MODULES = [
+  const SHARED_MODULES = [
     'world-engine-store.js',
-    'memory-engine-settings.js',  // 记忆引擎独立设置命名空间
-    'memory-engine-data.js',      // 记忆引擎按聊天隔离的数据、存档点与命名存档
-    'memory-engine-prompt.js',    // 记忆引擎：独立主观记忆提取提示词
-    'world-engine-preset.js',       // ← 新增：引擎预设系统（紧跟 store，在 evolution 之前；运行时引用 evolution 默认段）
     'world-engine-core.js',
     'world-engine-api.js',
-    'world-engine-rules-loader.js',
     'world-engine-worldbook.js',
     'world-engine-chatcache.js',
-    'world-engine-ledger.js',
-    'world-engine-evolution.js',
-    'world-engine-inject.js',
-    'world-engine-inject-inspector.js', // ← 新增：注入自检查看器（解耦/只读，订阅 prompt-ready 事件核对注入是否真进正文）
-    'memory-engine.js',
-    'world-engine-diag.js',
-    'world-engine-ui.js'
+    'world-engine-inject-inspector.js'
   ];
+
+  // 引擎地位并列，按注册顺序加载；世界引擎只是在发生取舍时拥有最高启动优先级。
+  const ENGINE_MODULE_GROUPS = [
+    {
+      id: 'world', label: '世界引擎', modules: [
+        'world-engine-preset.js',
+        'world-engine-rules-loader.js',
+        'world-engine-ledger.js',
+        'world-engine-evolution.js',
+        'world-engine-inject.js'
+      ]
+    },
+    {
+      id: 'memory', label: '记忆引擎', modules: [
+        'memory-engine-settings.js',
+        'memory-engine-data.js',
+        'memory-engine-prompt.js',
+        'memory-engine.js'
+      ]
+    }
+  ];
+
+  const SHARED_UI_MODULES = ['world-engine-diag.js', 'world-engine-ui.js'];
 
   function getBaseUrl() {
     const scripts = document.getElementsByTagName('script');
@@ -44,15 +56,37 @@
     });
   }
 
+  async function loadEngineGroup(baseUrl, group) {
+    try {
+      for (const mod of group.modules) {
+        await loadScript(baseUrl + '/' + mod);
+        console.log(`[${group.label}] 已加载:`, mod);
+      }
+      return true;
+    } catch (error) {
+      console.error(`[${group.label}] 模块加载失败`, error);
+      return false;
+    }
+  }
+
+  async function loadRequiredModules(baseUrl, modules, label) {
+    for (const mod of modules) {
+      await loadScript(baseUrl + '/' + mod);
+      console.log(`[${label}] 已加载:`, mod);
+    }
+  }
+
   async function init() {
     const baseUrl = getBaseUrl();
     console.log('[世界引擎] 加载中...');
 
     try {
-      for (const mod of MODULES) {
-        await loadScript(baseUrl + '/' + mod);
-        console.log('[世界引擎] 已加载:', mod);
+      await loadRequiredModules(baseUrl, SHARED_MODULES, '共用底座');
+      const loadedEngines = new Map();
+      for (const group of ENGINE_MODULE_GROUPS) {
+        loadedEngines.set(group.id, await loadEngineGroup(baseUrl, group));
       }
+      await loadRequiredModules(baseUrl, SHARED_UI_MODULES, '共用界面');
 
       // 读取扩展版本号（来自 manifest.json，单一真相源）供 UI 显示；失败不阻断启动
       try {
@@ -78,10 +112,6 @@
         try { window.WORLD_ENGINE_INJECT_INSPECTOR.init(); } catch (e) { console.warn('[世界引擎] 注入自检初始化失败（非致命）', e); }
       }
 
-      if (window.MEMORY_ENGINE) {
-        try { window.MEMORY_ENGINE.init(); } catch (e) { console.warn('[记忆引擎] 初始化失败（非致命）', e); }
-      }
-
       const core = window.WORLD_ENGINE_CORE;
       const api = window.WORLD_ENGINE_API;
       const ledger = window.WORLD_ENGINE_LEDGER;
@@ -89,6 +119,21 @@
       const inject = window.WORLD_ENGINE_INJECT;
       const ui = window.WORLD_ENGINE_UI;
       const rulesLoader = window.WORLD_ENGINE_RULES;
+
+      // 世界组自身失败时，共用底座与其他已加载引擎仍可独立工作。
+      // 世界排第一是优先级，不是其他引擎对它的运行依赖。
+      if (!loadedEngines.get('world')) {
+        console.error('[世界引擎] 引擎模块不可用；继续启动其他已加载引擎');
+        if (loadedEngines.get('memory') && window.MEMORY_ENGINE) {
+          try { window.MEMORY_ENGINE.init(); }
+          catch (e) { console.warn('[记忆引擎] 初始化失败（非致命）', e); }
+        }
+        try {
+          ui?.buildPanel?.();
+          ui?.buildInputButton?.();
+        } catch (e) { console.warn('[共用界面] 初始化失败', e); }
+        return;
+      }
 
       // 加载活体引擎全部规则（规则已内置在 JS 中，不需要网络请求）
       let rulesCount = 0;
@@ -613,6 +658,13 @@
       setInterval(() => { if (ui) ui.refresh(true); }, 30000);
 
       console.log('[世界引擎] 初始化完成 ✅');
+
+      // 引擎初始化同样按注册优先级进行。世界事件已绑定并完成首次注入后，
+      // 再启动记忆引擎；记忆初始化异常不会回滚已经运行的世界引擎。
+      if (loadedEngines.get('memory') && window.MEMORY_ENGINE) {
+        try { window.MEMORY_ENGINE.init(); }
+        catch (e) { console.warn('[记忆引擎] 初始化失败（非致命）', e); }
+      }
     } catch(err) {
       console.error('[世界引擎] 初始化失败', err);
     }

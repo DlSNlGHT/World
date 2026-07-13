@@ -269,7 +269,8 @@ window.WORLD_ENGINE_CHATCACHE = (function() {
   }
 
   function onStoreWrite(key, value) {
-    memoryScope.onStoreWrite(key);
+    try { memoryScope.onStoreWrite(key); }
+    catch (e) { console.warn('[记忆引擎] 酒馆缓存写入调度失败（已隔离）', e); }
     if (_suspend) return;
     const ctx = getCtx();
     if (!ctx || !chatUsable(ctx)) return;
@@ -281,7 +282,8 @@ window.WORLD_ENGINE_CHATCACHE = (function() {
   // ========== 聊天加载：实时同步的恢复 / 收敛 ==========
 
   function onChatLoaded() {
-    memoryScope.onChatLoaded();
+    try { memoryScope.onChatLoaded(); }
+    catch (e) { console.warn('[记忆引擎] 酒馆缓存恢复失败（已隔离）', e); }
     // 丢弃上一个聊天遗留的 pending tick，避免它在 B 上下文意外写盘 / 生成自动备份
     if (_tickTimer) { clearTimeout(_tickTimer); _tickTimer = null; }
     const ctx = getCtx();

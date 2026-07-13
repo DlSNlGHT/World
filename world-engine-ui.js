@@ -49,6 +49,15 @@ window.WORLD_ENGINE_UI = (function() {
     return id;
   }
 
+  function callEngineFace(face, hook, fallback, ...args) {
+    try {
+      return typeof face?.[hook] === 'function' ? face[hook](...args) : fallback;
+    } catch (error) {
+      console.error(`[${face?.label || face?.id || '引擎'}] UI ${hook} 失败（已隔离）`, error);
+      return fallback;
+    }
+  }
+
   function ensureBuiltinEngineFaces() {
     if (_engineFaceRegistry.has('world')) return;
     registerEngineFace({
@@ -205,7 +214,7 @@ window.WORLD_ENGINE_UI = (function() {
 
   function applyEngineFaceTheme() {
     const face = getEngineFace();
-    applyTheme(typeof face.getTheme === 'function' ? face.getTheme() : getStoredTheme());
+    applyTheme(callEngineFace(face, 'getTheme', getStoredTheme()));
   }
 
   // 模块加载时立即恢复主题，避免面板和悬浮球先闪默认色。
@@ -773,12 +782,12 @@ window.WORLD_ENGINE_UI = (function() {
     }
     const settings = panelElement.querySelector('#we-btn-settings-open');
     if (settings) {
-      settings.classList.toggle('is-active', Boolean(face.isSettingsOpen?.()));
+      settings.classList.toggle('is-active', Boolean(callEngineFace(face, 'isSettingsOpen', false)));
       settings.title = face.label + '设置';
     }
     const version = panelElement.querySelector('#we-panel-version');
     if (version) {
-      const value = typeof face.getVersion === 'function' ? face.getVersion() : '';
+      const value = callEngineFace(face, 'getVersion', '');
       version.textContent = value ? 'v' + value : '';
       version.style.display = value ? '' : 'none';
     }
@@ -876,11 +885,13 @@ window.WORLD_ENGINE_UI = (function() {
     updateEngineFaceChrome();
     const currentFace = getEngineFace();
     if (currentFace.id !== 'world') {
-      if (panelBodyElement) panelBodyElement.innerHTML = typeof currentFace.render === 'function'
-        ? currentFace.render()
-        : '<div class="we-empty">该引擎界面尚未提供渲染器</div>';
+      if (panelBodyElement) panelBodyElement.innerHTML = callEngineFace(
+        currentFace,
+        'render',
+        '<div class="we-empty">该引擎界面加载失败或尚未提供渲染器；其他引擎不受影响。</div>'
+      );
       bindEvents(null);
-      currentFace.bind?.(panelBodyElement);
+      callEngineFace(currentFace, 'bind', undefined, panelBodyElement);
       return;
     }
     // 后台自动刷新会整块重建 DOM：设置页或任何编辑器正在输入时必须暂缓，
@@ -5372,14 +5383,14 @@ window.WORLD_ENGINE_UI = (function() {
 
   function getFaceSettings() {
     const face = getEngineFace();
-    return typeof face.getSettings === 'function' ? face.getSettings() : {};
+    return callEngineFace(face, 'getSettings', {}) || {};
   }
 
   function updateBallControls() {
     const ball = document.getElementById('we-input-btn');
     if (!ball) return;
     const face = getEngineFace();
-    const active = typeof face.isRunning === 'function' ? Boolean(face.isRunning()) : false;
+    const active = Boolean(callEngineFace(face, 'isRunning', false));
     const fwd = ball.querySelector('#we-sat-forward');
     const redo = ball.querySelector('#we-sat-redo');
     const abort = ball.querySelector('#we-sat-abort');
