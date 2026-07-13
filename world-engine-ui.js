@@ -714,6 +714,7 @@ window.WORLD_ENGINE_UI = (function() {
       version.textContent = value ? 'v' + value : '';
       version.style.display = value ? '' : 'none';
     }
+    syncBallFace();
   }
 
   function flipEngineFace() {
@@ -723,6 +724,7 @@ window.WORLD_ENGINE_UI = (function() {
     window.setTimeout(() => {
       _engineFace = _engineFace === 'world' ? 'memory' : 'world';
       applyEngineFaceTheme();
+      syncBallFace();
       panelElement.classList.remove('we-panel-flip-out');
       panelElement.classList.add('we-panel-flip-in');
       refresh();
@@ -5167,21 +5169,10 @@ window.WORLD_ENGINE_UI = (function() {
     // 显示哪份由 getActiveInjected 守卫 + _evolvingScope 负责，刷新由调用方在外面做。
     _evolving = !!active;
     if (active && scope) _evolvingScope = scope;
-    // 悬浮球卫星按钮：推演中禁用 前进/重新、启用 停止；空闲反之
-    const fwd = document.getElementById('we-sat-forward');
-    const redo = document.getElementById('we-sat-redo');
-    const ab = document.getElementById('we-sat-abort');
-    if (fwd) fwd.classList.toggle('we-sat-off', !!active);
-    if (redo) redo.classList.toggle('we-sat-off', !!active);
-    if (ab) ab.classList.toggle('we-sat-off', !active);
-    const ball = document.getElementById('we-input-btn');
-    if (ball && active) {
-      ball.classList.add('we-ball-evolving');
-      ball.classList.remove('we-ball-success', 'we-ball-fail');
-    } else if (ball && !active) {
-      ball.classList.remove('we-ball-evolving');
-    }
+    updateBallControls();
   }
+
+  function setMemoryEvolvingUI() { updateBallControls(); }
 
   function setInjectedScope(scope) {
     _injectedScope = scope === 'checkpoint' ? 'checkpoint' : 'state';
@@ -5198,6 +5189,14 @@ window.WORLD_ENGINE_UI = (function() {
     const ok = await window.WORLD_ENGINE.manualEvolve(mode, scope);
     if (ok) showToast('推演完成');
     else if (evolution.getLastError?.()) showToast(evolution.getLastError(), true);
+  }
+
+  async function runMemoryReextract() {
+    if (!window.MEMORY_ENGINE?.manualReextract) { showToast('记忆推演入口未就绪', true); return; }
+    try {
+      const result = await window.MEMORY_ENGINE.manualReextract();
+      showToast(`记忆重新推演完成，写入 ${result?.added || 0} 条`);
+    } catch (error) { showToast(`记忆重新推演失败：${error?.message || error}`, true); }
   }
 
   // 批量「重填世界推演」：清空当前世界状态，从第 1 个 AI 楼层分批推到指定楼层。
@@ -5299,6 +5298,51 @@ window.WORLD_ENGINE_UI = (function() {
   let inputButtonRetryTimer = null;
   const WE_BALL_POS_KEY = 'we-ball-pos';
   let _ballStatusTimer = null;
+
+  function getFaceSettings() {
+    return _engineFace === 'memory'
+      ? (window.MEMORY_ENGINE_SETTINGS?.getSettings(true) || {})
+      : (window.WORLD_ENGINE_API?.getSettings(true) || {});
+  }
+
+  function updateBallControls() {
+    const ball = document.getElementById('we-input-btn');
+    if (!ball) return;
+    const memory = _engineFace === 'memory';
+    const active = memory ? Boolean(window.MEMORY_ENGINE?.isRunning?.()) : Boolean(_evolving);
+    const fwd = ball.querySelector('#we-sat-forward');
+    const redo = ball.querySelector('#we-sat-redo');
+    const abort = ball.querySelector('#we-sat-abort');
+    const power = ball.querySelector('#we-sat-power');
+    if (fwd) {
+      fwd.style.display = memory ? 'none' : '';
+      fwd.classList.toggle('we-sat-off', active);
+    }
+    if (redo) {
+      redo.classList.toggle('we-sat-off', active);
+      redo.title = memory ? '重新推演记忆' : '重新推进世界';
+    }
+    if (abort) {
+      abort.classList.toggle('we-sat-off', !active);
+      abort.title = memory ? '停止记忆推演' : '停止世界推演';
+    }
+    if (power) {
+      power.classList.toggle('on', getFaceSettings().engineEnabled === false);
+      power.title = memory ? '开关记忆推演与注入' : '开关世界推演与注入';
+    }
+    ball.classList.toggle('we-ball-evolving', active);
+    if (active) ball.classList.remove('we-ball-success', 'we-ball-fail');
+  }
+
+  function syncBallFace() {
+    const ball = document.getElementById('we-input-btn');
+    if (!ball) return;
+    const memory = _engineFace === 'memory';
+    ball.classList.toggle('we-ball-memory-face', memory);
+    ball.title = `${memory ? '记忆引擎' : '世界引擎'}：单击打开，双击翻转`;
+    ball.setAttribute('aria-label', ball.title);
+    updateBallControls();
+  }
 
   function loadBallPos() {
     try {
@@ -5530,32 +5574,37 @@ window.WORLD_ENGINE_UI = (function() {
         fn();
       });
     };
-    wire('we-sat-forward', () => runManualEvolve('forward', 'state'));
-    wire('we-sat-redo', () => runManualEvolve('redo', 'checkpoint'));
-    wire('we-sat-abort', () => { evolution.abort(); showToast('已发送停止信号'); });
+    wire('we-sat-forward', () => {
+      if (_engineFace === 'world') runManualEvolve('forward', 'state');
+    });
+    wire('we-sat-redo', () => {
+      if (_engineFace === 'memory') runMemoryReextract();
+      else runManualEvolve('redo', 'checkpoint');
+    });
+    wire('we-sat-abort', () => {
+      if (_engineFace === 'memory') window.MEMORY_ENGINE?.abort?.();
+      else evolution.abort();
+      showToast('已发送停止信号');
+    });
 
-    // 「插头」是世界引擎独立总开关；不改写用户选好的推演模式与注入选项。
-    // 记忆引擎使用自己的 memory_engine_settings.engineEnabled，二者互不联动。
+    // 「插头」跟随当前球面：世界面改 world_engine_settings，记忆面改 memory_engine_settings。
+    // 两边都是独立总开关，且不改写用户选好的推演模式与注入选项。
     //   不用 we-sat-off(wire 内会拦 we-sat-off 不可点);用 .on class 标关闭态,power 永远可点。
-    const wapi = window.WORLD_ENGINE_API;
-    const readSettings = () => (wapi && wapi.getSettings ? wapi.getSettings(true) : {}) || {};
-    const isPowerOff = (s) => s.engineEnabled === false;
-    const syncPowerState = () => {
-      const el = ball.querySelector('#we-sat-power');
-      if (el) el.classList.toggle('on', isPowerOff(readSettings()));
-    };
-    syncPowerState(); // 初始视觉态
     wire('we-sat-power', () => {
-      const turnOff = !isPowerOff(readSettings()); // 切到对面
-      const setKV = (k, v) => {
-        const c = wapi && wapi.getSettings ? wapi.getSettings(true) : {};
-        window.WORLD_ENGINE_STORE.setItem('world_engine_settings', JSON.stringify({ ...c, [k]: v }));
-        if (wapi && wapi.getSettings) wapi.getSettings(true);
-      };
-      setKV('engineEnabled', !turnOff);
-      window.WORLD_ENGINE?.applyInjection?.(); // 立即重注入:关→unregisterInjection,开→重新注入
-      syncPowerState(); // 更新 .on 视觉态
-      showToast(turnOff ? '已关闭推演与注入' : '已开启推演与注入');
+      const memory = _engineFace === 'memory';
+      const turnOff = getFaceSettings().engineEnabled !== false;
+      if (memory) {
+        window.MEMORY_ENGINE_SETTINGS?.patchSettings({ engineEnabled: !turnOff });
+        window.MEMORY_ENGINE?.applyInjection?.();
+      } else {
+        const wapi = window.WORLD_ENGINE_API;
+        const current = wapi?.getSettings?.(true) || {};
+        window.WORLD_ENGINE_STORE.setItem('world_engine_settings', JSON.stringify({ ...current, engineEnabled: !turnOff }));
+        wapi?.getSettings?.(true);
+        window.WORLD_ENGINE?.applyInjection?.();
+      }
+      updateBallControls();
+      showToast(turnOff ? `已关闭${memory ? '记忆' : '世界'}推演与注入` : `已开启${memory ? '记忆' : '世界'}推演与注入`);
       if (typeof _currentView !== 'undefined' && _currentView === 'settings') refresh();
     });
   }
@@ -5574,7 +5623,7 @@ window.WORLD_ENGINE_UI = (function() {
       btn.innerHTML =
         '<span class="we-ball-orbit"></span>' +
         '<span class="we-ball-ring"></span>' +
-        '<span class="we-ball-globe"></span>' +
+        '<span class="we-ball-core"><span class="we-ball-globe"></span><span class="we-ball-memory"></span></span>' +
         '<span class="we-ball-count"></span>' +
         '<span class="we-ball-badge"></span>' +
         '<span class="we-ball-tip"></span>' +
@@ -5582,9 +5631,19 @@ window.WORLD_ENGINE_UI = (function() {
         '<span class="we-sat we-sat-right we-sat-off" id="we-sat-abort" role="button" title="停止推演"><i class="fa-solid fa-stop"></i></span>' +
         '<span class="we-sat we-sat-down" id="we-sat-redo" role="button" title="重新推进"><i class="fa-solid fa-rotate-right"></i></span>' +
         '<span class="we-sat we-sat-left" id="we-sat-power" role="button" title="插上=关闭推演与注入 / 拔下=开启"><i class="fa-solid fa-power-off"></i></span>';
-      btn.onclick = () => togglePanel();
+      let clickTimer = null;
+      btn.onclick = () => {
+        clearTimeout(clickTimer);
+        clickTimer = setTimeout(() => togglePanel(), 230);
+      };
+      btn.ondblclick = (event) => {
+        event.preventDefault();
+        clearTimeout(clickTimer);
+        flipEngineFace();
+      };
       document.body.appendChild(btn);
       wireSatellites(btn);
+      syncBallFace();
       applyBallPos(btn);
       makeBallDraggable(btn);
       window.addEventListener('resize', () => applyBallPos(btn));
@@ -5617,5 +5676,8 @@ window.WORLD_ENGINE_UI = (function() {
     observeInputButton();
   }
 
-  return { buildPanel, buildInputButton, showPanel, hidePanel, togglePanel, refresh, setStatus, setEvolvingUI, setInjectedScope };
+  return {
+    buildPanel, buildInputButton, showPanel, hidePanel, togglePanel, refresh, setStatus,
+    setEvolvingUI, setMemoryEvolvingUI, setInjectedScope
+  };
 })();

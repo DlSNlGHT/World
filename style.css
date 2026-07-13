@@ -133,6 +133,7 @@
 #we-input-btn.we-ball {
   transition: filter 0.2s, transform 0.15s,
     left 0.28s cubic-bezier(.22,1,.36,1), top 0.28s cubic-bezier(.22,1,.36,1);
+  perspective: 180px;
 }
 #we-input-btn.we-ball:hover { transform: scale(1.06); }
 #we-input-btn.we-ball.we-ball-dragging { cursor: grabbing; transform: scale(1.1); transition: none; }
@@ -140,6 +141,39 @@
 #we-input-btn.we-ball-tucked { opacity: 0.6; cursor: pointer; }
 #we-input-btn.we-ball-tucked:hover { opacity: 1; }
 #we-input-btn.we-ball > span { position: absolute; inset: 0; pointer-events: none; }
+
+/* 双面球芯：世界面是地球，记忆面使用“指纹 + 放大镜”矢量图。 */
+.we-ball-core {
+  transform-style: preserve-3d;
+  transition: transform 0.42s cubic-bezier(.2,.75,.25,1);
+}
+.we-ball-core > span {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
+}
+#we-input-btn.we-ball-memory-face .we-ball-core { transform: rotateY(180deg); }
+.we-ball-memory {
+  transform: rotateY(180deg);
+  border-radius: 50%;
+  overflow: hidden;
+  background: var(--we-ball-ocean);
+  border: 1px solid rgba(229,240,237,0.18);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.10);
+}
+.we-ball-memory::before {
+  content: "";
+  position: absolute;
+  inset: 5px;
+  background: var(--we-ball-land);
+  -webkit-mask: url("fingerprint-outline-with-magnifying-glass-svgrepo-com.svg") center / contain no-repeat;
+          mask: url("fingerprint-outline-with-magnifying-glass-svgrepo-com.svg") center / contain no-repeat;
+}
+#we-input-btn.we-ball-memory-face.we-ball-evolving .we-ball-memory {
+  animation: we-globe-glow 1.8s ease-in-out infinite;
+}
 
 /* 地球本体：扁平平涂海洋（面板深青灰同族，去饱和） */
 .we-ball-globe {

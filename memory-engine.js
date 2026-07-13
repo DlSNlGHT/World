@@ -154,7 +154,7 @@ window.MEMORY_ENGINE = (function() {
   }
 
   async function requestExtraction(conversation, options) {
-    const st = settings(), state = data().loadState();
+    const st = settings(), state = options?.baseState ? clone(options.baseState) : data().loadState();
     const prompt = await buildRequestPrompt(conversation, state, st);
     lastDebug = { prompt, requestPrompt: prompt, rawResult: '', apiResponse: '', parsed: null, error: '' };
     const retries = Math.max(0, Number(options?.retries ?? st.apiAutoRetries) || 0);
@@ -179,8 +179,10 @@ window.MEMORY_ENGINE = (function() {
     if (running && !options?.allowWhileBackfill) return { skipped: true, reason: 'running' };
     running = true;
     abortController = new AbortController();
+    window.WORLD_ENGINE_UI?.setMemoryEvolvingUI?.(true);
     try {
-      const before = data().loadState(), items = await requestExtraction(conversation, options);
+      const before = options?.baseState ? clone(options.baseState) : data().loadState();
+      const items = await requestExtraction(conversation, { ...options, baseState: before });
       if (options?.saveCheckpoint !== false) data().saveCheckpoint(before);
       const next = clone(before), added = mergeMemories(next, items);
       next.round = Math.max(0, Number(next.round) || 0) + 1;
@@ -189,7 +191,11 @@ window.MEMORY_ENGINE = (function() {
       window.WORLD_ENGINE_CHATCACHE?.forScope?.('memory')?.afterEvolution?.();
       applyInjection();
       return { added, extracted: items.length, state: next };
-    } finally { running = false; abortController = null; }
+    } finally {
+      running = false;
+      abortController = null;
+      window.WORLD_ENGINE_UI?.setMemoryEvolvingUI?.(false);
+    }
   }
 
   function countAiSince(layer) {
@@ -210,6 +216,22 @@ window.MEMORY_ENGINE = (function() {
     const st = settings();
     if (st.engineEnabled === false) throw new Error('记忆引擎已关闭');
     return extractConversation(recentConversation(st.manualReadRounds), { layer: currentLayer() });
+  }
+
+  async function manualReextract() {
+    const st = settings();
+    if (st.engineEnabled === false) throw new Error('记忆引擎已关闭');
+    const checkpoint = data().loadCheckpoint();
+    if (!checkpoint) throw new Error('没有可用于重新推演的记忆存档点');
+    return extractConversation(recentConversation(st.manualReadRounds), {
+      layer: currentLayer(),
+      baseState: checkpoint
+    });
+  }
+
+  function abort() {
+    backfillRunning = false;
+    abortController?.abort();
   }
 
   function clearInjection() {
@@ -322,7 +344,8 @@ window.MEMORY_ENGINE = (function() {
   }
 
   return {
-    init, applyInjection, manualExtract, extractNow: manualExtract, backfill, stopBackfill,
+    init, applyInjection, manualExtract, manualReextract, extractNow: manualExtract,
+    backfill, stopBackfill, abort,
     getLastDebug: () => clone(lastDebug), getBackfillStatus: () => clone(backfillStatus),
     isRunning: () => running || backfillRunning
   };
