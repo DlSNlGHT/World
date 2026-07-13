@@ -6,6 +6,9 @@ window.WORLD_ENGINE_UI = (function() {
   let panelElement = null;
   let panelBodyElement = null;
   let panelVisible = false;
+  let _engineFace = 'world';
+  let _memorySettingsOpen = false;
+  let _panelFlipping = false;
   let isEvolving = false;
   let editingEvent = null;
   let editingFaction = null;
@@ -186,7 +189,7 @@ window.WORLD_ENGINE_UI = (function() {
       <div class="we-panel-header">
         <div class="we-header-info">
           <div class="we-header-top">
-            <span class="we-panel-title">世界引擎</span>
+            <button class="we-panel-title we-engine-face-toggle" type="button" title="切换到记忆引擎" aria-label="切换到记忆引擎">世界引擎</button>
             <span class="we-panel-version" id="we-panel-version"></span><!-- [FIX] 版本号 -->
             <span class="we-header-round" id="we-header-round"></span>
           </div>
@@ -217,6 +220,10 @@ window.WORLD_ENGINE_UI = (function() {
     }
 
     panel.querySelector('.we-panel-close').onclick = () => hidePanel();
+    panel.querySelector('.we-engine-face-toggle').onclick = (event) => {
+      event.stopPropagation();
+      flipEngineFace();
+    };
     initDrag(panel, panel.querySelector('.we-panel-header'));
 
     document.addEventListener('keydown', function(e) {
@@ -226,6 +233,45 @@ window.WORLD_ENGINE_UI = (function() {
 
   // 当前视图：'home' | 'situation' | 'events' | 'relations' | 'resources' | 'settings'
   let _currentView = 'home';
+
+  function renderMemoryView() {
+    if (!_memorySettingsOpen) return '';
+    return '<div class="we-memory-settings-empty" aria-label="记忆引擎设置"><span>设置</span></div>';
+  }
+
+  function updateEngineFaceChrome() {
+    if (!panelElement) return;
+    const isMemory = _engineFace === 'memory';
+    panelElement.classList.toggle('we-memory-face', isMemory);
+    const title = panelElement.querySelector('.we-engine-face-toggle');
+    if (title) {
+      title.textContent = isMemory ? '记忆引擎' : '世界引擎';
+      const target = isMemory ? '世界引擎' : '记忆引擎';
+      title.title = '切换到' + target;
+      title.setAttribute('aria-label', '切换到' + target);
+    }
+    const settings = panelElement.querySelector('#we-btn-settings-open');
+    if (settings) {
+      settings.classList.toggle('is-active', isMemory && _memorySettingsOpen);
+      settings.title = isMemory ? '记忆引擎设置' : '设置';
+    }
+  }
+
+  function flipEngineFace() {
+    if (!panelElement || _panelFlipping) return;
+    _panelFlipping = true;
+    panelElement.classList.add('we-panel-flip-out');
+    window.setTimeout(() => {
+      _engineFace = _engineFace === 'world' ? 'memory' : 'world';
+      panelElement.classList.remove('we-panel-flip-out');
+      panelElement.classList.add('we-panel-flip-in');
+      refresh();
+      // 先把新的一面放到另一侧，再让浏览器补完后半程翻转。
+      void panelElement.offsetWidth;
+      panelElement.classList.remove('we-panel-flip-in');
+      window.setTimeout(() => { _panelFlipping = false; }, 220);
+    }, 180);
+  }
   // 显示模式：'mask'=遮蔽（主页+分页）｜'expand'=展开（所有 section 平铺）
   function isExpandMode() {
     const s = window.WORLD_ENGINE_API
@@ -297,6 +343,12 @@ window.WORLD_ENGINE_UI = (function() {
 
   function refresh(auto) {
     if (!panelElement || !panelVisible) return;
+    updateEngineFaceChrome();
+    if (_engineFace === 'memory') {
+      if (panelBodyElement) panelBodyElement.innerHTML = renderMemoryView();
+      bindEvents(null);
+      return;
+    }
     // 后台自动刷新会整块重建 DOM：设置页或任何编辑器正在输入时必须暂缓，
     // 否则未保存内容会被持久化数据覆盖，表现为输入框不断“回弹”。
     // 保存、取消等主动调用 refresh()（auto=false）仍会正常刷新。
@@ -3075,7 +3127,14 @@ window.WORLD_ENGINE_UI = (function() {
     if (backBtn) backBtn.onclick = () => { _currentView = 'home'; refresh(); };
 
     const settingsOpenBtn = document.getElementById('we-btn-settings-open');
-    if (settingsOpenBtn) settingsOpenBtn.onclick = () => { _currentView = 'settings'; refresh(); };
+    if (settingsOpenBtn) settingsOpenBtn.onclick = () => {
+      if (_engineFace === 'memory') {
+        _memorySettingsOpen = !_memorySettingsOpen;
+      } else {
+        _currentView = 'settings';
+      }
+      refresh();
+    };
 
     document.querySelectorAll('.we-nav-row[data-view]').forEach(row => {
       row.onclick = () => {
@@ -4152,7 +4211,7 @@ window.WORLD_ENGINE_UI = (function() {
     handle.style.cursor = 'grab';
 
     handle.addEventListener('mousedown', function(e) {
-      if (e.target.closest('.we-panel-close') || e.target.closest('.we-panel-header-actions')) return;
+      if (e.target.closest('.we-panel-close') || e.target.closest('.we-panel-corner-actions') || e.target.closest('.we-engine-face-toggle')) return;
       dragging = true;
       const rect = panel.getBoundingClientRect();
       startX = e.clientX; startY = e.clientY;
