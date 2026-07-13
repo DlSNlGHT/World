@@ -58,6 +58,22 @@ window.WORLD_ENGINE_UI = (function() {
     }
   }
 
+  const ENGINE_ACTION_FAILED = Symbol('engine-action-failed');
+  function callEngineFaceAction(face, hook, ...args) {
+    const report = error => {
+      console.error(`[${face?.label || face?.id || '引擎'}] UI ${hook} 失败（已隔离）`, error);
+      showToast(`${face?.label || '引擎'}操作失败：${error?.message || error}`, true);
+      return ENGINE_ACTION_FAILED;
+    };
+    try {
+      if (typeof face?.[hook] !== 'function') return ENGINE_ACTION_FAILED;
+      const result = face[hook](...args);
+      return result && typeof result.then === 'function' ? result.catch(report) : result;
+    } catch (error) {
+      return report(error);
+    }
+  }
+
   function ensureBuiltinEngineFaces() {
     if (_engineFaceRegistry.has('world')) return;
     registerEngineFace({
@@ -5284,7 +5300,7 @@ window.WORLD_ENGINE_UI = (function() {
   // 批量「重填世界推演」：清空当前世界状态，从第 1 个 AI 楼层分批推到指定楼层。
   async function runBackfill() {
     if (isEvolving) { showToast('已有推演进行中，请稍候'); return; }
-    if (evolution.isRunning?.()) { showToast('已有推演进行中，请稍候'); return; }
+    if (evolution?.isRunning?.()) { showToast('已有推演进行中，请稍候'); return; }
 
     const st = window.WORLD_ENGINE_API ? window.WORLD_ENGINE_API.getSettings(true) : {};
     if (st.engineEnabled === false) { showToast('世界引擎已关闭', true); return; }
@@ -5661,14 +5677,17 @@ window.WORLD_ENGINE_UI = (function() {
       });
     };
     wire('we-sat-forward', () => {
-      getEngineFace().forward?.();
+      callEngineFaceAction(getEngineFace(), 'forward');
     });
     wire('we-sat-redo', () => {
-      getEngineFace().redo?.();
+      callEngineFaceAction(getEngineFace(), 'redo');
     });
     wire('we-sat-abort', () => {
-      getEngineFace().abort?.();
-      showToast('已发送停止信号');
+      const face = getEngineFace();
+      const done = result => { if (result !== ENGINE_ACTION_FAILED) showToast('已发送停止信号'); };
+      const result = callEngineFaceAction(face, 'abort');
+      if (result && typeof result.then === 'function') result.then(done);
+      else done(result);
     });
 
     // 「插头」跟随当前球面：世界面改 world_engine_settings，记忆面改 memory_engine_settings。
@@ -5677,10 +5696,15 @@ window.WORLD_ENGINE_UI = (function() {
     wire('we-sat-power', () => {
       const face = getEngineFace();
       const turnOff = getFaceSettings().engineEnabled !== false;
-      face.setEnabled?.(!turnOff);
-      updateBallControls();
-      showToast(turnOff ? `已关闭${face.label}推演与注入` : `已开启${face.label}推演与注入`);
-      if (typeof _currentView !== 'undefined' && _currentView === 'settings') refresh();
+      const finish = result => {
+        if (result === ENGINE_ACTION_FAILED) return;
+        updateBallControls();
+        showToast(turnOff ? `已关闭${face.label}推演与注入` : `已开启${face.label}推演与注入`);
+        if (typeof _currentView !== 'undefined' && _currentView === 'settings') refresh();
+      };
+      const result = callEngineFaceAction(face, 'setEnabled', !turnOff);
+      if (result && typeof result.then === 'function') result.then(finish);
+      else finish(result);
     });
   }
 
@@ -5722,7 +5746,7 @@ window.WORLD_ENGINE_UI = (function() {
       applyBallPos(btn);
       makeBallDraggable(btn);
       window.addEventListener('resize', () => applyBallPos(btn));
-      setEvolvingUI(isEvolving || Boolean(evolution.isRunning?.()));
+      setEvolvingUI(isEvolving || Boolean(evolution?.isRunning?.()));
     } else if (btn.parentElement !== document.body) {
       document.body.appendChild(btn);
       applyBallPos(btn);

@@ -613,14 +613,31 @@ window.WORLD_ENGINE_CHATCACHE = (function() {
     if (_inited) return;
     _inited = true;
     store().setSyncSink({ onWrite: onStoreWrite, onRemove: onStoreRemove });
+    // 聊天缓存属于共用底座，生命周期不能挂靠在世界或任一业务引擎上。
+    // 本监听器在各引擎监听器之前注册，切聊天时先恢复所有已知 scope。
+    const ctx = getCtx();
+    if (ctx?.eventSource?.on) {
+      const eventName = ctx.event_types?.CHAT_LOADED || 'chat_loaded';
+      const guard = window.WORLD_ENGINE_GUARD_EVENT;
+      const handler = typeof guard === 'function'
+        ? guard('共用缓存', '聊天加载', onChatLoaded)
+        : function() { try { onChatLoaded(); } catch (e) { console.error('[共用缓存] 聊天加载事件处理失败', e); } };
+      ctx.eventSource.on(eventName, handler);
+    }
     // 扩展加载时聊天通常已就绪（页面刷新、扩展中途启用）：对当前聊天做一次恢复 / 收敛
     try { onChatLoaded(); } catch (e) { console.warn('[世界引擎] 酒馆缓存初始化恢复失败', e); }
+  }
+
+  function forScope(scope) {
+    if (scope === 'memory') return memoryScope;
+    if (scope == null || scope === '' || scope === 'world') return null;
+    throw new Error(`未知聊天缓存 scope: ${scope}`);
   }
 
   return {
     init, onChatLoaded, pushLiveNow, getStatus,
     listSnapshots, createSnapshot, restoreSnapshot, renameSnapshot, deleteSnapshot,
     exportSnapshot, importSnapshot,
-    forScope: scope => scope === 'memory' ? memoryScope : null
+    forScope
   };
 })();

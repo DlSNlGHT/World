@@ -3,6 +3,23 @@
   if (window.__WORLD_ENGINE_LOADED__) return;
   window.__WORLD_ENGINE_LOADED__ = true;
 
+  // 所有引擎共用同一事件故障边界：同步异常与异步 rejection 都只记到所属引擎。
+  window.WORLD_ENGINE_GUARD_EVENT = function(engineLabel, eventLabel, handler) {
+    return function(...args) {
+      try {
+        const result = handler(...args);
+        if (result && typeof result.then === 'function') {
+          return result.catch(error => {
+            console.error(`[${engineLabel}] ${eventLabel}事件处理失败`, error);
+          });
+        }
+        return result;
+      } catch (error) {
+        console.error(`[${engineLabel}] ${eventLabel}事件处理失败`, error);
+      }
+    };
+  };
+
   const SHARED_MODULES = [
     'world-engine-store.js',
     'world-engine-core.js',
@@ -11,6 +28,14 @@
     'world-engine-chatcache.js',
     'world-engine-inject-inspector.js'
   ];
+  const SHARED_CONTRACTS = {
+    WORLD_ENGINE_STORE: ['hydrate', 'getItem', 'setItem'],
+    WORLD_ENGINE_CORE: ['getChatId', 'loadState'],
+    WORLD_ENGINE_API: ['callApi'],
+    WORLD_ENGINE_WORLDBOOK: ['buildPromptSection'],
+    WORLD_ENGINE_CHATCACHE: ['init'],
+    WORLD_ENGINE_INJECT_INSPECTOR: ['init']
+  };
 
   // 引擎地位并列，按注册顺序加载；世界引擎只是在发生取舍时拥有最高启动优先级。
   const ENGINE_MODULE_GROUPS = [
@@ -21,7 +46,14 @@
         'world-engine-ledger.js',
         'world-engine-evolution.js',
         'world-engine-inject.js'
-      ]
+      ],
+      contracts: {
+        WORLD_ENGINE_PRESET: ['getActivePreset'],
+        WORLD_ENGINE_RULES: ['loadRules'],
+        WORLD_ENGINE_LEDGER: ['recordChanges'],
+        WORLD_ENGINE_EVOLUTION: ['evolve', 'abort', 'isRunning'],
+        WORLD_ENGINE_INJECT: ['buildContext']
+      }
     },
     {
       id: 'memory', label: '记忆引擎', modules: [
@@ -29,11 +61,21 @@
         'memory-engine-data.js',
         'memory-engine-prompt.js',
         'memory-engine.js'
-      ]
+      ],
+      contracts: {
+        MEMORY_ENGINE_SETTINGS: ['getSettings', 'patchSettings'],
+        MEMORY_ENGINE_DATA: ['loadState', 'saveState'],
+        MEMORY_ENGINE_PROMPT: ['buildUserPrompt'],
+        MEMORY_ENGINE: ['init', 'applyInjection', 'abort', 'isRunning']
+      }
     }
   ];
 
   const SHARED_UI_MODULES = ['world-engine-diag.js', 'world-engine-ui.js'];
+  const SHARED_UI_CONTRACTS = {
+    WORLD_ENGINE_DIAG: ['collect', 'download'],
+    WORLD_ENGINE_UI: ['buildPanel', 'buildInputButton', 'refresh']
+  };
 
   function getBaseUrl() {
     const scripts = document.getElementsByTagName('script');
@@ -56,12 +98,28 @@
     });
   }
 
+  function validateContracts(label, contracts) {
+    const missing = [];
+    for (const [globalName, methods] of Object.entries(contracts || {})) {
+      const api = window[globalName];
+      if (!api) {
+        missing.push(globalName);
+        continue;
+      }
+      for (const method of methods) {
+        if (typeof api[method] !== 'function') missing.push(`${globalName}.${method}()`);
+      }
+    }
+    if (missing.length) throw new Error(`${label}接口契约不完整: ${missing.join(', ')}`);
+  }
+
   async function loadEngineGroup(baseUrl, group) {
     try {
       for (const mod of group.modules) {
         await loadScript(baseUrl + '/' + mod);
         console.log(`[${group.label}] 已加载:`, mod);
       }
+      validateContracts(group.label, group.contracts);
       return true;
     } catch (error) {
       console.error(`[${group.label}] 模块加载失败`, error);
@@ -78,15 +136,18 @@
 
   async function init() {
     const baseUrl = getBaseUrl();
+    const loadedEngines = new Map();
+    let sharedRuntimeReady = false;
     console.log('[世界引擎] 加载中...');
 
     try {
       await loadRequiredModules(baseUrl, SHARED_MODULES, '共用底座');
-      const loadedEngines = new Map();
+      validateContracts('共用底座', SHARED_CONTRACTS);
       for (const group of ENGINE_MODULE_GROUPS) {
         loadedEngines.set(group.id, await loadEngineGroup(baseUrl, group));
       }
       await loadRequiredModules(baseUrl, SHARED_UI_MODULES, '共用界面');
+      validateContracts('共用界面', SHARED_UI_CONTRACTS);
 
       // 读取扩展版本号（来自 manifest.json，单一真相源）供 UI 显示；失败不阻断启动
       try {
@@ -106,6 +167,7 @@
       if (window.WORLD_ENGINE_CHATCACHE) {
         window.WORLD_ENGINE_CHATCACHE.init();
       }
+      sharedRuntimeReady = true;
 
       // 注入自检查看器：只读订阅 ST prompt-ready 事件，核对世界状态是否真进了最终 prompt（解耦，订阅失败不阻断启动）
       if (window.WORLD_ENGINE_INJECT_INSPECTOR) {
@@ -124,10 +186,6 @@
       // 世界排第一是优先级，不是其他引擎对它的运行依赖。
       if (!loadedEngines.get('world')) {
         console.error('[世界引擎] 引擎模块不可用；继续启动其他已加载引擎');
-        if (loadedEngines.get('memory') && window.MEMORY_ENGINE) {
-          try { window.MEMORY_ENGINE.init(); }
-          catch (e) { console.warn('[记忆引擎] 初始化失败（非致命）', e); }
-        }
         try {
           ui?.buildPanel?.();
           ui?.buildInputButton?.();
@@ -562,10 +620,7 @@
         if (evolution && evolution.isRunning && evolution.isRunning()) {
           try { evolution.abort(); console.log('[世界引擎] 切聊天，中止进行中的推演/回填'); } catch (e) { console.warn('[世界引擎] 中止推演失败', e); }
         }
-        // 酒馆缓存：切聊天时先做实时同步的恢复/收敛（须在读取本地状态之前，本地才拿到云端较新存档）
-        if (window.WORLD_ENGINE_CHATCACHE) {
-          try { window.WORLD_ENGINE_CHATCACHE.onChatLoaded(); } catch (e) { console.warn('[世界引擎] 酒馆缓存恢复失败', e); }
-        }
+        // 共用 ChatCache 独立监听 CHAT_LOADED，并在各引擎回调之前完成 scope 恢复。
         const ctx = SillyTavern.getContext();
         const chat = ctx?.chat || [];
         const currentLayer = core.getChatLayer();
@@ -630,11 +685,12 @@
       // ========== 事件绑定 ==========
       const ctx = SillyTavern.getContext();
       if (ctx && ctx.eventSource) {
+        const guard = window.WORLD_ENGINE_GUARD_EVENT;
         const autoEvolveEvent = ctx.event_types?.GENERATION_ENDED || ctx.event_types?.MESSAGE_RECEIVED || 'message_received';
-        ctx.eventSource.on(autoEvolveEvent, onMessageReceived);
-        ctx.eventSource.on(ctx.event_types?.CHAT_LOADED || 'chat_loaded', onChatLoaded);
-        ctx.eventSource.on(ctx.event_types?.MESSAGE_SWIPED || 'message_swiped', onMessageSwiped);
-        ctx.eventSource.on(ctx.event_types?.GENERATION_STARTED || 'generation_started', onGenerationStarted);
+        ctx.eventSource.on(autoEvolveEvent, guard('世界引擎', '生成完成', onMessageReceived));
+        ctx.eventSource.on(ctx.event_types?.CHAT_LOADED || 'chat_loaded', guard('世界引擎', '聊天加载', onChatLoaded));
+        ctx.eventSource.on(ctx.event_types?.MESSAGE_SWIPED || 'message_swiped', guard('世界引擎', '滑动重生成', onMessageSwiped));
+        ctx.eventSource.on(ctx.event_types?.GENERATION_STARTED || 'generation_started', guard('世界引擎', '生成开始', onGenerationStarted));
         console.log('[世界引擎] 事件绑定成功，自动推演事件:', autoEvolveEvent);
       } else {
         console.warn('[世界引擎] 无法绑定事件');
@@ -659,14 +715,15 @@
 
       console.log('[世界引擎] 初始化完成 ✅');
 
-      // 引擎初始化同样按注册优先级进行。世界事件已绑定并完成首次注入后，
-      // 再启动记忆引擎；记忆初始化异常不会回滚已经运行的世界引擎。
-      if (loadedEngines.get('memory') && window.MEMORY_ENGINE) {
+    } catch(err) {
+      console.error('[世界引擎] 初始化失败', err);
+    } finally {
+      // 记忆初始化拥有独立收尾边界：世界运行主体或共用 UI 后半段报错，
+      // 也不能阻止已经通过接口契约校验的记忆引擎启动。
+      if (sharedRuntimeReady && loadedEngines.get('memory') && window.MEMORY_ENGINE) {
         try { window.MEMORY_ENGINE.init(); }
         catch (e) { console.warn('[记忆引擎] 初始化失败（非致命）', e); }
       }
-    } catch(err) {
-      console.error('[世界引擎] 初始化失败', err);
     }
   }
 

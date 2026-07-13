@@ -11,7 +11,9 @@ window.WORLD_ENGINE_WORLDBOOK = (function() {
   }
 
   function normalizeScope(scope) {
-    return scope === 'memory' ? 'memory' : 'world';
+    if (scope == null || scope === '' || scope === 'world') return 'world';
+    if (scope === 'memory') return 'memory';
+    throw new Error(`未知世界书 scope: ${scope}`);
   }
 
   function getSelectionKey(scope) {

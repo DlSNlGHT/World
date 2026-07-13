@@ -180,7 +180,11 @@ window.WORLD_ENGINE_INJECT_INSPECTOR = (function() {
   }
 
   // 返回最后一份快照（只读副本引用；UI/diag 只读不写）。无则 null。
-  function getLastSnapshot(scope) { return scope === 'memory' ? _lastMemory : _last; }
+  function getLastSnapshot(scope) {
+    if (scope === 'memory') return _lastMemory;
+    if (scope == null || scope === '' || scope === 'world') return _last;
+    throw new Error(`未知注入检查 scope: ${scope}`);
+  }
 
   // 状态码 → 大白话（UI 与 diag 共用，单一真相源）。
   const STATUS_TEXT = {

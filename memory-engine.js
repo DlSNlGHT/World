@@ -329,8 +329,17 @@ window.MEMORY_ENGINE = (function() {
   }
 
   function guardEvent(label, handler) {
+    if (typeof window.WORLD_ENGINE_GUARD_EVENT === 'function') {
+      return window.WORLD_ENGINE_GUARD_EVENT('记忆引擎', label, handler);
+    }
     return function(...args) {
-      try { return handler(...args); }
+      try {
+        const result = handler(...args);
+        if (result && typeof result.then === 'function') {
+          return result.catch(error => console.error(`[记忆引擎] ${label}事件处理失败`, error));
+        }
+        return result;
+      }
       catch (error) { console.error(`[记忆引擎] ${label}事件处理失败`, error); }
     };
   }
@@ -341,7 +350,7 @@ window.MEMORY_ENGINE = (function() {
     const ctx = context(), types = ctx?.event_types || {};
     if (ctx?.eventSource) {
       ctx.eventSource.on(types.GENERATION_ENDED || types.MESSAGE_RECEIVED || 'message_received', guardEvent('生成完成', onMessageReceived));
-      ctx.eventSource.on(types.CHAT_LOADED || 'chat_loaded', guardEvent('聊天加载', () => { clearTimeout(autoTimer); lastEventKey = ''; applyInjection(); }));
+      ctx.eventSource.on(types.CHAT_LOADED || 'chat_loaded', guardEvent('聊天加载', () => { clearTimeout(autoTimer); abortController?.abort(); lastEventKey = ''; applyInjection(); }));
       ctx.eventSource.on(types.MESSAGE_SWIPED || 'message_swiped', guardEvent('滑动重生成', () => { clearTimeout(autoTimer); abortController?.abort(); applyInjection({ isReroll: true }); }));
       ctx.eventSource.on(types.GENERATION_STARTED || 'generation_started', guardEvent('生成开始', (type, _opts, dryRun) => {
         if (!dryRun) applyInjection({ isReroll: type === 'swipe' || type === 'regenerate' });

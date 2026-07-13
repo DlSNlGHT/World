@@ -44,6 +44,7 @@ window.WORLD_ENGINE_DIAG = (function() {
 
   function collect(scope) {
     if (scope === 'memory') return collectMemory();
+    if (scope != null && scope !== '' && scope !== 'world') throw new Error(`未知诊断 scope: ${scope}`);
     const core = window.WORLD_ENGINE_CORE;
     const api = window.WORLD_ENGINE_API;
     const store = window.WORLD_ENGINE_STORE;
