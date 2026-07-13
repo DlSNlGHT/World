@@ -1,14 +1,21 @@
 // world-engine-worldbook.js — 当前聊天世界书读取与后台推演选择
 window.WORLD_ENGINE_WORLDBOOK = (function() {
-  const STORAGE_PREFIX = 'world_engine_worldbook_selection_';
+  const STORAGE_PREFIXES = {
+    world: 'world_engine_worldbook_selection_',
+    memory: 'memory_engine_worldbook_selection_'
+  };
   let worldInfoModulePromise = null;
 
   function getChatId() {
     return window.WORLD_ENGINE_CORE?.getChatId?.() || 'default';
   }
 
-  function getSelectionKey() {
-    return STORAGE_PREFIX + getChatId();
+  function normalizeScope(scope) {
+    return scope === 'memory' ? 'memory' : 'world';
+  }
+
+  function getSelectionKey(scope) {
+    return STORAGE_PREFIXES[normalizeScope(scope)] + getChatId();
   }
 
   // 触发模式的合法 override 值（'auto' 为默认、不落盘）：强制常驻 / 强制关键词 / 关闭
@@ -39,31 +46,32 @@ window.WORLD_ENGINE_WORLDBOOK = (function() {
     return { ids: [], t: 0, overrides: {} };
   }
 
-  function readStored() {
-    return parseStored(window.WORLD_ENGINE_STORE.getItem(getSelectionKey()));
+  function readStored(scope) {
+    return parseStored(window.WORLD_ENGINE_STORE.getItem(getSelectionKey(scope)));
   }
 
-  function getSelectedIds() {
-    return readStored().ids;
+  function getSelectedIds(scope) {
+    return readStored(scope).ids;
   }
 
   // 每条目的触发覆写（{entryId: 'const'|'key'|'off'}）；缺省视为 'auto'（跟随酒馆）
-  function getOverrides() {
-    return readStored().overrides;
+  function getOverrides(scope) {
+    return readStored(scope).overrides;
   }
 
   // 区分"从未保存"（key 不存在）和"保存了空选择"（key 存在但 ids 为 []）
-  function hasSelection() {
-    return window.WORLD_ENGINE_STORE.getItem(getSelectionKey()) !== null;
+  function hasSelection(scope) {
+    return window.WORLD_ENGINE_STORE.getItem(getSelectionKey(scope)) !== null;
   }
 
   // 找出最老的一条其它聊天的选择记录（按保存时间戳；老格式无时间戳视为最老）
-  function removeOldestOtherSelection() {
-    const currentKey = getSelectionKey();
+  function removeOldestOtherSelection(scope) {
+    const prefix = STORAGE_PREFIXES[normalizeScope(scope)];
+    const currentKey = getSelectionKey(scope);
     let oldestKey = null;
     let oldestT = Infinity;
     for (const key of window.WORLD_ENGINE_STORE.keys()) {
-      if (!key || !key.startsWith(STORAGE_PREFIX) || key === currentKey) continue;
+      if (!key || !key.startsWith(prefix) || key === currentKey) continue;
       const t = parseStored(window.WORLD_ENGINE_STORE.getItem(key)).t;
       if (t < oldestT) {
         oldestT = t;
@@ -77,7 +85,7 @@ window.WORLD_ENGINE_WORLDBOOK = (function() {
     return false;
   }
 
-  function persistSelection(ids, overrides) {
+  function persistSelection(ids, overrides, scope) {
     const uniqueIds = [...new Set(Array.isArray(ids) ? ids.filter(id => typeof id === 'string') : [])];
     // 只保留仍被选中的 override，避免取消勾选后残留、无限堆积
     const idSet = new Set(uniqueIds);
@@ -85,26 +93,26 @@ window.WORLD_ENGINE_WORLDBOOK = (function() {
     const trimmed = {};
     for (const k in ov) if (idSet.has(k)) trimmed[k] = ov[k];
     const value = JSON.stringify({ ids: uniqueIds, t: Date.now(), overrides: trimmed });
-    const currentKey = getSelectionKey();
+    const currentKey = getSelectionKey(scope);
     // 改用 IndexedDB 后基本不会再满；若回退 localStorage 仍超限，则每次删最老一条再重试（FIFO 兜底）
     while (true) {
       try {
         window.WORLD_ENGINE_STORE.setItem(currentKey, value);
         return;
       } catch (e) {
-        if (!removeOldestOtherSelection()) throw e;
+        if (!removeOldestOtherSelection(scope)) throw e;
       }
     }
   }
 
   // 兼容旧调用：只改选择，保留已存的每条触发覆写
-  function saveSelectedIds(ids) {
-    persistSelection(ids, readStored().overrides);
+  function saveSelectedIds(ids, scope) {
+    persistSelection(ids, readStored(scope).overrides, scope);
   }
 
   // 同时保存选择与每条目的触发覆写
-  function saveSelection(ids, overrides) {
-    persistSelection(ids, overrides);
+  function saveSelection(ids, overrides, scope) {
+    persistSelection(ids, overrides, scope);
   }
 
   function getEntryId(entry) {
@@ -165,7 +173,10 @@ window.WORLD_ENGINE_WORLDBOOK = (function() {
   // 酒馆 world_info_logic：AND_ANY=0 / NOT_ALL=1 / NOT_ANY=2 / AND_ALL=3。
   const LOGIC = { AND_ANY: 0, NOT_ALL: 1, NOT_ANY: 2, AND_ALL: 3 };
 
-  function triggerEnabled() {
+  function triggerEnabled(scope) {
+    if (normalizeScope(scope) === 'memory') {
+      return window.MEMORY_ENGINE_SETTINGS?.getSettings()?.worldbookTrigger === true;
+    }
     const a = window.WORLD_ENGINE_API;
     const s = a && a.getSettings ? a.getSettings() : {};
     return s.worldbookTrigger === true;
@@ -225,12 +236,13 @@ window.WORLD_ENGINE_WORLDBOOK = (function() {
   }
 
   // scanText：本扩展喂给推演的上下文文本（近期对话等）。触发关闭时忽略，维持「全部已选注入」的现状。
-  async function buildPromptSection(scanText) {
-    const stored = readStored();
+  async function buildPromptSection(scanText, scope) {
+    const normalizedScope = normalizeScope(scope);
+    const stored = readStored(normalizedScope);
     const selectedIds = new Set(stored.ids);
     if (!selectedIds.size) return '';
 
-    const triggerOn = triggerEnabled();
+    const triggerOn = triggerEnabled(normalizedScope);
     const overrides = stored.overrides || {};
     const text = String(scanText || '');
 
@@ -262,8 +274,12 @@ window.WORLD_ENGINE_WORLDBOOK = (function() {
         `【${entry.world} / ${entry.title}】\n${entry.content}`
       ).join('\n\n');
 
+      const instruction = normalizedScope === 'memory'
+        ? '以下内容仅用于辨认人物、别名与背景。不得把世界书内容直接当作人物新形成的记忆。'
+        : '以下内容是当前聊天的世界观事实与约束。后台推演必须遵守；不得擅自改写其既定设定。';
+
       return `========== 已选世界书条目 ==========
-以下内容是当前聊天的世界观事实与约束。后台推演必须遵守；不得擅自改写其既定设定。
+${instruction}
 
 ${content}`;
     } catch(error) {

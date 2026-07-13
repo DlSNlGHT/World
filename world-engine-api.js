@@ -1,5 +1,16 @@
 // world-engine-api.js — 独立 API 调用（支持自定义 OpenAI 兼容 API）
 window.WORLD_ENGINE_API = (function() {
+  // API 请求实现可以被两个引擎复用，但覆盖配置绝不能以世界引擎设置补缺。
+  // 调用方一旦显式传入 settingsOverride，就只叠加无状态默认值。
+  const REQUEST_DEFAULTS = Object.freeze({
+    apiUrl: '',
+    apiKey: '',
+    model: 'gpt-3.5-turbo',
+    connectionMode: 'direct',
+    temperature: 0.7,
+    maxTokens: 2000,
+    apiTimeoutMs: 120000
+  });
   let cachedSettings = null;
 
   function getSettings(forceRefresh) {
@@ -30,18 +41,6 @@ window.WORLD_ENGINE_API = (function() {
       evolveEveryX: 1,
       evolveReadRounds: 1,
       manualReadRounds: 1,
-      // 记忆引擎复用同一套 API / 调度机制，但保留独立的运行参数。
-      memoryEvolveMode: 'auto',
-      memoryEvolveEveryX: 5,
-      memoryEvolveReadRounds: 5,
-      memoryManualReadRounds: 5,
-      memoryInjectIntoPrompt: true,
-      memorySearchDepth: 5,
-      memoryMaxPerCharacter: 20,
-      memoryWorldbookEnabled: false,
-      memoryBackfillBatchSize: 5,
-      memoryBackfillRetries: 2,
-      memoryBackfillEndLayer: 0,
       evolveFilterRegex: '',
       tonePrompt: '',
       // 按时间推演模式
@@ -260,8 +259,10 @@ window.WORLD_ENGINE_API = (function() {
   /**
    * 调用独立 API（非酒馆自带），OpenAI 兼容格式
    */
-  async function callApi(prompt, maxTokens, temperature, signal) {
-    const settings = getSettings();
+  async function callApi(prompt, maxTokens, temperature, signal, settingsOverride) {
+    const settings = settingsOverride
+      ? { ...REQUEST_DEFAULTS, ...settingsOverride }
+      : getSettings();
     const selectedTemperature = temperature ?? settings.temperature;
     const selectedMaxTokens = maxTokens ?? settings.maxTokens;
 
@@ -395,8 +396,10 @@ window.WORLD_ENGINE_API = (function() {
   /**
    * 获取模型列表（OpenAI 兼容格式）
    */
-  async function fetchModelList() {
-    const settings = getSettings();
+  async function fetchModelList(settingsOverride) {
+    const settings = settingsOverride
+      ? { ...REQUEST_DEFAULTS, ...settingsOverride }
+      : getSettings();
     const baseUrl = normalizeUrl(settings.apiUrl).replace(/\/chat\/completions$/, '');
 
     // [FIX] 经酒馆代理：用酒馆 /status 端点拉模型列表，绕过 CORS

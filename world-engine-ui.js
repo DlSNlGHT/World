@@ -31,10 +31,12 @@ window.WORLD_ENGINE_UI = (function() {
   let _wbCachedSelectedIds = null;
   let _wbCachedOverrides = null;
   let _wbCachedChatId = null;
+  let _wbCachedScope = null;
   let _wbScrollTop = 0;
 
   // 六套纯 CSS 变量主题。写在 <html> 上，面板、悬浮球和顶部状态条同步换色。
   const WE_THEME_KEY = 'we-theme';
+  const MEMORY_THEME_KEY = 'memory-engine-theme';
   const WE_THEMES = [
     { id: 'default', name: '墨玉 · 默认' },
     { id: 'night', name: '夜阑 · 近黑' },
@@ -110,6 +112,11 @@ window.WORLD_ENGINE_UI = (function() {
     catch (e) { return 'default'; }
   }
 
+  function getStoredMemoryTheme() {
+    try { return normalizeTheme(localStorage.getItem(MEMORY_THEME_KEY) || 'night'); }
+    catch (e) { return 'night'; }
+  }
+
   function applyTheme(id) {
     const theme = normalizeTheme(id);
     const root = document.documentElement;
@@ -122,6 +129,16 @@ window.WORLD_ENGINE_UI = (function() {
     const theme = normalizeTheme(id);
     applyTheme(theme);
     try { localStorage.setItem(WE_THEME_KEY, theme); } catch (e) {}
+  }
+
+  function setMemoryTheme(id) {
+    const theme = normalizeTheme(id);
+    applyTheme(theme);
+    try { localStorage.setItem(MEMORY_THEME_KEY, theme); } catch (e) {}
+  }
+
+  function applyEngineFaceTheme() {
+    applyTheme(_engineFace === 'memory' ? getStoredMemoryTheme() : getStoredTheme());
   }
 
   // 模块加载时立即恢复主题，避免面板和悬浮球先闪默认色。
@@ -242,27 +259,66 @@ window.WORLD_ENGINE_UI = (function() {
   const MEMORY_SETTINGS_TABS = [
     { key: 'common', label: '常用' },
     { key: 'advanced', label: '高级' },
-    { key: 'worldbook', label: '世界书' }
+    { key: 'archive', label: '存档' },
+    { key: 'worldbook', label: '世界书' },
+    { key: 'debug', label: '调试' },
+    { key: 'about', label: '关于' }
   ];
 
   function renderMemorySettingsView() {
-    const settings = window.WORLD_ENGINE_API
-      ? window.WORLD_ENGINE_API.getSettings(true)
-      : JSON.parse(window.WORLD_ENGINE_STORE.getItem('world_engine_settings') || '{}');
-    const shared = renderSettingsForm();
-    const extra = renderSettingsAfterCheckpoint();
+    const settings = window.MEMORY_ENGINE_SETTINGS?.getSettings(true) || {};
+    const extra = renderSettingsAfterCheckpoint({ scope: 'memory' });
     const sec = (id, title, body) =>
       '<div class="we-section"><div class="we-section-title">' + sectionHeader(title, id) + '</div>'
       + sectionBody(id, body) + '</div>';
-    const mode = settings.memoryEvolveMode === 'manual' ? 'manual' : 'auto';
-    const everyX = Math.max(1, parseInt(settings.memoryEvolveEveryX) || 5);
-    const readRounds = Math.min(everyX, Math.max(1, parseInt(settings.memoryEvolveReadRounds) || everyX));
-    const manualReadRounds = Math.max(1, parseInt(settings.memoryManualReadRounds) || 5);
-    const searchDepth = Math.max(1, parseInt(settings.memorySearchDepth) || 5);
-    const maxPerCharacter = Math.max(1, parseInt(settings.memoryMaxPerCharacter) || 20);
-    const backfillBatch = Math.max(1, parseInt(settings.memoryBackfillBatchSize) || 5);
-    const backfillEnd = Math.max(0, parseInt(settings.memoryBackfillEndLayer) || 0);
-    const backfillRetries = Math.max(0, parseInt(settings.memoryBackfillRetries) || 0);
+    const mode = settings.evolveMode === 'manual' ? 'manual' : 'auto';
+    const everyX = Math.max(1, parseInt(settings.evolveEveryX) || 5);
+    const readRounds = Math.min(everyX, Math.max(1, parseInt(settings.evolveReadRounds) || everyX));
+    const manualReadRounds = Math.max(1, parseInt(settings.manualReadRounds) || 5);
+    const searchDepth = Math.max(1, parseInt(settings.searchDepth) || 5);
+    const maxPerCharacter = Math.max(1, parseInt(settings.maxPerCharacter) || 20);
+    const backfillBatch = Math.max(1, parseInt(settings.backfillBatchSize) || 5);
+    const backfillEnd = Math.max(0, parseInt(settings.backfillEndLayer) || 0);
+    const backfillRetries = Math.max(0, parseInt(settings.backfillRetries) || 0);
+    const apiTemperature = Number.isFinite(Number(settings.temperature)) ? Math.max(0, Number(settings.temperature)) : 0.2;
+    const apiMaxTokens = Math.max(1, parseInt(settings.maxTokens) || 2000);
+    const apiTimeoutSec = Math.max(0, Math.round((Number(settings.apiTimeoutMs) || 120000) / 1000));
+
+    const apiBody = `
+      <div class="we-input-group">
+        <label>连接方式</label>
+        <select id="we-connection-mode" style="width:100%;">
+          <option value="direct" ${settings.connectionMode !== 'proxy' ? 'selected' : ''}>直连（默认）</option>
+          <option value="proxy" ${settings.connectionMode === 'proxy' ? 'selected' : ''}>经酒馆代理（解决跨域 CORS）</option>
+        </select>
+      </div>
+      <div class="we-input-group">
+        <label>记忆引擎 API URL（OpenAI 兼容）</label>
+        <input type="text" id="we-api-url" value="${u(settings.apiUrl || '')}" placeholder="https://api.openai.com/v1">
+      </div>
+      <div class="we-input-group">
+        <label>记忆引擎 API Key</label>
+        <input type="password" id="we-api-key" value="${u(settings.apiKey || '')}">
+      </div>
+      <div class="we-input-group" style="display:flex;gap:6px;align-items:end;">
+        <div style="flex:1;">
+          <label>模型</label>
+          <input type="text" id="we-model" value="${u(settings.model || 'gpt-3.5-turbo')}" placeholder="模型名称" style="width:100%;">
+        </div>
+        <button class="we-btn" id="we-fetch-models" style="white-space:nowrap;flex-shrink:0;">获取列表</button>
+      </div>
+      <div class="we-input-group">
+        <select id="we-model-list" style="display:none;width:100%;margin-top:4px;"><option value="">-- 选择模型 --</option></select>
+      </div>
+      <div class="we-input-group" style="display:flex;gap:6px;">
+        <div style="flex:1;"><label>温度</label><input type="number" id="we-temperature" min="0" step="0.1" value="${apiTemperature}" style="width:100%;"></div>
+        <div style="flex:1;"><label>最大输出 token</label><input type="number" id="we-max-tokens" min="1" step="1" value="${apiMaxTokens}" style="width:100%;"></div>
+      </div>
+      <div class="we-input-group">
+        <label>请求超时（秒）</label>
+        <input type="number" id="we-api-timeout-sec" min="0" step="1" value="${apiTimeoutSec}" style="width:100%;">
+        <div style="font-size:11px;color:var(--we-text3);margin-top:3px;">此处只配置记忆引擎；请求实现与世界引擎共用，但配置值互不覆盖。</div>
+      </div>`;
 
     const modeBody = `
       <div class="we-input-group">
@@ -289,7 +345,7 @@ window.WORLD_ENGINE_UI = (function() {
     const injectBody = `
       <div class="we-input-group">
         <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
-          <input type="checkbox" id="we-memory-inject" ${settings.memoryInjectIntoPrompt !== false ? 'checked' : ''}>
+          <input type="checkbox" id="we-memory-inject" ${settings.injectIntoPrompt !== false ? 'checked' : ''}>
           注入人物记忆
         </label>
         <div style="font-size:11px;color:var(--we-text3);margin-top:3px;">生成回复前扫描最近 N 层正文中的人物名称与别名，再注入对应人物的主观记忆。</div>
@@ -326,10 +382,84 @@ window.WORLD_ENGINE_UI = (function() {
       <div style="font-size:11px;color:var(--we-text3);margin-bottom:6px;">内置提示词位于 memory-engine-prompt.js。当前只读，后续接入预设系统时再开放自定义。</div>
       <textarea readonly style="width:100%;min-height:220px;resize:vertical;">${h(promptText)}</textarea>`;
 
+    const memoryTheme = getStoredMemoryTheme();
+    const memoryThemeOptions = WE_THEMES.map(theme =>
+      `<option value="${theme.id}" ${theme.id === memoryTheme ? 'selected' : ''}>${theme.name}</option>`
+    ).join('');
+    const displayBody = `
+      <div class="we-input-group">
+        <label>记忆引擎主题配色</label>
+        <select id="we-memory-theme-select" style="width:100%;">${memoryThemeOptions}</select>
+        <div style="font-size:11px;color:var(--we-text3);margin-top:3px;">只影响记忆引擎并独立记忆；切回世界引擎时恢复世界引擎自己的配色。</div>
+      </div>`;
+
+    const retryBody = `
+      <div class="we-input-group">
+        <label>记忆 API 异常自动重试次数</label>
+        <input type="number" id="we-memory-api-auto-retries" min="0" step="1" value="${Math.max(0, parseInt(settings.apiAutoRetries) || 0)}" style="width:100%;">
+        <div style="font-size:11px;color:var(--we-text3);margin-top:3px;">仅用于记忆提取，不修改世界推演的重试次数。</div>
+      </div>`;
+
+    const filterBody = `
+      <div class="we-input-group">
+        <label>记忆提取正文过滤正则</label>
+        <textarea id="we-memory-filter-regex" rows="5" style="width:100%;resize:vertical;" placeholder="每行一条正则">${h(settings.filterRegex || '')}</textarea>
+        <div style="font-size:11px;color:var(--we-text3);margin-top:3px;">只清洗喂给记忆提取器的正文，不影响世界推演过滤器。</div>
+      </div>`;
+
+    const toneBody = `
+      <div class="we-input-group">
+        <label>记忆引擎附加提示词</label>
+        <textarea id="we-memory-tone-prompt" rows="5" style="width:100%;resize:vertical;" placeholder="可选；只附加到记忆提取 Prompt">${h(settings.tonePrompt || '')}</textarea>
+        <div style="font-size:11px;color:var(--we-text3);margin-top:3px;">独立于世界推演附加提示词，不会互相覆盖。</div>
+      </div>`;
+
+    const archiveBody = `
+      <div class="we-input-group">
+        <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
+          <input type="checkbox" id="we-memory-sync-to-chat" ${settings.syncToChat === true ? 'checked' : ''}>
+          记忆跨设备实时同步
+        </label>
+        <div style="font-size:11px;color:var(--we-text3);margin-top:3px;">仅同步 memory_engine 数据，不读写世界引擎存档。</div>
+      </div>
+      <div class="we-input-group">
+        <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
+          <input type="checkbox" id="we-memory-auto-backup" ${settings.autoBackup === true ? 'checked' : ''}>
+          记忆推演后自动备份
+        </label>
+      </div>
+      <div style="display:flex;gap:6px;flex-wrap:wrap;">
+        <button class="we-btn" id="we-memory-export-settings">导出记忆设置</button>
+        <button class="we-btn" id="we-memory-import-settings">导入记忆设置</button>
+        <input type="file" id="we-memory-import-settings-file" accept=".json,application/json" style="display:none;">
+      </div>`;
+
+    const lastMemoryDebug = window.MEMORY_ENGINE?.getLastDebug?.() || null;
+    const memoryDebugBody = `
+      <div class="we-prompt-debug-summary">记忆提取 Prompt ${promptText.length} 字；调试数据与世界推演完全分开。</div>
+      ${lastMemoryDebug
+        ? `<pre class="we-prompt-seg-pre">${h(JSON.stringify(lastMemoryDebug, null, 2))}</pre>`
+        : '<div class="we-empty">尚未执行记忆推演，暂无记忆调试数据</div>'}
+      ${promptBody}`;
+
+    const memoryVersion = window.MEMORY_ENGINE_SETTINGS?.VERSION || '0.1.0';
+    const memoryAboutBody = `
+      <div class="we-about-current"><span class="we-changelog-cur">记忆引擎 v${h(memoryVersion)}</span></div>
+      <div class="we-section" style="margin-top:10px;">
+        <div class="we-section-title">人物主观记忆引擎</div>
+        <div style="font-size:12px;color:var(--we-text2);line-height:1.7;">
+          独立维护人物、时间、知情人与主观记忆；复用世界引擎的 API 请求、轮次与 reroll 基础能力，但不共享运行设置、主题、世界书选择、调试数据或存档。
+        </div>
+      </div>
+      <div class="we-section" style="margin-top:10px;">
+        <div class="we-section-title">v${h(memoryVersion)} · 初始版本</div>
+        <div style="font-size:12px;color:var(--we-text2);line-height:1.7;">建立独立设置页、主观记忆提取协议、绝对时间、知情人、50字限制与最少核心记忆筛选。</div>
+      </div>`;
+
     const memoryWorldbookBody = `
       <div class="we-input-group">
         <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
-          <input type="checkbox" id="we-memory-worldbook-enabled" ${settings.memoryWorldbookEnabled === true ? 'checked' : ''}>
+          <input type="checkbox" id="we-memory-worldbook-enabled" ${settings.worldbookEnabled === true ? 'checked' : ''}>
           启用记忆推演世界书
         </label>
         <div style="font-size:11px;color:var(--we-text3);margin-top:3px;">默认关闭。开启后才会把下方选中的世界书条目作为人物与背景参考；世界书内容不会被直接当作新记忆。</div>
@@ -339,28 +469,33 @@ window.WORLD_ENGINE_UI = (function() {
       .replace(/后台推演世界书/g, '记忆推演世界书')
       .replace(/注入推演/g, '注入记忆推演');
     const panelContent = {
-      common: shared.api
+      common: sec('set-memory-api', '记忆引擎 API', apiBody)
         + sec('set-memory-evolve', '记忆提取模式', modeBody)
-        + sec('set-memory-inject', '人物记忆注入', injectBody),
-      advanced: shared.retry
+        + sec('set-memory-inject', '人物记忆注入', injectBody)
+        + sec('set-memory-display', '界面与配色', displayBody),
+      advanced: sec('set-memory-retry', 'API 自动重试', retryBody)
         + sec('set-memory-backfill', '批量重填记忆推演', backfillBody)
-        + sec('set-memory-prompt', '记忆提取提示词', promptBody),
-      worldbook: sec('set-memory-worldbook-enabled', '世界书总开关', memoryWorldbookBody) + worldbook
+        + sec('set-memory-filter', '输入过滤器', filterBody)
+        + sec('set-memory-tone', '附加提示词', toneBody),
+      archive: sec('set-memory-archive', '记忆缓存与存档', archiveBody),
+      worldbook: sec('set-memory-worldbook-enabled', '世界书总开关', memoryWorldbookBody) + worldbook,
+      debug: sec('set-memory-debug', '记忆推演调试', memoryDebugBody),
+      about: memoryAboutBody
     };
 
-    if (!MEMORY_SETTINGS_TABS.some(tab => tab.key === _settingsTab)) _settingsTab = 'common';
+    if (!MEMORY_SETTINGS_TABS.some(tab => tab.key === _memorySettingsTab)) _memorySettingsTab = 'common';
     const tabBar = '<div class="we-settings-tabs-shell">'
       + '<button class="we-settings-tab-scroll" data-dir="-1" title="向左滚动"><i class="fa-solid fa-chevron-left"></i></button>'
       + '<div class="we-settings-tabs" id="we-settings-tabs">'
       + MEMORY_SETTINGS_TABS.map(tab =>
-          '<button class="we-settings-tab' + (tab.key === _settingsTab ? ' we-settings-tab--active' : '')
+          '<button class="we-settings-tab' + (tab.key === _memorySettingsTab ? ' we-settings-tab--active' : '')
           + '" data-tab="' + tab.key + '">' + tab.label + '</button>').join('')
       + '</div>'
       + '<button class="we-settings-tab-scroll" data-dir="1" title="向右滚动"><i class="fa-solid fa-chevron-right"></i></button>'
       + '</div>';
     const panels = MEMORY_SETTINGS_TABS.map(tab =>
       '<div class="we-settings-panel" data-tab="' + tab.key + '"'
-      + (tab.key === _settingsTab ? '' : ' style="display:none;"') + '>'
+      + (tab.key === _memorySettingsTab ? '' : ' style="display:none;"') + '>'
       + (panelContent[tab.key] || '') + '</div>').join('');
 
     return '<div class="we-sub-topbar"><span class="we-sub-title">记忆引擎设置</span></div>'
@@ -386,6 +521,14 @@ window.WORLD_ENGINE_UI = (function() {
       settings.classList.toggle('is-active', isMemory && _memorySettingsOpen);
       settings.title = isMemory ? '记忆引擎设置' : '设置';
     }
+    const version = panelElement.querySelector('#we-panel-version');
+    if (version) {
+      const value = isMemory
+        ? window.MEMORY_ENGINE_SETTINGS?.VERSION
+        : window.WORLD_ENGINE_VERSION;
+      version.textContent = value ? 'v' + value : '';
+      version.style.display = value ? '' : 'none';
+    }
   }
 
   function flipEngineFace() {
@@ -394,6 +537,7 @@ window.WORLD_ENGINE_UI = (function() {
     panelElement.classList.add('we-panel-flip-out');
     window.setTimeout(() => {
       _engineFace = _engineFace === 'world' ? 'memory' : 'world';
+      applyEngineFaceTheme();
       panelElement.classList.remove('we-panel-flip-out');
       panelElement.classList.add('we-panel-flip-in');
       refresh();
@@ -794,6 +938,7 @@ window.WORLD_ENGINE_UI = (function() {
     { key: 'about',     label: '关于' }
   ];
   let _settingsTab = 'common';
+  let _memorySettingsTab = 'common';
 
   function renderSettingsView(checkpoint, cpLayer) {
     const cpContent = checkpoint
@@ -2596,8 +2741,11 @@ window.WORLD_ENGINE_UI = (function() {
     };
   }
 
-  function renderSettingsAfterCheckpoint() {
-    const settings = (window.WORLD_ENGINE_API && window.WORLD_ENGINE_API.getSettings) ? window.WORLD_ENGINE_API.getSettings() : {};
+  function renderSettingsAfterCheckpoint(options) {
+    const memoryScope = options?.scope === 'memory';
+    const settings = memoryScope
+      ? (window.MEMORY_ENGINE_SETTINGS?.getSettings() || {})
+      : ((window.WORLD_ENGINE_API && window.WORLD_ENGINE_API.getSettings) ? window.WORLD_ENGINE_API.getSettings() : {});
     const sec = (id, title, body) =>
       '<div class="we-section"><div class="we-section-title">' + sectionHeader(title, id) + '</div>' +
       sectionBody(id, body) + '</div>';
@@ -2637,7 +2785,7 @@ window.WORLD_ENGINE_UI = (function() {
       <div class="we-hint" id="we-tone-status" style="margin-top:6px;"></div>`;
     // [FIX] 选项卡化：同样返回片段字典
     return {
-      worldbook: sec('set-worldbook', '后台推演世界书', worldbookBody),
+      worldbook: sec('set-worldbook', memoryScope ? '记忆推演世界书' : '后台推演世界书', worldbookBody),
       data: sec('set-data', '数据导入/导出', dataBody),
       tone: sec('set-tone', '附加提示词', toneBody)
     };
@@ -2646,6 +2794,8 @@ window.WORLD_ENGINE_UI = (function() {
   function bindEvents(state) {
     const themeSelect = document.getElementById('we-theme-select');
     if (themeSelect) themeSelect.onchange = () => setTheme(themeSelect.value);
+    const memoryThemeSelect = document.getElementById('we-memory-theme-select');
+    if (memoryThemeSelect) memoryThemeSelect.onchange = () => setMemoryTheme(memoryThemeSelect.value);
 
     document.querySelectorAll('[data-we-mechanics-reset]').forEach(button => {
       button.onclick = () => {
@@ -3309,7 +3459,8 @@ window.WORLD_ENGINE_UI = (function() {
     document.querySelectorAll('.we-settings-tab').forEach(tab => {
       tab.onclick = () => {
         const key = tab.dataset.tab;
-        _settingsTab = key;
+        if (_engineFace === 'memory') _memorySettingsTab = key;
+        else _settingsTab = key;
         document.querySelectorAll('.we-settings-tab').forEach(t =>
           t.classList.toggle('we-settings-tab--active', t.dataset.tab === key));
         document.querySelectorAll('.we-settings-panel').forEach(p =>
@@ -3552,36 +3703,38 @@ window.WORLD_ENGINE_UI = (function() {
     if (memorySaveBtn) {
       memorySaveBtn.onclick = () => {
         const gv = id => document.getElementById(id)?.value;
-        const current = window.WORLD_ENGINE_API ? window.WORLD_ENGINE_API.getSettings(true) : {};
+        const memoryCurrent = window.MEMORY_ENGINE_SETTINGS?.getSettings(true) || {};
         const temperatureRaw = parseFloat(gv('we-temperature'));
         const timeoutSecRaw = parseFloat(gv('we-api-timeout-sec'));
         const everyX = Math.max(1, parseInt(gv('we-memory-everyx')) || 5);
-        const ns = {
-          ...current,
-          // API 连接由世界引擎与记忆引擎共用。
+        const memorySettings = {
+          ...memoryCurrent,
           apiUrl: gv('we-api-url') || '',
           apiKey: gv('we-api-key') || '',
           model: gv('we-model') || 'gpt-3.5-turbo',
-          temperature: Number.isFinite(temperatureRaw) ? Math.max(0, temperatureRaw) : 0.7,
+          temperature: Number.isFinite(temperatureRaw) ? Math.max(0, temperatureRaw) : 0.2,
           maxTokens: Math.max(1, parseInt(gv('we-max-tokens')) || 2000),
-          apiAutoRetries: Math.max(0, parseInt(gv('we-api-auto-retries')) || 0),
           apiTimeoutMs: Number.isFinite(timeoutSecRaw) ? Math.max(0, Math.round(timeoutSecRaw * 1000)) : 120000,
           connectionMode: document.getElementById('we-connection-mode')?.value === 'proxy' ? 'proxy' : 'direct',
-          // 调度与注入参数独立保存，执行时复用世界引擎现有机制。
-          memoryEvolveMode: gv('we-memory-evolve-mode') === 'manual' ? 'manual' : 'auto',
-          memoryEvolveEveryX: everyX,
-          memoryEvolveReadRounds: Math.min(everyX, Math.max(1, parseInt(gv('we-memory-readrounds')) || everyX)),
-          memoryManualReadRounds: Math.max(1, parseInt(gv('we-memory-manual-readrounds')) || 5),
-          memoryInjectIntoPrompt: document.getElementById('we-memory-inject')?.checked !== false,
-          memorySearchDepth: Math.max(1, parseInt(gv('we-memory-search-depth')) || 5),
-          memoryMaxPerCharacter: Math.max(1, parseInt(gv('we-memory-max-per-character')) || 20),
-          memoryWorldbookEnabled: document.getElementById('we-memory-worldbook-enabled')?.checked === true,
-          memoryBackfillBatchSize: Math.max(1, parseInt(gv('we-memory-backfill-batch')) || 5),
-          memoryBackfillEndLayer: Math.max(0, parseInt(gv('we-memory-backfill-end')) || 0),
-          memoryBackfillRetries: Math.max(0, parseInt(gv('we-memory-backfill-retries')) || 0)
+          evolveMode: gv('we-memory-evolve-mode') === 'manual' ? 'manual' : 'auto',
+          evolveEveryX: everyX,
+          evolveReadRounds: Math.min(everyX, Math.max(1, parseInt(gv('we-memory-readrounds')) || everyX)),
+          manualReadRounds: Math.max(1, parseInt(gv('we-memory-manual-readrounds')) || 5),
+          injectIntoPrompt: document.getElementById('we-memory-inject')?.checked !== false,
+          searchDepth: Math.max(1, parseInt(gv('we-memory-search-depth')) || 5),
+          maxPerCharacter: Math.max(1, parseInt(gv('we-memory-max-per-character')) || 20),
+          apiAutoRetries: Math.max(0, parseInt(gv('we-memory-api-auto-retries')) || 0),
+          filterRegex: gv('we-memory-filter-regex') || '',
+          tonePrompt: gv('we-memory-tone-prompt') || '',
+          worldbookEnabled: document.getElementById('we-memory-worldbook-enabled')?.checked === true,
+          worldbookTrigger: document.getElementById('we-worldbook-trigger')?.checked === true,
+          syncToChat: document.getElementById('we-memory-sync-to-chat')?.checked === true,
+          autoBackup: document.getElementById('we-memory-auto-backup')?.checked === true,
+          backfillBatchSize: Math.max(1, parseInt(gv('we-memory-backfill-batch')) || 5),
+          backfillEndLayer: Math.max(0, parseInt(gv('we-memory-backfill-end')) || 0),
+          backfillRetries: Math.max(0, parseInt(gv('we-memory-backfill-retries')) || 0)
         };
-        window.WORLD_ENGINE_STORE.setItem('world_engine_settings', JSON.stringify(ns));
-        if (window.WORLD_ENGINE_API) window.WORLD_ENGINE_API.getSettings(true);
+        window.MEMORY_ENGINE_SETTINGS?.saveSettings(memorySettings);
         showToast('记忆引擎设置已保存');
       };
     }
@@ -3607,6 +3760,39 @@ window.WORLD_ENGINE_UI = (function() {
         if (!read) return;
         read.max = String(max);
         if ((parseInt(read.value) || 1) > max) read.value = String(max);
+      };
+    }
+
+    const memoryExportSettings = document.getElementById('we-memory-export-settings');
+    if (memoryExportSettings) {
+      memoryExportSettings.onclick = () => {
+        const payload = {
+          __memoryEngineSettings: true,
+          version: window.MEMORY_ENGINE_SETTINGS?.VERSION || '0.1.0',
+          settings: window.MEMORY_ENGINE_SETTINGS?.getSettings(true) || {}
+        };
+        setupDownload(JSON.stringify(payload, null, 2), 'memory-engine-settings-' + Date.now() + '.json');
+      };
+    }
+    const memoryImportSettings = document.getElementById('we-memory-import-settings');
+    const memoryImportSettingsFile = document.getElementById('we-memory-import-settings-file');
+    if (memoryImportSettings && memoryImportSettingsFile) {
+      memoryImportSettings.onclick = () => memoryImportSettingsFile.click();
+      memoryImportSettingsFile.onchange = async () => {
+        const file = memoryImportSettingsFile.files?.[0];
+        if (!file) return;
+        try {
+          const parsed = JSON.parse(await file.text());
+          const imported = parsed?.__memoryEngineSettings ? parsed.settings : parsed;
+          if (!imported || typeof imported !== 'object' || Array.isArray(imported)) throw new Error('格式无效');
+          window.MEMORY_ENGINE_SETTINGS?.saveSettings(imported);
+          showToast('记忆引擎设置已导入');
+          refresh();
+        } catch (error) {
+          showToast('导入记忆设置失败：' + (error?.message || error), true);
+        } finally {
+          memoryImportSettingsFile.value = '';
+        }
       };
     }
 
@@ -3776,6 +3962,7 @@ window.WORLD_ENGINE_UI = (function() {
     const worldbookList = document.getElementById('we-worldbook-list');
     if (worldbookList) {
       const worldbook = window.WORLD_ENGINE_WORLDBOOK;
+      const worldbookScope = _engineFace === 'memory' ? 'memory' : 'world';
       const summary = document.getElementById('we-worldbook-summary');
       const reloadBtn = document.getElementById('we-worldbook-reload');
       const selectAllBtn = document.getElementById('we-worldbook-select-all');
@@ -3800,15 +3987,16 @@ window.WORLD_ENGINE_UI = (function() {
           const entries = await worldbook.loadCurrentEntries();
           const currentChatId = worldbook.getChatId ? worldbook.getChatId() : (window.WORLD_ENGINE_CORE?.getChatId?.() || 'default');
           // 用 hasSelection() 区分"从未保存"与"保存了空数组"，避免刷新后误触发自动全选
-          const isFirstVisit = worldbook.hasSelection ? !worldbook.hasSelection() : false;
-          const savedIds = worldbook.getSelectedIds();
+          const isFirstVisit = worldbook.hasSelection ? !worldbook.hasSelection(worldbookScope) : false;
+          const savedIds = worldbook.getSelectedIds(worldbookScope);
           _wbCachedEntries = entries;
           _wbCachedChatId = currentChatId;
-          _wbCachedOverrides = worldbook.getOverrides ? { ...worldbook.getOverrides() } : {};
+          _wbCachedScope = worldbookScope;
+          _wbCachedOverrides = worldbook.getOverrides ? { ...worldbook.getOverrides(worldbookScope) } : {};
           // 首次进入该聊天（存储中无记录）则自动全选启用条目
           if (isFirstVisit && entries.length) {
             const allIds = entries.filter(e => !e.disabled).map(e => e.id);
-            worldbook.saveSelectedIds(allIds);
+            worldbook.saveSelectedIds(allIds, worldbookScope);
             _wbCachedSelectedIds = new Set(allIds);
             showToast(`已自动全选 ${allIds.length} 条世界书条目`);
           } else {
@@ -3818,7 +4006,7 @@ window.WORLD_ENGINE_UI = (function() {
             // 仅在有匹配条目时才回写，防止刷新后 entry.world 尚未加载导致 ID 全部不匹配、
             // 误将保存记录清空为 []（清空后下次开面板会误触发自动全选）
             if (validSavedIds.length > 0 && validSavedIds.length !== savedIds.length) {
-              worldbook.saveSelectedIds(validSavedIds);
+              worldbook.saveSelectedIds(validSavedIds, worldbookScope);
             }
           }
           renderWorldbookList();
@@ -3829,6 +4017,7 @@ window.WORLD_ENGINE_UI = (function() {
           _wbCachedSelectedIds = null;
           _wbCachedOverrides = null;
           _wbCachedChatId = null;
+          _wbCachedScope = null;
         } finally {
           if (reloadBtn) reloadBtn.disabled = false;
         }
@@ -3838,7 +4027,9 @@ window.WORLD_ENGINE_UI = (function() {
         const entries = _wbCachedEntries;
         const selectedIds = _wbCachedSelectedIds || new Set();
         const overrides = _wbCachedOverrides || {};
-        const triggerOn = !!(window.WORLD_ENGINE_WORLDBOOK?.triggerEnabled?.());
+        const triggerOn = worldbookScope === 'memory'
+          ? window.MEMORY_ENGINE_SETTINGS?.getSettings()?.worldbookTrigger === true
+          : !!(window.WORLD_ENGINE_WORLDBOOK?.triggerEnabled?.());
         if (!entries || !entries.length) {
           worldbookList.innerHTML = '<div class="we-empty">当前聊天未关联可读取的世界书条目</div>';
           if (summary) summary.textContent = '0 条可选';
@@ -3938,7 +4129,7 @@ window.WORLD_ENGINE_UI = (function() {
           if (_wbScrollTop) worldbookList.scrollTop = _wbScrollTop;
       }
 
-      if (reloadBtn) reloadBtn.onclick = () => { _wbCachedEntries = null; _wbCachedChatId = null; loadWorldbookEntries(); };
+      if (reloadBtn) reloadBtn.onclick = () => { _wbCachedEntries = null; _wbCachedChatId = null; _wbCachedScope = null; loadWorldbookEntries(); };
       if (selectAllBtn) selectAllBtn.onclick = () => {
         worldbookList.querySelectorAll('.we-worldbook-entry-check:not(:disabled)').forEach(checkbox => {
           checkbox.checked = true;
@@ -3953,23 +4144,27 @@ window.WORLD_ENGINE_UI = (function() {
       };
       if (saveWorldbookBtn) saveWorldbookBtn.onclick = () => {
         const ids = [..._wbCachedSelectedIds];
-        if (worldbook.saveSelection) worldbook.saveSelection(ids, _wbCachedOverrides || {});
-        else worldbook.saveSelectedIds(ids);
-        showToast(`已保存 ${_wbCachedSelectedIds.size} 条后台世界书条目`);
+        if (worldbook.saveSelection) worldbook.saveSelection(ids, _wbCachedOverrides || {}, worldbookScope);
+        else worldbook.saveSelectedIds(ids, worldbookScope);
+        showToast(`已保存 ${_wbCachedSelectedIds.size} 条${worldbookScope === 'memory' ? '记忆' : '后台'}世界书条目`);
         updateWorldbookSummary();
       };
       const triggerBox = document.getElementById('we-worldbook-trigger');
       if (triggerBox) triggerBox.onchange = () => {
-        const wapi = window.WORLD_ENGINE_API;
-        const cur = wapi && wapi.getSettings ? wapi.getSettings(true) : {};
-        window.WORLD_ENGINE_STORE.setItem('world_engine_settings', JSON.stringify({ ...cur, worldbookTrigger: triggerBox.checked }));
-        if (wapi && wapi.getSettings) wapi.getSettings(true);
+        if (worldbookScope === 'memory') {
+          window.MEMORY_ENGINE_SETTINGS?.patchSettings({ worldbookTrigger: triggerBox.checked });
+        } else {
+          const wapi = window.WORLD_ENGINE_API;
+          const cur = wapi && wapi.getSettings ? wapi.getSettings(true) : {};
+          window.WORLD_ENGINE_STORE.setItem('world_engine_settings', JSON.stringify({ ...cur, worldbookTrigger: triggerBox.checked }));
+          if (wapi && wapi.getSettings) wapi.getSettings(true);
+        }
         showToast(triggerBox.checked ? '已开启蓝绿灯触发' : '已关闭蓝绿灯触发（恢复全部已选注入）');
         renderWorldbookList(); // 重渲染以显示/隐藏每条的触发覆写下拉
       };
       // refresh() 重建 DOM 时，如果 chatId 未变且已有缓存，直接渲染，避免勾选丢失
       const currentChatIdNow = worldbook.getChatId ? worldbook.getChatId() : (window.WORLD_ENGINE_CORE?.getChatId?.() || 'default');
-      if (_wbCachedEntries && _wbCachedChatId === currentChatIdNow) {
+      if (_wbCachedEntries && _wbCachedChatId === currentChatIdNow && _wbCachedScope === worldbookScope) {
         renderWorldbookList();
       } else {
         loadWorldbookEntries();
@@ -4021,25 +4216,39 @@ window.WORLD_ENGINE_UI = (function() {
       fetchBtn.onclick = async () => {
         const api = window.WORLD_ENGINE_API;
         if (!api) { showToast('API 模块未加载', true); return; }
-        window.WORLD_ENGINE_STORE.setItem('world_engine_settings', JSON.stringify({
-          ...(api.getSettings ? api.getSettings(true) : {}),
+        const requestScope = _engineFace;
+        const modelListElement = document.getElementById('we-model-list');
+        const apiPatch = {
           apiUrl: document.getElementById('we-api-url')?.value || '',
           apiKey: document.getElementById('we-api-key')?.value || '',
           model: document.getElementById('we-model')?.value || '',
-          temperature: Number.isFinite(parseFloat(document.getElementById('we-temperature')?.value)) ? Math.max(0, parseFloat(document.getElementById('we-temperature')?.value)) : 0.7,
+          temperature: Number.isFinite(parseFloat(document.getElementById('we-temperature')?.value))
+            ? Math.max(0, parseFloat(document.getElementById('we-temperature')?.value))
+            : (requestScope === 'memory' ? 0.2 : 0.7),
           maxTokens: Math.max(1, parseInt(document.getElementById('we-max-tokens')?.value) || 2000),
           apiTimeoutMs: Number.isFinite(parseFloat(document.getElementById('we-api-timeout-sec')?.value)) ? Math.max(0, Math.round(parseFloat(document.getElementById('we-api-timeout-sec')?.value) * 1000)) : 120000,
-          connectionMode: document.getElementById('we-connection-mode')?.value === 'proxy' ? 'proxy' : 'direct',
-          injectIntoPrompt: document.getElementById('we-inject-into-prompt')?.checked !== false,
-          injectMaxChars: Math.max(0, parseInt(document.getElementById('we-inject-max-chars')?.value) || 0),
-          injectAllLevels: document.getElementById('we-inject-all-levels')?.checked === true
-        }));
-        if (api.getSettings) api.getSettings(true);
+          connectionMode: document.getElementById('we-connection-mode')?.value === 'proxy' ? 'proxy' : 'direct'
+        };
+        let requestSettings;
+        if (requestScope === 'memory') {
+          requestSettings = window.MEMORY_ENGINE_SETTINGS?.patchSettings(apiPatch) || apiPatch;
+        } else {
+          const worldSettings = {
+            ...(api.getSettings ? api.getSettings(true) : {}),
+            ...apiPatch,
+            injectIntoPrompt: document.getElementById('we-inject-into-prompt')?.checked !== false,
+            injectMaxChars: Math.max(0, parseInt(document.getElementById('we-inject-max-chars')?.value) || 0),
+            injectAllLevels: document.getElementById('we-inject-all-levels')?.checked === true
+          };
+          window.WORLD_ENGINE_STORE.setItem('world_engine_settings', JSON.stringify(worldSettings));
+          if (api.getSettings) api.getSettings(true);
+          requestSettings = worldSettings;
+        }
         fetchBtn.disabled = true;
         fetchBtn.textContent = '获取中...';
         try {
-          const models = await api.fetchModelList();
-          const select = document.getElementById('we-model-list');
+          const models = await api.fetchModelList(requestSettings);
+          const select = modelListElement;
           if (select) {
             select.innerHTML = '<option value="">-- 选择模型 --</option>' +
               models.map(m => '<option value="' + u(m) + '">' + u(m) + '</option>').join('');
@@ -4404,6 +4613,7 @@ window.WORLD_ENGINE_UI = (function() {
 
   function showPanel() {
     if (!panelElement) buildPanel();
+    applyEngineFaceTheme();
     panelElement.style.display = 'flex';
     panelVisible = true;
     refresh();
