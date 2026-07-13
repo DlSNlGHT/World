@@ -265,6 +265,73 @@ window.WORLD_ENGINE_UI = (function() {
     { key: 'about', label: '关于' }
   ];
 
+  function renderMemoryDebug() {
+    const engine = window.MEMORY_ENGINE;
+    const dbg = engine?.getLastDebug?.() || null;
+    const injection = window.MEMORY_ENGINE_INJECT_INSPECTOR?.getLastSnapshot?.()
+      || engine?.getLastInjectionDebug?.()
+      || dbg?.injection
+      || null;
+    const sentPrompt = typeof dbg?.prompt === 'string' ? dbg.prompt
+      : (typeof dbg?.requestPrompt === 'string' ? dbg.requestPrompt : '');
+    const apiResult = typeof dbg?.rawResult === 'string' ? dbg.rawResult
+      : (typeof dbg?.apiResponse === 'string' ? dbg.apiResponse
+        : (typeof dbg?.response === 'string' ? dbg.response : ''));
+    const card = (title, meta, content, emptyText) => {
+      const hasContent = content !== null && content !== undefined && content !== '';
+      const shown = typeof content === 'string' ? content : (hasContent ? JSON.stringify(content, null, 2) : '');
+      return '<div class="we-prompt-seg-card">'
+        + '<div class="we-prompt-seg-head" data-we-seg-toggle>'
+        + '<span class="we-prompt-seg-arrow">▶</span>'
+        + '<span class="we-prompt-seg-label">' + h(title) + '</span>'
+        + '<span class="we-prompt-seg-meta">' + h(meta || (hasContent ? shown.length + '字' : '暂无')) + '</span>'
+        + '</div>'
+        + '<div class="we-prompt-seg-body" style="display:none;">'
+        + (hasContent ? '<pre class="we-prompt-seg-pre">' + h(shown) + '</pre>' : '<div class="we-prompt-seg-empty">' + h(emptyText) + '</div>')
+        + '</div></div>';
+    };
+    const injectionMeta = injection
+      ? (injection.status || (injection.landed === true ? '已注入' : injection.landed === false ? '未注入' : '有记录'))
+      : '暂无';
+    return '<div class="we-prompt-debug">'
+      + '<div class="we-prompt-debug-summary">只显示最近一次实际运行记录；内置记忆 Prompt 不在设置中展示，也不开放修改。</div>'
+      + card('人物记忆注入调试', injectionMeta, injection, '生成回复并执行记忆注入后显示最终注入记录。')
+      + card('发送给记忆后台 API 的实际 Prompt', sentPrompt ? sentPrompt.length + '字' : '暂无', sentPrompt, '执行记忆提取后显示本次真正发送的完整 Prompt。')
+      + card('记忆后台 API 原始返回', apiResult ? apiResult.length + '字' : '暂无', apiResult, '执行记忆提取后显示后台 API 的原始返回。')
+      + '</div>';
+  }
+
+  function renderMemoryCheckpointSection() {
+    const data = window.MEMORY_ENGINE_DATA;
+    const checkpoint = data?.loadCheckpoint?.() || null;
+    const count = Array.isArray(checkpoint?.personal_memory) ? checkpoint.personal_memory.length : 0;
+    const content = checkpoint
+      ? '<div class="we-hint">包含 ' + count + ' 个人物记忆条目</div><pre class="we-prompt-seg-pre">' + h(JSON.stringify(checkpoint, null, 2)) + '</pre>'
+      : '<div class="we-empty">暂无存档点</div>';
+    return '<div class="we-section" style="margin-top:16px;"><div class="we-section-title">'
+      + sectionHeader(checkpoint ? '存档点 - ' + count + ' 条人物记忆' : '存档点', 'memory-checkpoint-section')
+      + '</div>' + sectionBody('memory-checkpoint-section', content) + '</div>';
+  }
+
+  function renderMemorySnapshotRows() {
+    const list = window.MEMORY_ENGINE_DATA?.listSnapshots?.() || [];
+    if (!list.length) return '<div class="we-empty">暂无记忆存档</div>';
+    return list.map(item => {
+      let time = '';
+      try { time = new Date(item.createdAt).toLocaleString(); } catch (error) {}
+      const count = Array.isArray(item.state?.personal_memory) ? item.state.personal_memory.length : 0;
+      return '<div class="we-snapshot-row" data-memory-snap-id="' + u(item.id) + '">'
+        + '<div class="we-snapshot-main"><div class="we-snapshot-name">' + h(item.name) + '</div>'
+        + '<div class="we-snapshot-meta">' + count + ' 条人物记忆' + (time ? ' · ' + h(time) : '') + '</div></div>'
+        + '<div class="we-snapshot-actions">'
+        + '<button class="we-icon-btn" data-memory-snap-action="restore" title="恢复"><i class="fa-solid fa-rotate-left"></i></button>'
+        + '<button class="we-icon-btn" data-memory-snap-action="rename" title="重命名"><i class="fa-solid fa-pen"></i></button>'
+        + '<button class="we-icon-btn" data-memory-snap-action="export" title="导出"><i class="fa-solid fa-download"></i></button>'
+        + '<button class="we-icon-btn" data-memory-snap-action="delete" title="删除"><i class="fa-solid fa-trash"></i></button>'
+        + '</div></div>';
+    }).join('');
+  }
+
   function renderMemorySettingsView() {
     const settings = window.MEMORY_ENGINE_SETTINGS?.getSettings(true) || {};
     const extra = renderSettingsAfterCheckpoint({ scope: 'memory' });
@@ -377,11 +444,6 @@ window.WORLD_ENGINE_UI = (function() {
         <button class="we-btn" id="we-memory-backfill-stop">■ 停止</button>
       </div>`;
 
-    const promptText = window.MEMORY_ENGINE_PROMPT?.SYSTEM_PROMPT || '记忆提示词模块未加载';
-    const promptBody = `
-      <div style="font-size:11px;color:var(--we-text3);margin-bottom:6px;">内置提示词位于 memory-engine-prompt.js。当前只读，后续接入预设系统时再开放自定义。</div>
-      <textarea readonly style="width:100%;min-height:220px;resize:vertical;">${h(promptText)}</textarea>`;
-
     const memoryTheme = getStoredMemoryTheme();
     const memoryThemeOptions = WE_THEMES.map(theme =>
       `<option value="${theme.id}" ${theme.id === memoryTheme ? 'selected' : ''}>${theme.name}</option>`
@@ -410,8 +472,8 @@ window.WORLD_ENGINE_UI = (function() {
     const toneBody = `
       <div class="we-input-group">
         <label>记忆引擎附加提示词</label>
-        <textarea id="we-memory-tone-prompt" rows="5" style="width:100%;resize:vertical;" placeholder="可选；只附加到记忆提取 Prompt">${h(settings.tonePrompt || '')}</textarea>
-        <div style="font-size:11px;color:var(--we-text3);margin-top:3px;">独立于世界推演附加提示词，不会互相覆盖。</div>
+        <textarea id="we-memory-tone-prompt" rows="5" style="width:100%;resize:vertical;" placeholder="可选；只附加到本次记忆提取请求">${h(settings.tonePrompt || '')}</textarea>
+        <div style="font-size:11px;color:var(--we-text3);margin-top:3px;">这是高级运行设置；不开放内置记忆 Prompt 本体，也不提供 Prompt 预设编辑器。</div>
       </div>`;
 
     const archiveBody = `
@@ -428,19 +490,20 @@ window.WORLD_ENGINE_UI = (function() {
           记忆推演后自动备份
         </label>
       </div>
-      <div style="display:flex;gap:6px;flex-wrap:wrap;">
-        <button class="we-btn" id="we-memory-export-settings">导出记忆设置</button>
-        <button class="we-btn" id="we-memory-import-settings">导入记忆设置</button>
-        <input type="file" id="we-memory-import-settings-file" accept=".json,application/json" style="display:none;">
-      </div>`;
+      <div class="we-hint" id="we-memory-archive-status" style="margin:4px 0;">记忆数据、存档点和命名存档均按聊天独立保存。</div>
+      <div style="display:flex;gap:6px;flex-wrap:wrap;margin:6px 0;">
+        <button class="we-btn we-btn-primary" id="we-memory-snapshot-save">新建命名存档</button>
+        <button class="we-btn" id="we-memory-snapshot-import">导入存档</button>
+        <input type="file" id="we-memory-snapshot-import-file" accept=".json,application/json" style="display:none;">
+      </div>
+      <div class="we-chatcache-list" id="we-memory-snapshot-list">${renderMemorySnapshotRows()}</div>`;
 
-    const lastMemoryDebug = window.MEMORY_ENGINE?.getLastDebug?.() || null;
-    const memoryDebugBody = `
-      <div class="we-prompt-debug-summary">记忆提取 Prompt ${promptText.length} 字；调试数据与世界推演完全分开。</div>
-      ${lastMemoryDebug
-        ? `<pre class="we-prompt-seg-pre">${h(JSON.stringify(lastMemoryDebug, null, 2))}</pre>`
-        : '<div class="we-empty">尚未执行记忆推演，暂无记忆调试数据</div>'}
-      ${promptBody}`;
+    const dataBody = `
+      <div style="display:flex;gap:6px;flex-wrap:wrap;">
+        <button class="we-btn" id="we-memory-export-data">导出 JSON</button>
+        <button class="we-btn" id="we-memory-import-data">导入 JSON</button>
+        <input type="file" id="we-memory-import-data-file" accept=".json,application/json" style="display:none;">
+      </div>`;
 
     const memoryVersion = window.MEMORY_ENGINE_SETTINGS?.VERSION || '0.1.0';
     const memoryAboutBody = `
@@ -471,15 +534,17 @@ window.WORLD_ENGINE_UI = (function() {
     const panelContent = {
       common: sec('set-memory-api', '记忆引擎 API', apiBody)
         + sec('set-memory-evolve', '记忆提取模式', modeBody)
-        + sec('set-memory-inject', '人物记忆注入', injectBody)
-        + sec('set-memory-display', '界面与配色', displayBody),
+        + sec('set-memory-inject', '人物记忆注入', injectBody),
       advanced: sec('set-memory-retry', 'API 自动重试', retryBody)
         + sec('set-memory-backfill', '批量重填记忆推演', backfillBody)
         + sec('set-memory-filter', '输入过滤器', filterBody)
+        + sec('set-memory-display', '界面显示', displayBody)
         + sec('set-memory-tone', '附加提示词', toneBody),
-      archive: sec('set-memory-archive', '记忆缓存与存档', archiveBody),
+      archive: sec('set-memory-archive', '记忆缓存与存档', archiveBody)
+        + sec('set-memory-data', '记忆数据导入/导出', dataBody)
+        + renderMemoryCheckpointSection(),
       worldbook: sec('set-memory-worldbook-enabled', '世界书总开关', memoryWorldbookBody) + worldbook,
-      debug: sec('set-memory-debug', '记忆推演调试', memoryDebugBody),
+      debug: sec('set-memory-debug', '记忆推演调试', '<div id="we-memory-debug-render">' + renderMemoryDebug() + '</div>'),
       about: memoryAboutBody
     };
 
@@ -1910,6 +1975,13 @@ window.WORLD_ENGINE_UI = (function() {
         showToast('API 返回已导出');
       };
     }
+  }
+
+  function refreshMemoryDebugRender() {
+    const box = document.getElementById('we-memory-debug-render');
+    if (!box) return;
+    box.innerHTML = renderMemoryDebug();
+    bindPromptSegToggle(box.querySelector('.we-prompt-debug'));
   }
 
   // ═══════════════════════════════════════════════════════════
@@ -3467,7 +3539,10 @@ window.WORLD_ENGINE_UI = (function() {
           p.style.display = (p.dataset.tab === key) ? '' : 'none');
         tab.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' });
         // [FIX] 切到调试 tab 时，局部刷新 renderDebug 拉最新一轮推演数据（不动其它 tab 输入）
-        if (key === 'debug') { refreshDebugRender(); refreshPresetManage(); }
+        if (key === 'debug') {
+          if (_engineFace === 'memory') refreshMemoryDebugRender();
+          else { refreshDebugRender(); refreshPresetManage(); }
+        }
       };
     });
 
@@ -3763,38 +3838,84 @@ window.WORLD_ENGINE_UI = (function() {
       };
     }
 
-    const memoryExportSettings = document.getElementById('we-memory-export-settings');
-    if (memoryExportSettings) {
-      memoryExportSettings.onclick = () => {
-        const payload = {
-          __memoryEngineSettings: true,
-          version: window.MEMORY_ENGINE_SETTINGS?.VERSION || '0.1.0',
-          settings: window.MEMORY_ENGINE_SETTINGS?.getSettings(true) || {}
-        };
-        setupDownload(JSON.stringify(payload, null, 2), 'memory-engine-settings-' + Date.now() + '.json');
-      };
-    }
-    const memoryImportSettings = document.getElementById('we-memory-import-settings');
-    const memoryImportSettingsFile = document.getElementById('we-memory-import-settings-file');
-    if (memoryImportSettings && memoryImportSettingsFile) {
-      memoryImportSettings.onclick = () => memoryImportSettingsFile.click();
-      memoryImportSettingsFile.onchange = async () => {
-        const file = memoryImportSettingsFile.files?.[0];
+    const memoryData = window.MEMORY_ENGINE_DATA;
+    const memoryExportData = document.getElementById('we-memory-export-data');
+    if (memoryExportData) memoryExportData.onclick = () => {
+      if (!memoryData) { showToast('记忆数据模块未加载', true); return; }
+      setupDownload(JSON.stringify(memoryData.exportData(), null, 2), 'memory-engine-data-' + Date.now() + '.json');
+      showToast('记忆数据已导出');
+    };
+    const memoryImportData = document.getElementById('we-memory-import-data');
+    const memoryImportDataFile = document.getElementById('we-memory-import-data-file');
+    if (memoryImportData && memoryImportDataFile) {
+      memoryImportData.onclick = () => memoryImportDataFile.click();
+      memoryImportDataFile.onchange = async () => {
+        const file = memoryImportDataFile.files?.[0];
         if (!file) return;
         try {
-          const parsed = JSON.parse(await file.text());
-          const imported = parsed?.__memoryEngineSettings ? parsed.settings : parsed;
-          if (!imported || typeof imported !== 'object' || Array.isArray(imported)) throw new Error('格式无效');
-          window.MEMORY_ENGINE_SETTINGS?.saveSettings(imported);
-          showToast('记忆引擎设置已导入');
+          memoryData.importData(JSON.parse(await file.text()));
+          showToast('记忆数据已导入');
           refresh();
         } catch (error) {
-          showToast('导入记忆设置失败：' + (error?.message || error), true);
+          showToast('导入记忆数据失败：' + (error?.message || error), true);
         } finally {
-          memoryImportSettingsFile.value = '';
+          memoryImportDataFile.value = '';
         }
       };
     }
+
+    const memorySnapshotSave = document.getElementById('we-memory-snapshot-save');
+    if (memorySnapshotSave) memorySnapshotSave.onclick = () => {
+      const name = prompt('给这份记忆存档起个名字：', '记忆存档 ' + new Date().toLocaleString());
+      if (name == null) return;
+      memoryData?.createSnapshot?.(name);
+      showToast('记忆存档已创建');
+      refresh();
+    };
+    const memorySnapshotImport = document.getElementById('we-memory-snapshot-import');
+    const memorySnapshotImportFile = document.getElementById('we-memory-snapshot-import-file');
+    if (memorySnapshotImport && memorySnapshotImportFile) {
+      memorySnapshotImport.onclick = () => memorySnapshotImportFile.click();
+      memorySnapshotImportFile.onchange = async () => {
+        const file = memorySnapshotImportFile.files?.[0];
+        if (!file) return;
+        try {
+          memoryData.importSnapshot(JSON.parse(await file.text()));
+          showToast('记忆存档已导入');
+          refresh();
+        } catch (error) {
+          showToast('导入记忆存档失败：' + (error?.message || error), true);
+        } finally {
+          memorySnapshotImportFile.value = '';
+        }
+      };
+    }
+    document.querySelectorAll('[data-memory-snap-action]').forEach(button => {
+      button.onclick = () => {
+        const row = button.closest('[data-memory-snap-id]');
+        const id = row?.dataset.memorySnapId;
+        const item = memoryData?.listSnapshots?.().find(entry => entry.id === id);
+        if (!id || !item) return;
+        const action = button.dataset.memorySnapAction;
+        if (action === 'restore') {
+          if (!confirm('恢复记忆存档「' + item.name + '」？当前记忆数据将被替换。')) return;
+          memoryData.restoreSnapshot(id);
+          showToast('记忆存档已恢复');
+          refresh();
+        } else if (action === 'rename') {
+          const name = prompt('新的存档名称：', item.name);
+          if (name == null) return;
+          memoryData.renameSnapshot(id, name);
+          refresh();
+        } else if (action === 'export') {
+          setupDownload(JSON.stringify({ __memoryEngineSnapshot: true, version: '0.1.0', snapshot: item }, null, 2), 'memory-snapshot-' + Date.now() + '.json');
+        } else if (action === 'delete') {
+          if (!confirm('删除记忆存档「' + item.name + '」？')) return;
+          memoryData.deleteSnapshot(id);
+          refresh();
+        }
+      };
+    });
 
     const memoryBackfillStart = document.getElementById('we-memory-backfill-start');
     if (memoryBackfillStart) {

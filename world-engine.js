@@ -6,6 +6,7 @@
   const MODULES = [
     'world-engine-store.js',
     'memory-engine-settings.js',  // 记忆引擎独立设置命名空间
+    'memory-engine-data.js',      // 记忆引擎按聊天隔离的数据、存档点与命名存档
     'memory-engine-prompt.js',    // 记忆引擎：独立主观记忆提取提示词（执行链后续接入）
     'world-engine-preset.js',       // ← 新增：引擎预设系统（紧跟 store，在 evolution 之前；运行时引用 evolution 默认段）
     'world-engine-core.js',
