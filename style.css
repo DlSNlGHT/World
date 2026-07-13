@@ -41,7 +41,7 @@
 :root[data-we-theme="night"] {
   --we-bg: #17181c; --we-bg2: #121317; --we-bg-hl: #2b2e36;
   --we-card: #1c1d22; --we-surface: #262830; --we-border: rgba(255,255,255,0.16);
-  --we-text: #e8e9ec; --we-text2: #a9acb4; --we-text3: #71747c;
+  --we-text: #e8e9ec; --we-text2: #b8bbc3; --we-text3: #9296a0;
   --we-accent: #8ab4f8; --we-gold: #c7a86a; --we-title: #d6dae1;
   --we-hairline: rgba(255,255,255,0.07);
   --we-ball-ocean: #20232a; --we-ball-land: #7e8798;
@@ -56,7 +56,7 @@
 :root[data-we-theme="deepsea"] {
   --we-bg: #0e1b2a; --we-bg2: #0a1622; --we-bg-hl: #1c3a56;
   --we-card: #10202f; --we-surface: #163049; --we-border: rgba(90,168,210,0.32);
-  --we-text: #dce9f5; --we-text2: #9fb6cc; --we-text3: #66809a;
+  --we-text: #e3eef8; --we-text2: #abc2d6; --we-text3: #829db5;
   --we-accent: #4fc3dc; --we-gold: #e0b968; --we-title: #86c8e4;
   --we-hairline: rgba(255,255,255,0.06);
   --we-ball-ocean: #0b2941; --we-ball-land: #42a4b5;
@@ -71,7 +71,7 @@
 :root[data-we-theme="plum"] {
   --we-bg: #1e1526; --we-bg2: #170f1e; --we-bg-hl: #3a2450;
   --we-card: #221829; --we-surface: #2e2140; --we-border: rgba(170,139,201,0.34);
-  --we-text: #ece3f2; --we-text2: #bda9cc; --we-text3: #8a7799;
+  --we-text: #f0e8f5; --we-text2: #cbb8d7; --we-text3: #a18cae;
   --we-accent: #b98bd6; --we-gold: #d8b06a; --we-title: #d9b8f0;
   --we-hairline: rgba(255,255,255,0.06);
   --we-ball-ocean: #2b1838; --we-ball-land: #a56cc0;
@@ -86,9 +86,9 @@
 :root[data-we-theme="paper"] {
   --we-bg: #f5f7f9; --we-bg2: #eceef2; --we-bg-hl: #e0e5ea;
   --we-card: #ffffff; --we-surface: #eef1f5; --we-border: rgba(0,0,0,0.16);
-  --we-beige: #5c4f32; --we-text: #232f39; --we-text2: #55616f; --we-text3: #8792a0;
-  --we-accent: #2f8f7f; --we-gold: #a9791f; --we-title: #93671b;
-  --we-danger: #c0564f; --we-success: #3f9b6f; --we-hairline: rgba(0,0,0,0.10);
+  --we-beige: #5c4f32; --we-text: #232f39; --we-text2: #4e5b68; --we-text3: #687481;
+  --we-accent: #267568; --we-gold: #825c13; --we-title: #76500f;
+  --we-danger: #ae413b; --we-success: #2f7c55; --we-hairline: rgba(0,0,0,0.12);
   --we-ball-ocean: #d7e7ef; --we-ball-land: #5eaa98;
   --we-ball-count-bg: rgba(255,255,255,0.94); --we-ball-badge-border: #e2e7eb;
   --we-ball-orbit: rgba(47,143,127,0.38); --we-ball-orbit-active: rgba(47,143,127,0.7);
@@ -102,9 +102,9 @@
 :root[data-we-theme="sakura"] {
   --we-bg: #fff6f9; --we-bg2: #fdedf2; --we-bg-hl: #f8dbe5;
   --we-card: #ffffff; --we-surface: #fdeff4; --we-border: rgba(168,88,118,0.30);
-  --we-beige: #7a4c56; --we-text: #3b2a30; --we-text2: #6d5760; --we-text3: #9a818a;
-  --we-accent: #c76b8e; --we-gold: #b07a3f; --we-title: #a85876;
-  --we-danger: #c85a63; --we-success: #4f9b78; --we-hairline: rgba(0,0,0,0.09);
+  --we-beige: #70444e; --we-text: #38272d; --we-text2: #674f59; --we-text3: #806871;
+  --we-accent: #a94a70; --we-gold: #8b5f2a; --we-title: #944762;
+  --we-danger: #ad3f4a; --we-success: #377c5d; --we-hairline: rgba(90,44,61,0.13);
   --we-ball-ocean: #f4dce8; --we-ball-land: #d7789d;
   --we-ball-count-bg: rgba(255,246,249,0.95); --we-ball-badge-border: #f3dce5;
   --we-ball-orbit: rgba(199,107,142,0.38); --we-ball-orbit-active: rgba(199,107,142,0.72);
@@ -3337,5 +3337,181 @@
 .we-preset-seg-hint {
   font-size: 10px; color: var(--we-text3); margin-top: 4px; line-height: 1.5;
 }
+
+/* ===== 非默认主题可读性修正 =====
+   默认墨玉主题不带 data-we-theme，保持原始视觉；其余五套把写死的深底和
+   低对比标题重新接回主题色，避免浅色主题出现“深底 + 深字”。 */
+:root[data-we-theme] {
+  --we-section-regional: #d98579;
+  --we-section-ledger: #8fb9d9;
+  --we-section-events: #dda064;
+  --we-section-winds: #b9a8d1;
+  --we-section-influence: #7bbdca;
+  --we-section-reputation: #d2ae70;
+  --we-section-factions: #b797d1;
+  --we-section-enemies: #d87272;
+  --we-section-economy: #d1ae5f;
+  --we-section-blackbox: #a497c3;
+}
+
+:root[data-we-theme="paper"] {
+  --we-section-regional: #9c3f37;
+  --we-section-ledger: #3f718e;
+  --we-section-events: #945123;
+  --we-section-winds: #6f5d83;
+  --we-section-influence: #337884;
+  --we-section-reputation: #80601f;
+  --we-section-factions: #68467f;
+  --we-section-enemies: #8e302f;
+  --we-section-economy: #78570d;
+  --we-section-blackbox: #574a72;
+}
+
+:root[data-we-theme="sakura"] {
+  --we-section-regional: #9d3f4b;
+  --we-section-ledger: #4d7088;
+  --we-section-events: #925426;
+  --we-section-winds: #70577d;
+  --we-section-influence: #34717a;
+  --we-section-reputation: #7d5a22;
+  --we-section-factions: #6c477b;
+  --we-section-enemies: #923740;
+  --we-section-economy: #765313;
+  --we-section-blackbox: #5d496d;
+}
+
+/* 小字号元数据不再靠降低整卡透明度区分等级。 */
+:root[data-we-theme] .we-wind-lv1 { opacity: 1; }
+
+/* 摘要、流言、急报和事件终局均使用当前主题的 surface，而不是固定墨色底。 */
+:root[data-we-theme] #we-sec-digest .we-digest {
+  background: color-mix(in srgb, var(--we-surface) 72%, var(--we-card));
+  border-left-color: color-mix(in srgb, var(--we-accent) 48%, transparent);
+  color: var(--we-text2);
+}
+:root[data-we-theme] .we-wind-rumor {
+  background: color-mix(in srgb, var(--wind-accent) 7%, var(--we-surface));
+  border: 1px solid color-mix(in srgb, var(--wind-accent) 18%, var(--we-border));
+}
+:root[data-we-theme] .we-wind-rumor.we-wind-lv4 {
+  background: color-mix(in srgb, var(--wind-accent) 11%, var(--we-surface));
+}
+:root[data-we-theme] .we-wind-report.we-wind-lv4 {
+  background: color-mix(in srgb, var(--wind-accent) 12%, var(--we-surface));
+}
+:root[data-we-theme] .we-wind-announcement.we-wind-lv4 .we-wind-topic,
+:root[data-we-theme] .we-wind-report.we-wind-lv4 .we-wind-topic {
+  color: color-mix(in srgb, var(--wind-accent) 76%, var(--we-text));
+}
+:root[data-we-theme] .we-stage-erupt {
+  background: radial-gradient(130% 90% at 50% 0%, color-mix(in srgb, var(--we-danger) 26%, transparent), transparent 60%),
+              color-mix(in srgb, var(--we-danger) 14%, var(--we-surface));
+}
+:root[data-we-theme] .we-stage-done {
+  background: radial-gradient(130% 90% at 50% 0%, color-mix(in srgb, var(--we-success) 24%, transparent), transparent 60%),
+              color-mix(in srgb, var(--we-success) 14%, var(--we-surface));
+}
+:root[data-we-theme] .we-stage-fade {
+  background: color-mix(in srgb, var(--we-text3) 8%, var(--we-surface));
+}
+:root[data-we-theme] .we-stage-failed {
+  background: color-mix(in srgb, var(--we-danger) 10%, var(--we-surface));
+}
+:root[data-we-theme] .we-event-progress { background: var(--we-bg2); }
+:root[data-we-theme] .we-trend-source span,
+:root[data-we-theme] .we-core-title { color: var(--we-gold); }
+
+/* 其余用白色透明层模拟“提亮”的旧样式，在浅色主题里会完全消失。 */
+:root[data-we-theme] .we-status-bar {
+  background: color-mix(in srgb, var(--we-accent) 6%, var(--we-card));
+}
+:root[data-we-theme] .we-status-bar.error {
+  background: color-mix(in srgb, var(--we-danger) 9%, var(--we-card));
+}
+:root[data-we-theme] .we-core-section {
+  background: radial-gradient(120% 90% at 50% 0%, color-mix(in srgb, var(--we-accent) 9%, transparent), var(--we-card) 60%);
+}
+:root[data-we-theme] .we-secret-expo-track,
+:root[data-we-theme] .we-event-countdown { background: var(--we-bg2); }
+:root[data-we-theme] .we-nav-row--selected {
+  background: color-mix(in srgb, var(--we-accent) 7%, var(--we-card));
+}
+:root[data-we-theme] .we-nav-line {
+  background: color-mix(in srgb, var(--we-gold) 28%, transparent);
+}
+:root[data-we-theme] #we-sec-trends .we-trend-ended,
+:root[data-we-theme] .we-regional-incident-item:not(.we-accident-triggered) {
+  background: color-mix(in srgb, var(--we-text3) 5%, var(--we-surface));
+}
+:root[data-we-theme] .we-btn-primary:hover {
+  background: color-mix(in srgb, var(--we-accent) 11%, transparent);
+}
+:root[data-we-theme] .we-btn-danger:hover {
+  background: color-mix(in srgb, var(--we-danger) 11%, transparent);
+}
+:root[data-we-theme] .we-influence-trigger .we-influence-label {
+  color: var(--we-section-reputation);
+  background: color-mix(in srgb, var(--we-section-reputation) 13%, transparent);
+}
+:root[data-we-theme] .we-influence-impact .we-influence-label {
+  color: var(--we-section-influence);
+  background: color-mix(in srgb, var(--we-section-influence) 13%, transparent);
+}
+:root[data-we-theme] .we-influence-fallout .we-influence-label {
+  color: var(--we-section-winds);
+  background: color-mix(in srgb, var(--we-section-winds) 13%, transparent);
+}
+:root[data-we-theme] #we-input-btn.we-ball > .we-sat-left.on {
+  color: var(--we-danger);
+  border-color: var(--we-danger);
+  background: radial-gradient(circle at 35% 30%, color-mix(in srgb, var(--we-danger) 22%, var(--we-ball-sat-start)), var(--we-ball-sat-end));
+}
+:root[data-we-theme] #we-input-btn.we-ball > .we-sat-right,
+:root[data-we-theme] #we-top-status.we-top-status-error {
+  color: var(--we-danger);
+  border-color: var(--we-danger);
+}
+
+/* 分页标题保留各自气质，但给深/浅主题分别提供有足够对比的色阶。 */
+:root[data-we-theme] #we-sec-regional > .we-section-title,
+:root[data-we-theme] #we-sec-cp-regional > .we-section-title,
+:root[data-we-theme] #we-sec-regional > .we-section-title .we-section-arrow,
+:root[data-we-theme] #we-sec-cp-regional > .we-section-title .we-section-arrow { color: var(--we-section-regional); }
+:root[data-we-theme] #we-sec-ledger > .we-section-title,
+:root[data-we-theme] #we-sec-cp-ledger > .we-section-title,
+:root[data-we-theme] #we-sec-ledger > .we-section-title .we-section-arrow,
+:root[data-we-theme] #we-sec-cp-ledger > .we-section-title .we-section-arrow { color: var(--we-section-ledger); }
+:root[data-we-theme] #we-sec-events > .we-section-title,
+:root[data-we-theme] #we-sec-cp-events > .we-section-title,
+:root[data-we-theme] #we-sec-events > .we-section-title .we-section-arrow,
+:root[data-we-theme] #we-sec-cp-events > .we-section-title .we-section-arrow { color: var(--we-section-events); }
+:root[data-we-theme] #we-sec-winds > .we-section-title,
+:root[data-we-theme] #we-sec-cp-winds > .we-section-title,
+:root[data-we-theme] #we-sec-winds > .we-section-title .we-section-arrow,
+:root[data-we-theme] #we-sec-cp-winds > .we-section-title .we-section-arrow { color: var(--we-section-winds); }
+:root[data-we-theme] #we-sec-influence > .we-section-title,
+:root[data-we-theme] #we-sec-cp-influence > .we-section-title,
+:root[data-we-theme] #we-sec-influence > .we-section-title .we-section-arrow,
+:root[data-we-theme] #we-sec-cp-influence > .we-section-title .we-section-arrow { color: var(--we-section-influence); }
+:root[data-we-theme] #we-sec-reputation > .we-section-title,
+:root[data-we-theme] #we-sec-cp-reputation > .we-section-title,
+:root[data-we-theme] #we-sec-reputation > .we-section-title .we-section-arrow,
+:root[data-we-theme] #we-sec-cp-reputation > .we-section-title .we-section-arrow { color: var(--we-section-reputation); }
+:root[data-we-theme] #we-sec-factions > .we-section-title,
+:root[data-we-theme] #we-sec-cp-factions > .we-section-title,
+:root[data-we-theme] #we-sec-factions > .we-section-title .we-section-arrow,
+:root[data-we-theme] #we-sec-cp-factions > .we-section-title .we-section-arrow { color: var(--we-section-factions); }
+:root[data-we-theme] #we-sec-enemies > .we-section-title,
+:root[data-we-theme] #we-sec-cp-enemies > .we-section-title,
+:root[data-we-theme] #we-sec-enemies > .we-section-title .we-section-arrow,
+:root[data-we-theme] #we-sec-cp-enemies > .we-section-title .we-section-arrow { color: var(--we-section-enemies); }
+:root[data-we-theme] #we-sec-economy > .we-section-title,
+:root[data-we-theme] #we-sec-cp-economy > .we-section-title,
+:root[data-we-theme] #we-sec-economy > .we-section-title .we-section-arrow,
+:root[data-we-theme] #we-sec-cp-economy > .we-section-title .we-section-arrow { color: var(--we-section-economy); }
+:root[data-we-theme] #we-sec-blackbox > .we-section-title,
+:root[data-we-theme] #we-sec-cp-blackbox > .we-section-title,
+:root[data-we-theme] #we-sec-blackbox > .we-section-title .we-section-arrow,
+:root[data-we-theme] #we-sec-cp-blackbox > .we-section-title .we-section-arrow { color: var(--we-section-blackbox); }
 
 
