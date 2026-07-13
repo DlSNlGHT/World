@@ -269,6 +269,7 @@ window.WORLD_ENGINE_CHATCACHE = (function() {
   }
 
   function onStoreWrite(key, value) {
+    memoryScope.onStoreWrite(key);
     if (_suspend) return;
     const ctx = getCtx();
     if (!ctx || !chatUsable(ctx)) return;
@@ -280,6 +281,7 @@ window.WORLD_ENGINE_CHATCACHE = (function() {
   // ========== 聊天加载：实时同步的恢复 / 收敛 ==========
 
   function onChatLoaded() {
+    memoryScope.onChatLoaded();
     // 丢弃上一个聊天遗留的 pending tick，避免它在 B 上下文意外写盘 / 生成自动备份
     if (_tickTimer) { clearTimeout(_tickTimer); _tickTimer = null; }
     const ctx = getCtx();
@@ -472,6 +474,136 @@ window.WORLD_ENGINE_CHATCACHE = (function() {
     };
   }
 
+  // ========== 记忆引擎 scope ==========
+  // 共用本模块的聊天上下文、chat_metadata 写入、存档交互和 store sink；只更换设置与 slot。
+  const memoryScope = (function() {
+    const MEMORY_NS = 'memory_engine';
+    const MSLOTS = {
+      state: id => `memory_engine_state_${id}`,
+      checkpoint: id => `memory_engine_checkpoint_${id}`,
+      worldbook: id => `memory_engine_worldbook_selection_${id}`
+    };
+    let suspend = false, tickTimer = null, lastAutoState = null;
+    const msettings = () => window.MEMORY_ENGINE_SETTINGS?.getSettings?.() || {};
+    const syncOn = () => msettings().syncToChat === true;
+    const backupOn = () => msettings().autoBackup === true;
+    const mrevKey = id => `memory_engine_${id}_syncrev`;
+    const mrev = id => Math.max(0, parseInt(store().getItem(mrevKey(id)) || '0') || 0);
+    function setMrev(id, rev) { suspend = true; try { store().setItem(mrevKey(id), String(rev)); } finally { suspend = false; } }
+    function isSlot(key, id) { return Object.values(MSLOTS).some(make => make(id) === key); }
+    function hasLocal(id) { return Object.values(MSLOTS).some(make => store().getItem(make(id)) != null); }
+    function mpack(id) {
+      const data = {};
+      for (const name in MSLOTS) { const raw = store().getItem(MSLOTS[name](id)); if (raw != null) data[name] = raw; }
+      return data;
+    }
+    function minstall(data, id, exact) {
+      suspend = true;
+      try {
+        for (const name in MSLOTS) {
+          if (Object.prototype.hasOwnProperty.call(data || {}, name)) store().setItem(MSLOTS[name](id), data[name]);
+          else if (exact) store().removeItem(MSLOTS[name](id));
+        }
+      } finally { suspend = false; }
+    }
+    function meta(id) {
+      try {
+        const state = JSON.parse(store().getItem(MSLOTS.state(id)) || '{}');
+        return { round: Number(state.round) || 0, characters: Array.isArray(state.personal_memory) ? state.personal_memory.length : 0 };
+      } catch (e) { return { round: 0, characters: 0 }; }
+    }
+    function read() { const ns = getCtx()?.chatMetadata?.[MEMORY_NS]; return ns && typeof ns === 'object' ? ns : null; }
+    function ensure() {
+      const ns = read() || { v: SCHEMA_VERSION, live: null, snapshots: [] };
+      ns.v = SCHEMA_VERSION; if (!Array.isArray(ns.snapshots)) ns.snapshots = [];
+      const auto = ns.snapshots.filter(s => s.auto).slice(0, MAX_AUTO_BACKUPS);
+      const manual = ns.snapshots.filter(s => !s.auto).slice(0, MAX_MANUAL_BACKUPS);
+      ns.snapshots = ns.snapshots.filter(s => (s.auto ? auto : manual).includes(s));
+      return ns;
+    }
+    function write(ns) {
+      const ctx = getCtx(); if (!chatUsable(ctx)) return false;
+      try {
+        if (typeof ctx.updateChatMetadata === 'function') ctx.updateChatMetadata({ [MEMORY_NS]: ns });
+        else if (ctx.chatMetadata) ctx.chatMetadata[MEMORY_NS] = ns; else return false;
+        if (typeof ctx.saveMetadataDebounced === 'function') ctx.saveMetadataDebounced();
+        else if (typeof ctx.saveMetadata === 'function') ctx.saveMetadata();
+        else if (typeof ctx.saveChat === 'function') ctx.saveChat();
+        return true;
+      } catch (e) { console.warn('[记忆引擎] 写聊天缓存失败', e); return false; }
+    }
+    function add(ns, input, id) {
+      const info = meta(id);
+      const snap = { id: 'm' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6), name: input.name, auto: !!input.auto, round: input.round ?? info.round, characters: input.characters ?? info.characters, createdAt: Date.now(), chatId: id, v: SCHEMA_VERSION, data: input.data };
+      ns.snapshots.unshift(snap);
+      const autos = ns.snapshots.filter(s => s.auto).slice(0, MAX_AUTO_BACKUPS);
+      const manuals = ns.snapshots.filter(s => !s.auto).slice(0, MAX_MANUAL_BACKUPS);
+      ns.snapshots = ns.snapshots.filter(s => (s.auto ? autos : manuals).includes(s));
+      return snap;
+    }
+    function pushLiveNow(nsArg, force) {
+      const ctx = getCtx(); if (!chatUsable(ctx) || !hasLocal(ctx.chatId)) return false;
+      const ns = nsArg || ensure(), data = mpack(ctx.chatId);
+      if (!force && ns.live?.data && sameData(ns.live.data, data)) return nsArg ? ns.live.rev : true;
+      const rev = Math.max(mrev(ctx.chatId), Number(ns.live?.rev) || 0) + 1;
+      ns.live = { rev, updatedAt: Date.now(), chatId: ctx.chatId, data };
+      if (nsArg) return rev;
+      if (write(ns)) { setMrev(ctx.chatId, rev); return true; }
+      return false;
+    }
+    function runTick() {
+      tickTimer = null;
+      const ctx = getCtx(); if (!chatUsable(ctx)) return;
+      const ns = ensure(); let changed = false, rev = null;
+      if (syncOn()) { const old = Number(ns.live?.rev) || 0; rev = pushLiveNow(ns, false); if (rev !== old) changed = true; }
+      const stateRaw = store().getItem(MSLOTS.state(ctx.chatId));
+      if (backupOn() && stateRaw && stateRaw !== lastAutoState) {
+        const data = mpack(ctx.chatId), newest = ns.snapshots.find(s => s.auto);
+        if (!newest || !sameData(newest.data, data)) { const info = meta(ctx.chatId); add(ns, { name: `自动备份 · 第${info.round}轮`, auto: true, data }, ctx.chatId); changed = true; }
+        lastAutoState = stateRaw;
+      }
+      if (changed && write(ns) && rev != null) setMrev(ctx.chatId, rev);
+    }
+    function onStoreWrite(key) {
+      const ctx = getCtx(); if (suspend || !chatUsable(ctx) || !isSlot(key, ctx.chatId) || (!syncOn() && !backupOn())) return;
+      clearTimeout(tickTimer); tickTimer = setTimeout(runTick, TICK_DELAY);
+    }
+    function onChatLoaded() {
+      clearTimeout(tickTimer); tickTimer = null;
+      const ctx = getCtx(); if (!chatUsable(ctx)) return;
+      lastAutoState = store().getItem(MSLOTS.state(ctx.chatId));
+      if (!syncOn()) return;
+      const ns = read(), remoteRev = Number(ns?.live?.rev) || 0, local = mrev(ctx.chatId);
+      if (!ns?.live?.data || !Object.keys(ns.live.data).length) { if (hasLocal(ctx.chatId)) pushLiveNow(); }
+      else if (remoteRev > local) { minstall(ns.live.data, ctx.chatId, true); setMrev(ctx.chatId, remoteRev); }
+      else if (remoteRev < local) pushLiveNow();
+    }
+    function listSnapshots() { return (read()?.snapshots || []).slice(); }
+    function createSnapshot(name) {
+      const ctx = getCtx(); if (!chatUsable(ctx) || !hasLocal(ctx.chatId)) return null;
+      const ns = ensure(), snap = add(ns, { name: String(name || '记忆存档').slice(0, 60), auto: false, data: mpack(ctx.chatId) }, ctx.chatId);
+      return write(ns) ? snap : null;
+    }
+    function restoreSnapshot(id) {
+      const ctx = getCtx(); if (!chatUsable(ctx)) return false;
+      const ns = ensure(), snap = ns.snapshots.find(s => s.id === id); if (!snap) return false;
+      if (hasLocal(ctx.chatId)) add(ns, { name: '恢复前自动备份', auto: true, data: mpack(ctx.chatId) }, ctx.chatId);
+      minstall(snap.data, ctx.chatId, true);
+      const rev = syncOn() ? pushLiveNow(ns, true) : null;
+      if (!write(ns)) return false; if (rev != null) setMrev(ctx.chatId, rev); return true;
+    }
+    function renameSnapshot(id, name) { const ns = ensure(), snap = ns.snapshots.find(s => s.id === id); if (!snap) return false; snap.name = String(name || snap.name).slice(0, 60); return write(ns); }
+    function deleteSnapshot(id) { const ns = ensure(), before = ns.snapshots.length; ns.snapshots = ns.snapshots.filter(s => s.id !== id); return ns.snapshots.length !== before && write(ns); }
+    function exportSnapshot(id) { const s = listSnapshots().find(x => x.id === id); return s ? { type: 'memory-engine-chat-snapshot', v: SCHEMA_VERSION, name: s.name, round: s.round, characters: s.characters, createdAt: s.createdAt, data: s.data } : null; }
+    function importSnapshot(obj) {
+      const ctx = getCtx(); if (!chatUsable(ctx) || obj?.type !== 'memory-engine-chat-snapshot' || !obj.data) return null;
+      const ns = ensure(), snap = add(ns, { name: String(obj.name || '导入存档') + '（导入）', auto: false, round: obj.round, characters: obj.characters, data: obj.data }, ctx.chatId);
+      return write(ns) ? snap : null;
+    }
+    function getStatus() { const ctx = getCtx(), ns = read(); return { usable: chatUsable(ctx), apiAvailable: !!(ctx && (typeof ctx.updateChatMetadata === 'function' || ctx.chatMetadata)), syncEnabled: syncOn(), autoBackupEnabled: backupOn(), localRev: chatUsable(ctx) ? mrev(ctx.chatId) : 0, liveRev: Number(ns?.live?.rev) || 0, snapshotCount: ns?.snapshots?.length || 0 }; }
+    return { onStoreWrite, onChatLoaded, pushLiveNow, getStatus, listSnapshots, createSnapshot, restoreSnapshot, renameSnapshot, deleteSnapshot, exportSnapshot, importSnapshot };
+  })();
+
   // ========== 初始化 ==========
 
   let _inited = false;
@@ -486,6 +618,7 @@ window.WORLD_ENGINE_CHATCACHE = (function() {
   return {
     init, onChatLoaded, pushLiveNow, getStatus,
     listSnapshots, createSnapshot, restoreSnapshot, renameSnapshot, deleteSnapshot,
-    exportSnapshot, importSnapshot
+    exportSnapshot, importSnapshot,
+    forScope: scope => scope === 'memory' ? memoryScope : null
   };
 })();

@@ -18,11 +18,13 @@ window.WORLD_ENGINE_INJECT_INSPECTOR = (function() {
 
   // 与 world-engine.js 的 INJECTION_NAME 对应（我们注册到 ST extension_prompts 用的 key）。
   const INJECTION_NAME = 'world-engine-world';
+  const MEMORY_INJECTION_NAME = 'memory-engine-memory';
 
   // 着陆哨兵：buildContext() 输出永远以「【世界状态】」开头（world-engine-inject.js），
   //   该子串无任何 {{...}} 宏，不被 ST substituteParams 改写 → 拿它判「注入是否进了最终 prompt」最稳。
   //   （注：拿完整注入串做 indexOf 会因 {{user}} 等宏被展开而假阴性，故只认这个无宏哨兵。）
   const SENTINEL = '【世界状态】';
+  const MEMORY_SENTINEL = '【人物记忆】';
 
   // 事件名（字面量；运行时优先用 ctx.event_types 的常量，取不到再回退字面量）。
   const EV_TEXT = 'generate_after_combine_prompts';   // 文本补全/经典 API：eventData={prompt,dryRun}
@@ -30,6 +32,7 @@ window.WORLD_ENGINE_INJECT_INSPECTOR = (function() {
 
   let _subscribed = false;
   let _last = null;  // 只留最后一份快照
+  let _lastMemory = null;
 
   function getCtx() {
     try { return (typeof SillyTavern !== 'undefined' && SillyTavern.getContext) ? SillyTavern.getContext() : null; }
@@ -37,17 +40,21 @@ window.WORLD_ENGINE_INJECT_INSPECTOR = (function() {
   }
 
   // —— 在事件当下采集只读环境字段（此刻 extension_prompts 仍持有本轮注册） ——
-  function snapEnv(ctx) {
+  function snapEnv(ctx, scope) {
+    const memoryScope = scope === 'memory';
     const api = window.WORLD_ENGINE_API;
     const core = window.WORLD_ENGINE_CORE;
     let injectEnabled = true, registeredAtSend = false, sameLayerReroll = false, round = null;
 
-    try { injectEnabled = !(api && api.getSettings && api.getSettings(true).injectIntoPrompt === false); } catch (e) {}
+    try {
+      const settings = memoryScope ? window.MEMORY_ENGINE_SETTINGS?.getSettings?.(true) : (api && api.getSettings ? api.getSettings(true) : {});
+      injectEnabled = settings?.injectIntoPrompt !== false;
+    } catch (e) {}
 
     // 独立确认「我们这轮到底注册没注册」——区分「注册了没着陆=真bug」与「我们自己没注册=按设计跳过」。
     try {
       const ep = ctx && ctx.extensionPrompts;
-      const entry = ep && ep[INJECTION_NAME];
+      const entry = ep && ep[memoryScope ? MEMORY_INJECTION_NAME : INJECTION_NAME];
       registeredAtSend = !!(entry && entry.value && String(entry.value).length);
     } catch (e) {}
 
@@ -67,13 +74,14 @@ window.WORLD_ENGINE_INJECT_INSPECTOR = (function() {
   // —— 对话补全：从真·最终 chat 数组采 role 分好的链（克隆，不持有 live 引用） ——
   //   每条都克隆完整 content 供 UI 只读展开（用户需要核对全部 role 的实际内容，不只是我们注入那条）。
   //   仅留最后一份快照、内存有界；diag 导出侧不带 content（隐私：含角色卡/世界书/聊天历史原文）。
-  function snapChat(chat, env) {
+  function snapChat(chat, env, scope) {
+    const sentinel = scope === 'memory' ? MEMORY_SENTINEL : SENTINEL;
     const messages = [];
     let landed = false, ourContent = '', ourIndex = -1;
     for (let i = 0; i < chat.length; i++) {
       const m = chat[i] || {};
       const content = (m.content != null) ? String(m.content) : '';
-      const isOurs = content.indexOf(SENTINEL) >= 0;
+      const isOurs = content.indexOf(sentinel) >= 0;
       messages.push({ role: m.role || '?', length: content.length, isOurs: isOurs, content: content });
       if (isOurs && !landed) {
         landed = true;
@@ -98,9 +106,9 @@ window.WORLD_ENGINE_INJECT_INSPECTOR = (function() {
   }
 
   // —— 文本补全：prompt 已 flatten 成单串，链不可分 role；存长度 + 哨兵命中 + 哨兵附近摘录 ——
-  function snapText(prompt, env) {
+  function snapText(prompt, env, scope) {
     const text = String(prompt || '');
-    const idx = text.indexOf(SENTINEL);
+    const idx = text.indexOf(scope === 'memory' ? MEMORY_SENTINEL : SENTINEL);
     const landed = idx >= 0;
     let excerpt = '';
     if (landed) {
@@ -137,7 +145,8 @@ window.WORLD_ENGINE_INJECT_INSPECTOR = (function() {
       if (!eventData || eventData.dryRun) return;            // 忽略算 token 的预热轮
       if (!Array.isArray(eventData.chat)) return;            // 形状防御
       const ctx = getCtx();
-      _last = snapChat(eventData.chat, snapEnv(ctx));        // 不持有 eventData.chat 本体
+      _last = snapChat(eventData.chat, snapEnv(ctx, 'world'), 'world');
+      _lastMemory = snapChat(eventData.chat, snapEnv(ctx, 'memory'), 'memory');
     } catch (e) { /* 只读自检绝不影响生成 */ }
   }
 
@@ -146,7 +155,8 @@ window.WORLD_ENGINE_INJECT_INSPECTOR = (function() {
       if (!eventData || eventData.dryRun) return;
       if (typeof eventData.prompt !== 'string') return;
       const ctx = getCtx();
-      _last = snapText(eventData.prompt, snapEnv(ctx));
+      _last = snapText(eventData.prompt, snapEnv(ctx, 'world'), 'world');
+      _lastMemory = snapText(eventData.prompt, snapEnv(ctx, 'memory'), 'memory');
     } catch (e) {}
   }
 
@@ -170,7 +180,7 @@ window.WORLD_ENGINE_INJECT_INSPECTOR = (function() {
   }
 
   // 返回最后一份快照（只读副本引用；UI/diag 只读不写）。无则 null。
-  function getLastSnapshot() { return _last; }
+  function getLastSnapshot(scope) { return scope === 'memory' ? _lastMemory : _last; }
 
   // 状态码 → 大白话（UI 与 diag 共用，单一真相源）。
   const STATUS_TEXT = {
@@ -181,7 +191,10 @@ window.WORLD_ENGINE_INJECT_INSPECTOR = (function() {
     SUCCESS: '✅ 本轮世界状态已进入正文',
     MISSING: '❌ 已注册却没进最终 prompt——这才是真正的注入失败（疑被其它扩展清除/深度越界）',
   };
-  function statusText(status) { return STATUS_TEXT[status] || STATUS_TEXT.NOT_YET; }
+  function statusText(status, scope) {
+    const text = STATUS_TEXT[status] || STATUS_TEXT.NOT_YET;
+    return scope === 'memory' ? text.replace(/世界状态/g, '人物记忆').replace(/无世界状态/g, '无人物记忆') : text;
+  }
 
-  return { init, getLastSnapshot, statusText, SENTINEL };
+  return { init, getLastSnapshot, statusText, SENTINEL, MEMORY_SENTINEL };
 })();

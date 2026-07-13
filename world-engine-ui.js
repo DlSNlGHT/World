@@ -268,10 +268,6 @@ window.WORLD_ENGINE_UI = (function() {
   function renderMemoryDebug() {
     const engine = window.MEMORY_ENGINE;
     const dbg = engine?.getLastDebug?.() || null;
-    const injection = window.MEMORY_ENGINE_INJECT_INSPECTOR?.getLastSnapshot?.()
-      || engine?.getLastInjectionDebug?.()
-      || dbg?.injection
-      || null;
     const sentPrompt = typeof dbg?.prompt === 'string' ? dbg.prompt
       : (typeof dbg?.requestPrompt === 'string' ? dbg.requestPrompt : '');
     const apiResult = typeof dbg?.rawResult === 'string' ? dbg.rawResult
@@ -290,14 +286,12 @@ window.WORLD_ENGINE_UI = (function() {
         + (hasContent ? '<pre class="we-prompt-seg-pre">' + h(shown) + '</pre>' : '<div class="we-prompt-seg-empty">' + h(emptyText) + '</div>')
         + '</div></div>';
     };
-    const injectionMeta = injection
-      ? (injection.status || (injection.landed === true ? '已注入' : injection.landed === false ? '未注入' : '有记录'))
-      : '暂无';
     return '<div class="we-prompt-debug">'
       + '<div class="we-prompt-debug-summary">只显示最近一次实际运行记录；内置记忆 Prompt 不在设置中展示，也不开放修改。</div>'
-      + card('人物记忆注入调试', injectionMeta, injection, '生成回复并执行记忆注入后显示最终注入记录。')
+      + renderInjectInspector('memory')
       + card('发送给记忆后台 API 的实际 Prompt', sentPrompt ? sentPrompt.length + '字' : '暂无', sentPrompt, '执行记忆提取后显示本次真正发送的完整 Prompt。')
       + card('记忆后台 API 原始返回', apiResult ? apiResult.length + '字' : '暂无', apiResult, '执行记忆提取后显示后台 API 的原始返回。')
+      + '<div style="display:flex;gap:6px;margin-top:8px;"><button class="we-btn" id="we-memory-export-prompt" style="flex:1;">导出完整 Prompt</button><button class="we-btn" id="we-memory-export-raw-result" style="flex:1;">导出 API 返回</button></div>'
       + '</div>';
   }
 
@@ -314,15 +308,15 @@ window.WORLD_ENGINE_UI = (function() {
   }
 
   function renderMemorySnapshotRows() {
-    const list = window.MEMORY_ENGINE_DATA?.listSnapshots?.() || [];
+    const list = window.WORLD_ENGINE_CHATCACHE?.forScope?.('memory')?.listSnapshots?.() || [];
     if (!list.length) return '<div class="we-empty">暂无记忆存档</div>';
     return list.map(item => {
       let time = '';
       try { time = new Date(item.createdAt).toLocaleString(); } catch (error) {}
-      const count = Array.isArray(item.state?.personal_memory) ? item.state.personal_memory.length : 0;
+      const count = Number(item.characters) || 0;
       return '<div class="we-snapshot-row" data-memory-snap-id="' + u(item.id) + '">'
-        + '<div class="we-snapshot-main"><div class="we-snapshot-name">' + h(item.name) + '</div>'
-        + '<div class="we-snapshot-meta">' + count + ' 条人物记忆' + (time ? ' · ' + h(time) : '') + '</div></div>'
+        + '<div class="we-snapshot-main"><div class="we-snapshot-name"><span class="we-snapshot-badge' + (item.auto ? ' is-auto' : '') + '">' + (item.auto ? '自动' : '手动') + '</span>' + h(item.name) + '</div>'
+        + '<div class="we-snapshot-meta">第 ' + (item.round || 0) + ' 轮 · ' + count + ' 个人物' + (time ? ' · ' + h(time) : '') + '</div></div>'
         + '<div class="we-snapshot-actions">'
         + '<button class="we-icon-btn" data-memory-snap-action="restore" title="恢复"><i class="fa-solid fa-rotate-left"></i></button>'
         + '<button class="we-icon-btn" data-memory-snap-action="rename" title="重命名"><i class="fa-solid fa-pen"></i></button>'
@@ -330,6 +324,107 @@ window.WORLD_ENGINE_UI = (function() {
         + '<button class="we-icon-btn" data-memory-snap-action="delete" title="删除"><i class="fa-solid fa-trash"></i></button>'
         + '</div></div>';
     }).join('');
+  }
+
+  function bindFilterControls(scope) {
+    const memoryScope = scope === 'memory';
+    const id = suffix => memoryScope ? 'we-memory-' + suffix : 'we-' + suffix;
+    const textarea = document.getElementById(id('filter-regex'));
+    if (!textarea) return;
+    const tagsBox = document.getElementById(id('filter-tags'));
+    const addInput = document.getElementById(id('filter-add-input'));
+    const SIMPLE = /^<([a-zA-Z_][\w-]*)>[\s\S]*?<\/\1>(?:\\n\?)?$/;
+    const SCAN = /<([a-zA-Z_][\w-]*)/g;
+    let tags = [];
+
+    function parse(raw) {
+      const selected = [], advanced = [];
+      for (const line of String(raw || '').split('\n')) {
+        const match = line.match(SIMPLE);
+        if (match) { if (!selected.includes(match[1])) selected.push(match[1]); }
+        else if (line.trim()) advanced.push(line);
+      }
+      return { selected, advanced };
+    }
+    function syncTextarea() {
+      const advanced = parse(textarea.value).advanced;
+      const generated = tags.filter(item => item.checked).map(item => `<${item.name}>[\\s\\S]*?</${item.name}>\\n?`);
+      textarea.value = generated.concat(advanced).join('\n');
+    }
+    function renderTags() {
+      if (!tagsBox) return;
+      tagsBox.innerHTML = '';
+      for (const item of tags) {
+        const chip = document.createElement('label');
+        chip.style.cssText = 'display:inline-flex;align-items:center;gap:3px;padding:2px 6px;border:1px solid var(--we-border,#3a3a3a);border-radius:3px;font-size:12px;cursor:pointer;';
+        const checkbox = document.createElement('input');
+        checkbox.type = 'checkbox'; checkbox.checked = item.checked;
+        checkbox.onchange = () => { item.checked = checkbox.checked; syncTextarea(); };
+        const name = document.createElement('span'); name.textContent = item.name;
+        const remove = document.createElement('span');
+        remove.textContent = '✕'; remove.style.cssText = 'color:var(--we-text3);cursor:pointer;margin-left:2px;';
+        remove.onclick = event => { event.preventDefault(); tags = tags.filter(entry => entry.name !== item.name); renderTags(); syncTextarea(); };
+        chip.append(checkbox, name, remove); tagsBox.appendChild(chip);
+      }
+    }
+    function syncTags() {
+      const selected = parse(textarea.value).selected;
+      const set = new Set(selected);
+      tags.forEach(item => { item.checked = set.has(item.name); });
+      selected.forEach(name => { if (!tags.some(item => item.name === name)) tags.push({ name, checked: true }); });
+      renderTags();
+    }
+    function addTag(name) {
+      name = String(name || '').trim();
+      if (!name) return;
+      if (!/^[a-zA-Z_][\w-]*$/.test(name)) { showToast('标签名无效（只允许字母数字下划线连字符）', true); return; }
+      if (!tags.some(item => item.name === name)) tags.push({ name, checked: true });
+      if (addInput) addInput.value = '';
+      renderTags(); syncTextarea();
+    }
+    document.getElementById(id('btn-filter-add'))?.addEventListener('click', () => addTag(addInput?.value));
+    addInput?.addEventListener('keydown', event => { if (event.key === 'Enter') { event.preventDefault(); addTag(addInput.value); } });
+    document.getElementById(id('btn-filter-scan'))?.addEventListener('click', () => {
+      let text = '';
+      try {
+        const chat = SillyTavern.getContext()?.chat || [];
+        for (let i = chat.length - 1; i >= 0; i--) if (chat[i] && !chat[i].is_user && String(chat[i].mes || '').trim()) { text = String(chat[i].mes); break; }
+      } catch (error) {}
+      if (!text) { showToast('未找到 AI 回复', true); return; }
+      const found = []; let match; SCAN.lastIndex = 0;
+      while ((match = SCAN.exec(text)) !== null) if (!found.includes(match[1])) found.push(match[1]);
+      if (!found.length) { showToast('最新 AI 回复里没发现标签', true); return; }
+      found.forEach(name => { if (!tags.some(item => item.name === name)) tags.push({ name, checked: true }); });
+      renderTags(); syncTextarea(); showToast(`扫描到 ${found.length} 个标签`);
+    });
+    document.getElementById(id('btn-filter-test'))?.addEventListener('click', () => {
+      const core = window.WORLD_ENGINE_CORE;
+      const status = document.getElementById(id('filter-status'));
+      if (!textarea.value.trim()) { showToast('未填写正则', true); if (status) status.textContent = '（未填写正则）'; return; }
+      const validated = core?.validateFilterRegex?.(textarea.value);
+      if (!validated) { showToast('core 模块不可用', true); return; }
+      if (validated.bad.length) {
+        if (status) status.textContent = `测试中止——⚠️ ${validated.ok} 条生效 / ${validated.bad.length} 条失败：\n` + validated.bad.map(item => `行 ${item.line}「${item.raw}」无效：${item.reason}`).join('\n');
+        showToast(`有 ${validated.bad.length} 条正则无效，请先修正`, true); return;
+      }
+      let sample = '';
+      try {
+        const chat = SillyTavern.getContext()?.chat || [];
+        for (let i = chat.length - 1; i >= 0; i--) if (String(chat[i]?.mes || '').trim()) { sample = String(chat[i].mes); break; }
+      } catch (error) {}
+      if (!sample) { showToast('当前聊天没有可测试的文本', true); return; }
+      let work = sample, removed = 0;
+      for (const entry of validated.entries) {
+        const regex = new RegExp(entry.pattern, entry.flags); let match, count = 0;
+        while ((match = regex.exec(work)) !== null) { count++; if (match.index === regex.lastIndex) regex.lastIndex++; }
+        work = work.replace(regex, ''); removed += count;
+      }
+      if (status) status.textContent = `已删除 ${removed} 处。\n前: ${sample.slice(0, 60)}${sample.length > 60 ? '…' : ''}\n后: ${work.slice(0, 60)}${work.length > 60 ? '…' : ''}`;
+      showToast(`已删除 ${removed} 处`);
+    });
+    let timer;
+    textarea.addEventListener('input', () => { clearTimeout(timer); timer = setTimeout(syncTags, 300); });
+    syncTags();
   }
 
   function renderMemorySettingsView() {
@@ -464,9 +559,23 @@ window.WORLD_ENGINE_UI = (function() {
 
     const filterBody = `
       <div class="we-input-group">
-        <label>记忆提取正文过滤正则</label>
-        <textarea id="we-memory-filter-regex" rows="5" style="width:100%;resize:vertical;" placeholder="每行一条正则">${h(settings.filterRegex || '')}</textarea>
-        <div style="font-size:11px;color:var(--we-text3);margin-top:3px;">只清洗喂给记忆提取器的正文，不影响世界推演过滤器。</div>
+        <label>每行一条正则，匹配内容会在喂记忆后台前删除</label>
+        <div style="margin-bottom:8px;border:1px solid var(--we-border,#3a3a3a);border-radius:4px;padding:6px;">
+          <div style="font-size:12px;color:var(--we-text2);margin-bottom:4px;">简单模式：勾选标签自动生成删除正则</div>
+          <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-bottom:4px;">
+            <button class="we-btn" id="we-memory-btn-filter-scan" type="button">🔍 扫描本聊天标签</button>
+            <input type="text" id="we-memory-filter-add-input" placeholder="手动加标签名(如 tucao)" style="flex:1;min-width:140px;">
+            <button class="we-btn" id="we-memory-btn-filter-add" type="button">+ 添加</button>
+          </div>
+          <div id="we-memory-filter-tags" style="display:flex;flex-wrap:wrap;gap:4px;min-height:4px;"></div>
+          <div style="font-size:11px;color:var(--we-text3);margin-top:3px;">自动生成的正则不一定生效——标签带属性、带 ~、嵌套或闭标签异常时可能匹配失败。不生效请直接编辑下方文本框自行手写。未勾选标签不会保存。</div>
+        </div>
+        <textarea id="we-memory-filter-regex" rows="4" style="width:100%;resize:vertical;" placeholder="每行一条；支持纯 pattern 或 /pattern/flags 字面量。">${h(settings.filterRegex || '')}</textarea>
+        <div style="display:flex;gap:6px;flex-wrap:wrap;margin:6px 0 4px;">
+          <button class="we-btn" id="we-memory-btn-filter-test" type="button">▶ 测试正则</button>
+        </div>
+        <div class="we-hint" id="we-memory-filter-status" style="margin:0 0 4px;white-space:pre-wrap;"></div>
+        <div style="font-size:11px;color:var(--we-text3);margin-top:3px;">每行一条；支持纯 pattern（默认 g 全局）或 /pattern/flags 字面量；空行忽略。只影响喂记忆后台的文本，不影响聊天正文。</div>
       </div>`;
 
     const toneBody = `
@@ -480,17 +589,18 @@ window.WORLD_ENGINE_UI = (function() {
       <div class="we-input-group">
         <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
           <input type="checkbox" id="we-memory-sync-to-chat" ${settings.syncToChat === true ? 'checked' : ''}>
-          记忆跨设备实时同步
+          跨设备实时同步（存进当前聊天）
         </label>
-        <div style="font-size:11px;color:var(--we-text3);margin-top:3px;">仅同步 memory_engine 数据，不读写世界引擎存档。</div>
+        <div style="font-size:11px;color:var(--we-text3);margin-top:3px;">开启后，本聊天的人物记忆会持续写入酒馆聊天文件并随之跨设备同步；换设备打开同一聊天即可续上进度。<b>不会</b>同步 API Key，也不会读写世界引擎存档。</div>
       </div>
       <div class="we-input-group">
         <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
           <input type="checkbox" id="we-memory-auto-backup" ${settings.autoBackup === true ? 'checked' : ''}>
-          记忆推演后自动备份
+          自动滚动备份（每当记忆推进存一条，保留最近 3 条）
         </label>
+        <div style="font-size:11px;color:var(--we-text3);margin-top:3px;">防误删误改。自动备份与命名存档都保存在本聊天里，跨设备可见。</div>
       </div>
-      <div class="we-hint" id="we-memory-archive-status" style="margin:4px 0;">记忆数据、存档点和命名存档均按聊天独立保存。</div>
+      <div class="we-hint" id="we-memory-archive-status" style="margin:4px 0;"></div>
       <div style="display:flex;gap:6px;flex-wrap:wrap;margin:6px 0;">
         <button class="we-btn we-btn-primary" id="we-memory-snapshot-save">新建命名存档</button>
         <button class="we-btn" id="we-memory-snapshot-import">导入存档</button>
@@ -544,7 +654,7 @@ window.WORLD_ENGINE_UI = (function() {
         + sec('set-memory-data', '记忆数据导入/导出', dataBody)
         + renderMemoryCheckpointSection(),
       worldbook: sec('set-memory-worldbook-enabled', '世界书总开关', memoryWorldbookBody) + worldbook,
-      debug: sec('set-memory-debug', '记忆推演调试', '<div id="we-memory-debug-render">' + renderMemoryDebug() + '</div>'),
+      debug: sec('set-memory-debug', '记忆推演调试', '<button class="we-btn" id="we-memory-export-diag" style="width:100%;margin-bottom:8px;">导出诊断包</button><div id="we-memory-debug-render">' + renderMemoryDebug() + '</div>'),
       about: memoryAboutBody
     };
 
@@ -1982,6 +2092,29 @@ window.WORLD_ENGINE_UI = (function() {
     if (!box) return;
     box.innerHTML = renderMemoryDebug();
     bindPromptSegToggle(box.querySelector('.we-prompt-debug'));
+    bindMemoryDebugExportButtons();
+  }
+
+  function bindMemoryDebugExportButtons() {
+    const download = (content, filename) => {
+      const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
+      const url = URL.createObjectURL(blob), anchor = document.createElement('a');
+      anchor.href = url; anchor.download = filename; anchor.click(); URL.revokeObjectURL(url);
+    };
+    const debug = () => window.MEMORY_ENGINE?.getLastDebug?.() || {};
+    const promptButton = document.getElementById('we-memory-export-prompt');
+    if (promptButton) promptButton.onclick = () => {
+      const value = debug().prompt || debug().requestPrompt || '';
+      if (!value) { showToast('无记忆 Prompt 可导出', true); return; }
+      download(value, 'memory-prompt-' + Date.now() + '.txt'); showToast('记忆 Prompt 已导出');
+    };
+    const resultButton = document.getElementById('we-memory-export-raw-result');
+    if (resultButton) resultButton.onclick = () => {
+      const current = debug();
+      const value = current.rawResult || current.apiResponse || current.response || '';
+      if (!value) { showToast('无记忆 API 返回可导出', true); return; }
+      download(typeof value === 'string' ? value : JSON.stringify(value, null, 2), 'memory-api-raw-' + Date.now() + '.txt'); showToast('记忆 API 返回已导出');
+    };
   }
 
   // ═══════════════════════════════════════════════════════════
@@ -2213,12 +2346,25 @@ window.WORLD_ENGINE_UI = (function() {
   //    用大白话+role 分好的消息链回答「世界状态到底有没有真进发给大模型的 prompt」。
   //    数据全来自 inspector 只读快照；本函数纯拼 HTML，不触发任何副作用。
   //    返回的是 .we-prompt-debug 内部片段（折叠头复用 data-we-seg-toggle，由 bindPromptSegToggle 统一接管）。
-  function renderInjectInspector() {
+  function renderInjectInspector(scope) {
+    const memoryScope = scope === 'memory';
+    const engine = window.MEMORY_ENGINE;
     const insp = window.WORLD_ENGINE_INJECT_INSPECTOR;
-    if (!insp || !insp.getLastSnapshot) return '';
-    const snap = insp.getLastSnapshot();
+    const snap = insp?.getLastSnapshot?.(memoryScope ? 'memory' : 'world')
+      || (memoryScope ? engine?.getLastInjectionDebug?.() : null)
+      || (memoryScope ? engine?.getLastDebug?.()?.injection : null)
+      || null;
     const status = snap ? snap.status : 'NOT_YET';
-    const text = insp.statusText ? insp.statusText(status) : '';
+    const fallbackText = memoryScope ? {
+      NOT_YET: '尚未生成，暂无人物记忆注入记录',
+      SKIPPED_DISABLED: '本轮未注入：人物记忆注入已关闭',
+      SKIPPED_REROLL: '本轮按设计未注入：同层重 roll',
+      SKIPPED_OTHER: '本轮未注入：没有匹配到相关人物记忆',
+      SUCCESS: '✅ 本轮人物记忆已进入正文',
+      MISSING: '❌ 已注册却没进最终 prompt'
+    } : {};
+    const text = insp?.statusText ? insp.statusText(status, memoryScope ? 'memory' : 'world') : (fallbackText[status] || fallbackText.NOT_YET || '');
+    const subject = memoryScope ? '人物记忆' : '世界状态';
 
     const palette = {
       SUCCESS:          { icon: '✅', color: '#3fb950', bg: 'rgba(63,185,80,0.10)' },
@@ -2234,7 +2380,7 @@ window.WORLD_ENGINE_UI = (function() {
     html += '<div style="font-weight:600;color:' + p.color + ';margin-bottom:4px;">' + p.icon + ' 注入自检 · ' + h(text) + '</div>';
 
     if (!snap) {
-      html += '<div style="font-size:11px;color:var(--we-text3);">发一条消息触发生成后，这里会显示「世界状态」有没有真正进入发给大模型的正文 prompt（与上方推演 prompt 不是一回事）。</div>';
+      html += '<div style="font-size:11px;color:var(--we-text3);">发一条消息触发生成后，这里会显示「' + subject + '」有没有真正进入发给大模型的正文 prompt。</div>';
       return html + '</div>';
     }
 
@@ -2262,7 +2408,7 @@ window.WORLD_ENGINE_UI = (function() {
         const meta = (m.length != null ? m.length + ' 字' : '');
         const hasBody = (m.content != null && m.content.length > 0);
         if (m.isOurs) {
-          // 本扩展注入那条：可折叠，展开看完整世界状态（证明确实在 prompt 里）
+          // 本扩展注入那条：可折叠，展开看完整注入内容。
           const body = '<pre class="we-prompt-seg-pre">' + u(m.content || snap.ourContent || '') + '</pre>';
           return '<div class="we-prompt-seg-card" style="margin:3px 0;">'
             + '<div class="we-prompt-seg-head" data-we-seg-toggle style="display:flex;align-items:center;gap:6px;">'
@@ -3586,6 +3732,8 @@ window.WORLD_ENGINE_UI = (function() {
     const refreshBtn = document.getElementById('we-btn-refresh');
     if (refreshBtn) refreshBtn.onclick = () => refresh();
 
+    // 旧版内联绑定保留一个版本作兼容参考，但运行时统一走 bindFilterControls(scope)。
+    if (false) {
     // —— 正则过滤：状态行渲染 + 测试按钮 ——
     // 把 core.validateFilterRegex 的结果写成 we-hint 状态行（复用 chatcache/backfill 的 we-hint 范式）。
     function renderFilterStatus(v, prefix) {
@@ -3773,6 +3921,9 @@ window.WORLD_ENGINE_UI = (function() {
 
     // 初始化：打开设置页时从已存字段反解析出勾选状态
     syncTagsFromTextarea();
+    }
+    bindFilterControls('world');
+    bindFilterControls('memory');
 
     const memorySaveBtn = document.getElementById('we-save-memory-settings');
     if (memorySaveBtn) {
@@ -3839,6 +3990,7 @@ window.WORLD_ENGINE_UI = (function() {
     }
 
     const memoryData = window.MEMORY_ENGINE_DATA;
+    const memoryCache = window.WORLD_ENGINE_CHATCACHE?.forScope?.('memory');
     const memoryExportData = document.getElementById('we-memory-export-data');
     if (memoryExportData) memoryExportData.onclick = () => {
       if (!memoryData) { showToast('记忆数据模块未加载', true); return; }
@@ -3868,9 +4020,8 @@ window.WORLD_ENGINE_UI = (function() {
     if (memorySnapshotSave) memorySnapshotSave.onclick = () => {
       const name = prompt('给这份记忆存档起个名字：', '记忆存档 ' + new Date().toLocaleString());
       if (name == null) return;
-      memoryData?.createSnapshot?.(name);
-      showToast('记忆存档已创建');
-      refresh();
+      if (memoryCache?.createSnapshot?.(name)) { showToast('记忆存档已创建'); refresh(); }
+      else showToast('存档失败（当前聊天无记忆数据或不可写）', true);
     };
     const memorySnapshotImport = document.getElementById('we-memory-snapshot-import');
     const memorySnapshotImportFile = document.getElementById('we-memory-snapshot-import-file');
@@ -3880,9 +4031,8 @@ window.WORLD_ENGINE_UI = (function() {
         const file = memorySnapshotImportFile.files?.[0];
         if (!file) return;
         try {
-          memoryData.importSnapshot(JSON.parse(await file.text()));
-          showToast('记忆存档已导入');
-          refresh();
+          if (memoryCache?.importSnapshot?.(JSON.parse(await file.text()))) { showToast('记忆存档已导入'); refresh(); }
+          else showToast('不是有效的记忆存档文件', true);
         } catch (error) {
           showToast('导入记忆存档失败：' + (error?.message || error), true);
         } finally {
@@ -3894,28 +4044,46 @@ window.WORLD_ENGINE_UI = (function() {
       button.onclick = () => {
         const row = button.closest('[data-memory-snap-id]');
         const id = row?.dataset.memorySnapId;
-        const item = memoryData?.listSnapshots?.().find(entry => entry.id === id);
+        const item = memoryCache?.listSnapshots?.().find(entry => entry.id === id);
         if (!id || !item) return;
         const action = button.dataset.memorySnapAction;
         if (action === 'restore') {
           if (!confirm('恢复记忆存档「' + item.name + '」？当前记忆数据将被替换。')) return;
-          memoryData.restoreSnapshot(id);
-          showToast('记忆存档已恢复');
-          refresh();
+          if (memoryCache.restoreSnapshot(id)) { showToast('记忆存档已恢复'); refresh(); }
+          else showToast('恢复失败', true);
         } else if (action === 'rename') {
           const name = prompt('新的存档名称：', item.name);
           if (name == null) return;
-          memoryData.renameSnapshot(id, name);
-          refresh();
+          if (memoryCache.renameSnapshot(id, name)) { showToast('已重命名'); refresh(); }
         } else if (action === 'export') {
-          setupDownload(JSON.stringify({ __memoryEngineSnapshot: true, version: '0.1.0', snapshot: item }, null, 2), 'memory-snapshot-' + Date.now() + '.json');
+          const exported = memoryCache.exportSnapshot(id);
+          if (exported) setupDownload(JSON.stringify(exported, null, 2), 'memory-snapshot-' + Date.now() + '.json');
         } else if (action === 'delete') {
           if (!confirm('删除记忆存档「' + item.name + '」？')) return;
-          memoryData.deleteSnapshot(id);
-          refresh();
+          if (memoryCache.deleteSnapshot(id)) { showToast('已删除'); refresh(); }
         }
       };
     });
+
+    const memoryArchiveStatus = document.getElementById('we-memory-archive-status');
+    if (memoryArchiveStatus && memoryCache?.getStatus) {
+      const status = memoryCache.getStatus();
+      if (!status.usable) memoryArchiveStatus.textContent = '当前没有可用聊天（请先打开一个角色/群聊）。';
+      else if (!status.apiAvailable) memoryArchiveStatus.textContent = '当前酒馆版本不支持写入 chat_metadata，酒馆缓存不可用。';
+      else memoryArchiveStatus.textContent = `实时同步${status.syncEnabled ? '已开启' : '已关闭'} · 本地修订 ${status.localRev} / 云端 ${status.liveRev} · 共 ${status.snapshotCount} 条存档`;
+    }
+    const memorySyncBox = document.getElementById('we-memory-sync-to-chat');
+    if (memorySyncBox) memorySyncBox.onchange = () => {
+      window.MEMORY_ENGINE_SETTINGS?.patchSettings({ syncToChat: memorySyncBox.checked });
+      if (memorySyncBox.checked) memoryCache?.pushLiveNow?.();
+      showToast(memorySyncBox.checked ? '已开启记忆跨设备同步' : '已关闭记忆跨设备同步');
+      refresh();
+    };
+    const memoryAutoBackupBox = document.getElementById('we-memory-auto-backup');
+    if (memoryAutoBackupBox) memoryAutoBackupBox.onchange = () => {
+      window.MEMORY_ENGINE_SETTINGS?.patchSettings({ autoBackup: memoryAutoBackupBox.checked });
+      showToast(memoryAutoBackupBox.checked ? '已开启记忆自动备份' : '已关闭记忆自动备份');
+    };
 
     const memoryBackfillStart = document.getElementById('we-memory-backfill-start');
     if (memoryBackfillStart) {
@@ -4712,6 +4880,7 @@ window.WORLD_ENGINE_UI = (function() {
 
     // [FIX] 推演 prompt 分段卡片折叠（事件委托，逻辑在模块级 bindPromptSegToggle）
     bindPromptSegToggle(document.querySelector('.we-prompt-debug'));
+    bindMemoryDebugExportButtons();
 
     // [FIX] 导出诊断包
     const exportDiagBtn = document.getElementById('we-export-diag');
@@ -4727,6 +4896,13 @@ window.WORLD_ENGINE_UI = (function() {
         }
       };
     }
+    const memoryExportDiagBtn = document.getElementById('we-memory-export-diag');
+    if (memoryExportDiagBtn) memoryExportDiagBtn.onclick = () => {
+      const diag = window.WORLD_ENGINE_DIAG;
+      if (!diag?.download) { showToast('记忆诊断模块不可用', true); return; }
+      try { diag.download('memory'); showToast('记忆诊断包已导出'); }
+      catch (error) { showToast('记忆诊断包导出失败: ' + (error?.message || error), true); }
+    };
 
     // [MAP] 引擎预设管理：整页装配后首次绑定（事件委托在 bindPresetEvents 内）。
     bindPresetEvents(document.getElementById('we-preset-manage'));

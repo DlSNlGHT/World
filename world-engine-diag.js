@@ -42,7 +42,8 @@ window.WORLD_ENGINE_DIAG = (function() {
     return { total: chat.length, user, ai };
   }
 
-  function collect() {
+  function collect(scope) {
+    if (scope === 'memory') return collectMemory();
     const core = window.WORLD_ENGINE_CORE;
     const api = window.WORLD_ENGINE_API;
     const store = window.WORLD_ENGINE_STORE;
@@ -277,9 +278,43 @@ window.WORLD_ENGINE_DIAG = (function() {
     return diag;
   }
 
+  function collectMemory() {
+    const data = window.MEMORY_ENGINE_DATA;
+    const engine = window.MEMORY_ENGINE;
+    const cache = window.WORLD_ENGINE_CHATCACHE?.forScope?.('memory');
+    const debug = safe(function () { return engine?.getLastDebug?.() || {}; });
+    const state = safe(function () { return data?.loadState?.() || {}; });
+    const characters = Array.isArray(state?.personal_memory) ? state.personal_memory : [];
+    return {
+      meta: safe(function () { return { engine: 'memory', extVersion: window.MEMORY_ENGINE_SETTINGS?.VERSION || '0.1.0', collectedAt: new Date().toISOString(), userAgent: navigator.userAgent }; }),
+      env: safe(function () { const ctx = SillyTavern.getContext(); return { chatId: ctx?.chatId || null, chatCount: ctx?.chat?.length || 0, hasChatMetadata: !!ctx?.chatMetadata }; }),
+      settings: safe(function () { return sanitizeSettings(window.MEMORY_ENGINE_SETTINGS?.getSettings?.(true) || {}); }),
+      memoryState: safe(function () {
+        return {
+          hasState: data?.hasState?.() || false,
+          round: state?.round || 0,
+          characterCount: characters.length,
+          memoryCount: characters.reduce(function (total, character) {
+            return total + Object.values(character.memory || {}).reduce(function (sum, list) { return sum + (Array.isArray(list) ? list.length : 0); }, 0);
+          }, 0)
+        };
+      }),
+      checkpoint: safe(function () { const cp = data?.loadCheckpoint?.(); return { exists: !!cp, characterCount: Array.isArray(cp?.personal_memory) ? cp.personal_memory.length : 0 }; }),
+      extraction: safe(function () { return { isRunning: engine?.isRunning?.() ?? null, lastError: engine?.getLastError?.() || null, lastPrompt: debug?.prompt || debug?.requestPrompt || '', lastRawResult: debug?.rawResult || debug?.apiResponse || debug?.response || '' }; }),
+      injectionInspector: safe(function () { return window.WORLD_ENGINE_INJECT_INSPECTOR?.getLastSnapshot?.('memory') || engine?.getLastInjectionDebug?.() || debug?.injection || { hasSnapshot: false }; }),
+      chatcache: safe(function () { return { status: cache?.getStatus?.() || null, snapshots: (cache?.listSnapshots?.() || []).map(function (item) { return { id: item.id, name: item.name, auto: !!item.auto, round: item.round, characters: item.characters, createdAt: item.createdAt }; }) }; }),
+      worldbook: safe(function () { return { selectedCount: window.WORLD_ENGINE_WORLDBOOK?.getSelectedIds?.('memory')?.length || 0, triggerEnabled: window.WORLD_ENGINE_WORLDBOOK?.triggerEnabled?.('memory') || false }; }),
+      filterRegex: safe(function () {
+        const raw = window.MEMORY_ENGINE_SETTINGS?.getSettings?.().filterRegex || '';
+        const result = window.WORLD_ENGINE_CORE?.validateFilterRegex?.(raw);
+        return result ? { validCount: result.ok, invalidCount: result.bad.length, invalidList: result.bad, rawPreview: raw.slice(0, 200) } : { error: '校验器不可用' };
+      })
+    };
+  }
+
   // 下载诊断包为 JSON 文件
-  function download() {
-    const diag = collect();
+  function download(scope) {
+    const diag = collect(scope);
     const content = JSON.stringify(diag, null, 2);
     let chatId = 'unknown';
     try {
@@ -290,7 +325,7 @@ window.WORLD_ENGINE_DIAG = (function() {
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = 'world-engine-diag-' + chatId + '-' + Date.now() + '.json';
+    a.download = (scope === 'memory' ? 'memory-engine-diag-' : 'world-engine-diag-') + chatId + '-' + Date.now() + '.json';
     a.click();
     URL.revokeObjectURL(url);
     return content;
