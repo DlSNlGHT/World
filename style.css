@@ -388,7 +388,7 @@
   background: currentColor;
 }
 #we-input-btn.we-ball > .we-sat-engine-switch.we-sat-target-memory {
-  color: var(--we-gold);
+  color: var(--we-text2, #cdd6dd);
 }
 #we-input-btn.we-ball > .we-sat-engine-switch.we-sat-target-memory::before {
   -webkit-mask: url("fingerprint-outline-with-magnifying-glass-svgrepo-com.svg") center / contain no-repeat;
