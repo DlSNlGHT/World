@@ -9,6 +9,7 @@ const storeMap = new Map();
 const calls = [];
 const listeners = new Map();
 const runningLabels = [];
+const startSignals = [];
 let injectionContent = '';
 const settings = {
   engineEnabled: true,
@@ -50,6 +51,7 @@ const context = {
 };
 const sandbox = {
   window: null,
+  __WE_SetExternalStatus(text) { if (String(text).startsWith('正在进行')) startSignals.push('status'); },
   console,
   setTimeout,
   clearTimeout,
@@ -68,7 +70,7 @@ const sandbox = {
   },
   WORLD_ENGINE_WORLDBOOK: { async buildPromptSection() { return ''; } },
   WORLD_ENGINE_CHATCACHE: { forScope() { return { afterEvolution() {}, createSnapshot() {} }; } },
-  WORLD_ENGINE_UI: { setMemoryEvolvingUI(active, label) { if (active) runningLabels.push(label); } },
+  WORLD_ENGINE_UI: { setMemoryEvolvingUI(active, label) { if (active) { runningLabels.push(label); startSignals.push('ui'); } } },
   MEMORY_ENGINE_SETTINGS: { getSettings() { return { ...settings }; } },
   WORLD_ENGINE_API: {
     async callApi(prompt) {
@@ -109,6 +111,8 @@ for (const filename of [
   assert.ok(!calls[1].includes('事件记忆的小总结器'));
   assert.ok(!calls[1].includes('【最新对话片段】'), '大总结只能读取已落库的小总结与既有大总结');
   assert.deepStrictEqual(runningLabels.slice(0, 2), ['小总结', '大总结']);
+  assert.deepStrictEqual(startSignals.slice(0, 4), ['status', 'ui', 'status', 'ui'],
+    '顶部提示必须先于记忆球运行态刷新，否则会清除自动动画类');
   assert.strictEqual(combined.addedSmall, 1);
   assert.strictEqual(combined.updatedBig, 1);
   let state = sandbox.MEMORY_ENGINE_DATA.loadState();

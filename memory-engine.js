@@ -400,8 +400,9 @@ window.MEMORY_ENGINE = (function() {
       : (tasks.memory ? '人物/实体总结' : (tasks.small ? '小总结' : '大总结'));
     const taskLabel = runningLabel;
     abortController = new AbortController();
-    window.WORLD_ENGINE_UI?.setMemoryEvolvingUI?.(true, runningLabel);
     setExternalStatus(`正在进行${taskLabel}…`);
+    // 顶部状态机会先清理悬浮球运行类，因此最后再按当前引擎面刷新动画状态。
+    window.WORLD_ENGINE_UI?.setMemoryEvolvingUI?.(true, runningLabel);
     try {
       const before = options?.baseState ? clone(options.baseState) : data().loadState();
       const extracted = await requestTasks(tasks, { ...options, baseState: before });
