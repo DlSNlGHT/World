@@ -289,7 +289,7 @@ window.WORLD_ENGINE_DIAG = (function() {
     const entityTypes = ['organization', 'object', 'ability', 'location'];
     const entities = entityTypes.flatMap(function (type) { return Array.isArray(state?.entity_memory?.[type]) ? state.entity_memory[type] : []; });
     return {
-      meta: safe(function () { return { engine: 'memory', extVersion: window.MEMORY_ENGINE_SETTINGS?.VERSION || '0.4.4', collectedAt: new Date().toISOString(), userAgent: navigator.userAgent }; }),
+      meta: safe(function () { return { engine: 'memory', extVersion: window.MEMORY_ENGINE_SETTINGS?.VERSION || '0.4.5', collectedAt: new Date().toISOString(), userAgent: navigator.userAgent }; }),
       env: safe(function () { const ctx = SillyTavern.getContext(); return { chatId: ctx?.chatId || null, chatCount: ctx?.chat?.length || 0, hasChatMetadata: !!ctx?.chatMetadata }; }),
       settings: safe(function () { return sanitizeSettings(window.MEMORY_ENGINE_SETTINGS?.getSettings?.(true) || {}); }),
       memoryState: safe(function () {

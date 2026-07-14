@@ -17,6 +17,9 @@ window.MEMORY_ENGINE = (function() {
   const normalized = v => clean(v).toLocaleLowerCase();
   const settings = () => window.MEMORY_ENGINE_SETTINGS?.getSettings(true) || {};
   const data = () => window.MEMORY_ENGINE_DATA;
+  function setExternalStatus(text, isError) {
+    window.__WE_SetExternalStatus?.(text, !!isError);
+  }
   function context() { try { return SillyTavern.getContext(); } catch (_) { return null; } }
   const chat = () => context()?.chat || [];
   const currentLayer = () => Math.max(0, chat().length - 1);
@@ -383,8 +386,10 @@ window.MEMORY_ENGINE = (function() {
     running = true;
     runningLabel = tasks.memory && tasks.small ? '人物/实体与小总结'
       : (tasks.memory ? '人物/实体总结' : (tasks.small ? '小总结' : '大总结'));
+    const taskLabel = runningLabel;
     abortController = new AbortController();
     window.WORLD_ENGINE_UI?.setMemoryEvolvingUI?.(true, runningLabel);
+    setExternalStatus(`正在进行${taskLabel}…`);
     try {
       const before = options?.baseState ? clone(options.baseState) : data().loadState();
       const extracted = await requestTasks(tasks, { ...options, baseState: before });
@@ -425,6 +430,7 @@ window.MEMORY_ENGINE = (function() {
       data().saveState(next);
       window.WORLD_ENGINE_CHATCACHE?.forScope?.('memory')?.afterEvolution?.();
       applyInjection();
+      setExternalStatus(`${taskLabel}完成`);
       return {
         added: added + addedSmall + updatedBig,
         extracted: extracted.personal.length + ENTITY_TYPES.reduce((sum, type) => sum + extracted.entities[type].length, 0),
@@ -434,6 +440,10 @@ window.MEMORY_ENGINE = (function() {
         updatedBig,
         state: next
       };
+    } catch (error) {
+      const stopped = abortController?.signal?.aborted || error?.name === 'AbortError';
+      setExternalStatus(stopped ? `${taskLabel}已停止` : `${taskLabel}失败：${error?.message || error}`, !stopped);
+      throw error;
     } finally {
       running = false;
       runningLabel = '';
