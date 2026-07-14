@@ -349,8 +349,107 @@ window.WORLD_ENGINE_UI = (function() {
   let _currentView = 'home';
 
   function renderMemoryView() {
-    if (!_memorySettingsOpen) return '';
-    return renderMemorySettingsView();
+    if (_memorySettingsOpen) return renderMemorySettingsView();
+    return renderMemoryHomeView();
+  }
+
+  function countMemoryAiSince(layer) {
+    const anchor = layer !== null && layer !== '' && Number.isFinite(Number(layer)) ? Number(layer) : -1;
+    try {
+      const chat = SillyTavern.getContext()?.chat || [];
+      return chat.reduce((count, message, index) => count + (
+        index > anchor && message && !message.is_user && String(message.mes || '').trim() ? 1 : 0
+      ), 0);
+    } catch (_) {
+      return 0;
+    }
+  }
+
+  function memoryProgressCircle(radius, progress, color, width, className) {
+    const circumference = 2 * Math.PI * radius;
+    const ratio = Math.max(0, Math.min(1, Number(progress) || 0));
+    const dash = (circumference * ratio).toFixed(1);
+    return `<circle class="${className}" cx="80" cy="80" r="${radius}" fill="none" stroke="${color}" stroke-width="${width}"
+      stroke-linecap="round" stroke-dasharray="${dash} ${(circumference - circumference * ratio).toFixed(1)}"
+      transform="rotate(-90 80 80)"/>`;
+  }
+
+  function renderMemoryCore(state, settings) {
+    const eventMemory = state?.event_memory || {};
+    const smallSummaries = Array.isArray(eventMemory.small_summaries) ? eventMemory.small_summaries : [];
+    const cursor = Math.max(0, Math.min(smallSummaries.length, parseInt(eventMemory.big_summary_cursor) || 0));
+    const smallTarget = Math.max(1, parseInt(settings.smallSummaryEveryX) || 5);
+    const bigTarget = Math.max(1, parseInt(settings.bigSummaryEveryX) || 5);
+    const elapsedFloors = countMemoryAiSince(eventMemory.small_summary_layer);
+    const pendingSmall = Math.max(0, smallSummaries.length - cursor);
+    const smallProgress = Math.min(1, elapsedFloors / smallTarget);
+    const bigProgress = Math.min(1, pendingSmall / bigTarget);
+    const smallRemaining = Math.max(0, smallTarget - elapsedFloors);
+    const bigRemaining = Math.max(0, bigTarget - pendingSmall);
+    const entityCount = ['organization', 'object', 'ability', 'location']
+      .reduce((sum, type) => sum + (Array.isArray(state?.entity_memory?.[type]) ? state.entity_memory[type].length : 0), 0);
+    const stats = [
+      ['人物', Array.isArray(state?.personal_memory) ? state.personal_memory.length : 0],
+      ['实体', entityCount],
+      ['小结', smallSummaries.length],
+      ['待归档', pendingSmall]
+    ].map(([label, value]) => `<div class="we-core-stat"><div class="we-core-stat-k">${label}</div><div class="we-core-stat-v">${value}</div></div>`).join('');
+    const centerMain = smallRemaining > 0 ? smallRemaining : '待执行';
+    const centerUnit = smallRemaining > 0 ? '<span>楼</span>' : '';
+
+    return `<div class="we-section we-core-section we-memory-core-section">
+      <div class="we-core" title="小总结 ${Math.min(elapsedFloors, smallTarget)}/${smallTarget} 楼 · 大总结 ${Math.min(pendingSmall, bigTarget)}/${bigTarget} 条小总结">
+        <div class="we-core-ring we-memory-core-ring">
+          <svg viewBox="0 0 160 160" width="160" height="160" aria-hidden="true">
+            <circle cx="80" cy="80" r="66" fill="none" stroke="rgba(255,255,255,0.08)" stroke-width="6"/>
+            <circle cx="80" cy="80" r="55" fill="none" stroke="rgba(255,255,255,0.05)" stroke-width="3"/>
+            ${memoryProgressCircle(66, smallProgress, 'var(--we-accent)', 6, 'we-memory-small-progress')}
+            ${memoryProgressCircle(55, bigProgress, 'var(--we-gold)', 3, 'we-memory-big-progress')}
+          </svg>
+          <div class="we-core-center">
+            <div class="we-core-title">记忆脉络</div>
+            <div class="we-core-sub">下一次小总结</div>
+            <div class="we-core-pct we-memory-core-value">${centerMain}${centerUnit}</div>
+            <div class="we-core-tier">${bigRemaining > 0 ? `大总结还差 ${bigRemaining} 条` : '大总结待执行'}</div>
+          </div>
+        </div>
+        <div class="we-memory-ring-legend"><span><i class="we-memory-legend-small"></i>小总结 ${Math.min(elapsedFloors, smallTarget)}/${smallTarget} 楼</span><span><i class="we-memory-legend-big"></i>大总结 ${Math.min(pendingSmall, bigTarget)}/${bigTarget} 条</span></div>
+        <div class="we-core-stats">${stats}</div>
+      </div>
+    </div>`;
+  }
+
+  function renderMemorySummaryOverview(state) {
+    const eventMemory = state?.event_memory || {};
+    const smallSummaries = Array.isArray(eventMemory.small_summaries) ? eventMemory.small_summaries : [];
+    const cursor = Math.max(0, Math.min(smallSummaries.length, parseInt(eventMemory.big_summary_cursor) || 0));
+    const big = String(eventMemory.big_summary?.content || '').trim();
+    const recent = smallSummaries.slice(-3).map((item, offset) => {
+      const index = smallSummaries.length - Math.min(3, smallSummaries.length) + offset;
+      const status = index < cursor ? '已归入大总结' : '等待归档';
+      return `<div class="we-memory-summary-item">
+        <div class="we-memory-summary-meta"><span>楼层 ${h(item.startLayer)}–${h(item.endLayer)}</span><span>${status}</span></div>
+        <div class="we-memory-summary-text">${h(item.content)}</div>
+      </div>`;
+    }).join('');
+    return `<div class="we-section we-memory-summary-section">
+      <div class="we-section-title">事件记忆</div>
+      <div class="we-memory-big-summary">
+        <div class="we-memory-summary-label">当前大总结</div>
+        <div class="we-memory-summary-text">${big ? h(big) : '尚未生成大总结'}</div>
+      </div>
+      <div class="we-memory-summary-label we-memory-recent-label">最近小总结</div>
+      ${recent || '<div class="we-empty">尚未生成小总结</div>'}
+    </div>`;
+  }
+
+  function renderMemoryHomeView() {
+    const state = window.MEMORY_ENGINE_DATA?.loadState?.() || {};
+    const settings = window.MEMORY_ENGINE_SETTINGS?.getSettings?.(true) || {};
+    return '<div class="we-memory-home">'
+      + renderMemoryCore(state, settings)
+      + renderMemorySummaryOverview(state)
+      + '</div>';
   }
 
   const MEMORY_SETTINGS_TABS = [
