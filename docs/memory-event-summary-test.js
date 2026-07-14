@@ -256,16 +256,33 @@ for (const filename of [
   sandbox.MEMORY_ENGINE_DATA.saveState(sandbox.MEMORY_ENGINE_DATA.defaultState());
   calls.length = 0;
   runningLabels.length = 0;
+  settings.evolveEveryX = 999;
   sandbox.MEMORY_ENGINE.init();
+  let initializedState = sandbox.MEMORY_ENGINE_DATA.loadState();
+  assert.strictEqual(initializedState.event_memory.small_summary_layer, chat.length - 1,
+    '首次进入已有聊天时必须只记录当前纪要基线，不能把历史对话当作自动待办');
+
+  chat.push(
+    { is_user: true, name: '用户', mes: '继续询问城内情况。' },
+    { is_user: false, name: '角色', mes: '守卫表示暂时没有更多消息。' }
+  );
   listeners.get('generation_ended')();
   await new Promise(resolve => setTimeout(resolve, 1600));
-  assert.strictEqual(calls.length, 2, '人物实体与小总结同轮合并一次，大总结随后独立请求');
-  assert.ok(calls[0].includes('"personal_memory": []'));
-  assert.ok(calls[0].includes('事件记忆的小总结器'));
+  assert.strictEqual(calls.length, 0, '进入已有聊天后新增不足 X 轮时不得自动补历史纪要');
+
+  chat.push(
+    { is_user: true, name: '用户', mes: '准备返回旅店。' },
+    { is_user: false, name: '角色', mes: '角色离开城门并返回旅店。' }
+  );
+  listeners.get('generation_ended')();
+  await new Promise(resolve => setTimeout(resolve, 1600));
+  assert.strictEqual(calls.length, 2, '从进入聊天的基线起新增满 X 轮后，才生成纪要并独立生成总述');
+  assert.ok(calls[0].includes('"small_summary": ""'));
+  assert.ok(!calls[0].includes('"personal_memory": []'));
   assert.ok(!calls[0].includes('事件记忆的大总结器'));
-  assert.ok(calls[1].includes('事件记忆的大总结器'));
+  assert.ok(calls[1].includes('"big_summary": ""'));
   assert.ok(!calls[1].includes('"personal_memory": []'));
-  assert.deepStrictEqual(runningLabels, ['人物/实体与小总结', '大总结']);
+  assert.deepStrictEqual(runningLabels, ['小总结', '大总结']);
 
   console.log('✓ 事件记忆大小总结测试通过');
 })().catch(error => {

@@ -376,6 +376,20 @@ window.MEMORY_ENGINE = (function() {
     return state.event_memory;
   }
 
+  // 自动纪要只处理进入当前聊天之后新增的对话。首次见到一个聊天时仅落下
+  // 当前楼层基线，不调用 API；从头整理历史记录只允许由批量重填显式触发。
+  function initializeSummaryBaseline() {
+    const memoryData = data();
+    if (!memoryData) return null;
+    const state = memoryData.loadState();
+    const eventMemory = ensureEventState(state);
+    if (eventMemory.small_summary_layer !== null
+      && eventMemory.small_summary_layer !== ''
+      && Number.isFinite(Number(eventMemory.small_summary_layer))) return state;
+    eventMemory.small_summary_layer = chat().length - 1;
+    return memoryData.saveState(state);
+  }
+
   function nextSmallSummaryId(eventMemory) {
     const max = (eventMemory.small_summaries || []).reduce((number, item) => {
       const match = /^small_(\d+)$/.exec(clean(item?.id));
@@ -879,10 +893,17 @@ window.MEMORY_ENGINE = (function() {
   function init() {
     if (initialized) return;
     initialized = true;
+    initializeSummaryBaseline();
     const ctx = context(), types = ctx?.event_types || {};
     if (ctx?.eventSource) {
       ctx.eventSource.on(types.GENERATION_ENDED || types.MESSAGE_RECEIVED || 'message_received', guardEvent('生成完成', onMessageReceived));
-      ctx.eventSource.on(types.CHAT_LOADED || 'chat_loaded', guardEvent('聊天加载', () => { clearTimeout(autoTimer); abortController?.abort(); lastEventKey = ''; applyInjection(); }));
+      ctx.eventSource.on(types.CHAT_LOADED || 'chat_loaded', guardEvent('聊天加载', () => {
+        clearTimeout(autoTimer);
+        abortController?.abort();
+        lastEventKey = '';
+        initializeSummaryBaseline();
+        applyInjection();
+      }));
       ctx.eventSource.on(types.MESSAGE_SWIPED || 'message_swiped', guardEvent('滑动重生成', () => { clearTimeout(autoTimer); abortController?.abort(); applyInjection({ isReroll: true }); }));
       ctx.eventSource.on(types.GENERATION_STARTED || 'generation_started', guardEvent('生成开始', (type, _opts, dryRun) => {
         if (!dryRun) applyInjection({ isReroll: type === 'swipe' || type === 'regenerate' });
