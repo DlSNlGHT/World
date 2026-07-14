@@ -20,11 +20,11 @@ window.WORLD_ENGINE_INJECT_INSPECTOR = (function() {
   const INJECTION_NAME = 'world-engine-world';
   const MEMORY_INJECTION_NAME = 'memory-engine-memory';
 
-  // 着陆哨兵：buildContext() 输出永远以「【世界状态】」开头（world-engine-inject.js），
+  // 着陆哨兵：buildContext() 输出永远以「【世界信息】」开头（world-engine-inject.js），
   //   该子串无任何 {{...}} 宏，不被 ST substituteParams 改写 → 拿它判「注入是否进了最终 prompt」最稳。
   //   （注：拿完整注入串做 indexOf 会因 {{user}} 等宏被展开而假阴性，故只认这个无宏哨兵。）
-  const SENTINEL = '【世界状态】';
-  const MEMORY_SENTINEL = '【人物记忆】';
+  const SENTINEL = '【世界信息】';
+  const MEMORY_SENTINEL = '【记忆信息】';
 
   // 事件名（字面量；运行时优先用 ctx.event_types 的常量，取不到再回退字面量）。
   const EV_TEXT = 'generate_after_combine_prompts';   // 文本补全/经典 API：eventData={prompt,dryRun}
@@ -197,7 +197,7 @@ window.WORLD_ENGINE_INJECT_INSPECTOR = (function() {
   };
   function statusText(status, scope) {
     const text = STATUS_TEXT[status] || STATUS_TEXT.NOT_YET;
-    return scope === 'memory' ? text.replace(/世界状态/g, '人物记忆').replace(/无世界状态/g, '无人物记忆') : text;
+    return scope === 'memory' ? text.replace(/世界状态/g, '记忆信息').replace(/无世界状态/g, '无记忆信息') : text;
   }
 
   return { init, getLastSnapshot, statusText, SENTINEL, MEMORY_SENTINEL };

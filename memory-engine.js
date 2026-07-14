@@ -1,7 +1,9 @@
 // 记忆引擎运行链：复用世界引擎的 API、过滤、世界书、存档和注入机制。
 window.MEMORY_ENGINE = (function() {
   const INJECTION_NAME = 'memory-engine-memory';
-  const SENTINEL = '【人物记忆】';
+  const SENTINEL = '【记忆信息】';
+  const ENTITY_TYPES = ['organization', 'object', 'ability', 'location'];
+  const ENTITY_LABELS = { organization: '组织', object: '物件', ability: '能力', location: '地点' };
   let initialized = false, running = false, backfillRunning = false;
   let abortController = null, autoTimer = null, lastEventKey = '';
   let lastDebug = { prompt: '', rawResult: '', parsed: null, error: '' };
@@ -47,6 +49,11 @@ window.MEMORY_ENGINE = (function() {
     const user = window.MEMORY_ENGINE_PROMPT.buildUserPrompt({
       currentStoryTime: extractStoryTime(filtered),
       knownPeople: (state.personal_memory || []).map(character => unique(character.names)),
+      knownEntities: ENTITY_TYPES.flatMap(type => (state.entity_memory?.[type] || []).map(entity => ({
+        type: ENTITY_LABELS[type],
+        name: entity.name,
+        description: entity.description
+      }))),
       worldbook,
       conversation: filtered
     });
@@ -59,14 +66,20 @@ window.MEMORY_ENGINE = (function() {
     let value;
     try { value = JSON.parse(text); }
     catch (_) {
-      const start = text.indexOf('['), end = text.lastIndexOf(']');
-      if (start < 0 || end <= start) throw new Error('API 返回中没有合法 JSON 数组');
-      value = JSON.parse(text.slice(start, end + 1));
+      const objectStart = text.indexOf('{'), objectEnd = text.lastIndexOf('}');
+      const arrayStart = text.indexOf('['), arrayEnd = text.lastIndexOf(']');
+      if (arrayStart >= 0 && arrayStart < objectStart && arrayEnd > arrayStart) value = JSON.parse(text.slice(arrayStart, arrayEnd + 1));
+      else if (objectStart >= 0 && objectEnd > objectStart) value = JSON.parse(text.slice(objectStart, objectEnd + 1));
+      else if (arrayStart >= 0 && arrayEnd > arrayStart) value = JSON.parse(text.slice(arrayStart, arrayEnd + 1));
+      else throw new Error('API 返回中没有合法 JSON 对象或数组');
     }
-    if (!Array.isArray(value)) value = value?.memories || value?.memory || value?.data;
-    if (!Array.isArray(value)) throw new Error('记忆 API 必须返回 JSON 数组');
-    const counts = new Map(), result = [];
-    for (const item of value) {
+    // 兼容 0.1.x：旧 API 只返回人物记忆数组。
+    const personalSource = Array.isArray(value)
+      ? value
+      : (value?.personal_memory || value?.memories || value?.memory || value?.data || []);
+    if (!Array.isArray(personalSource)) throw new Error('personal_memory 必须是 JSON 数组');
+    const counts = new Map(), personal = [];
+    for (const item of personalSource) {
       if (!item || typeof item !== 'object') continue;
       const names = unique(Array.isArray(item.name) ? item.name : []), memory = clean(item.memory);
       if (!names.length || !memory) continue;
@@ -76,16 +89,42 @@ window.MEMORY_ENGINE = (function() {
       counts.set(holder, count + 1);
       let time = clean(item.time);
       if (/^(昨晚|昨天|三天前|刚才|不久前|宴会之后)$/.test(time)) time = '';
-      result.push({
+      personal.push({
         name: names,
         known_by: unique(Array.isArray(item.known_by) ? item.known_by : [])
           .filter(name => !names.some(holderName => normalized(holderName) === normalized(name))),
         memory,
         time
       });
-      if (result.length >= 8) break;
+      if (personal.length >= 8) break;
     }
-    return result;
+    const entitySource = !Array.isArray(value) && Array.isArray(value?.entity_updates)
+      ? value.entity_updates : [];
+    const entities = {};
+    for (const type of ENTITY_TYPES) entities[type] = [];
+    const perEntityCounts = new Map();
+    let entityUpdateCount = 0;
+    for (const item of entitySource) {
+      if (entityUpdateCount >= 8) break;
+      if (!item || typeof item !== 'object') continue;
+      if (!ENTITY_TYPES.includes(item.type) || typeof item.name !== 'string'
+        || typeof item.description !== 'string' || typeof item.event !== 'string' || typeof item.time !== 'string') continue;
+      const type = item.type, name = clean(item.name), description = clean(item.description), event = clean(item.event);
+      if (!name) continue;
+      if (Array.from(description).length > 200) throw new Error(`${ENTITY_LABELS[type]}“${name}”的描述超过 200 字`);
+      if (Array.from(event).length > 50) throw new Error(`${ENTITY_LABELS[type]}“${name}”的事件超过 50 字`);
+      const key = `${type}:${normalized(name)}`, count = perEntityCounts.get(key) || 0;
+      if (count >= 3) continue;
+      perEntityCounts.set(key, count + 1);
+      entities[type].push({ name, description, event, time: event ? sanitizeTime(item.time) : '' });
+      entityUpdateCount++;
+    }
+    return { personal, entities };
+  }
+
+  function sanitizeTime(value) {
+    const time = clean(value);
+    return /^(昨晚|昨天|三天前|刚才|不久前|宴会之后)$/.test(time) ? '' : time;
   }
 
   function nextCharacterId(state) {
@@ -122,6 +161,78 @@ window.MEMORY_ENGINE = (function() {
       }
     }
     state.knowledge_index = index;
+  }
+
+  function ensureEntityState(state) {
+    if (!state.entity_memory || typeof state.entity_memory !== 'object' || Array.isArray(state.entity_memory)) state.entity_memory = {};
+    for (const type of ENTITY_TYPES) if (!Array.isArray(state.entity_memory[type])) state.entity_memory[type] = [];
+    if (!state.entity_index || typeof state.entity_index !== 'object' || Array.isArray(state.entity_index)) state.entity_index = {};
+  }
+
+  function nextEntityId(state, type) {
+    ensureEntityState(state);
+    const prefix = { organization: 'org', object: 'obj', ability: 'ability', location: 'location' }[type];
+    const pattern = new RegExp(`^${prefix}_(\\d+)$`);
+    const max = state.entity_memory[type].reduce((number, entity) => {
+      const match = pattern.exec(clean(entity.id));
+      return Math.max(number, match ? Number(match[1]) : 0);
+    }, 0);
+    return `${prefix}_${String(max + 1).padStart(6, '0')}`;
+  }
+
+  function rebuildEntityIndex(state) {
+    ensureEntityState(state);
+    const index = {};
+    for (const type of ENTITY_TYPES) {
+      for (const entity of state.entity_memory[type]) {
+        if (!clean(entity.id)) entity.id = nextEntityId(state, type);
+        const name = clean(entity.name);
+        if (name) index[`${type}:${normalized(name)}`] = entity.id;
+      }
+    }
+    state.entity_index = index;
+  }
+
+  function findEntity(state, type, name) {
+    ensureEntityState(state);
+    const key = `${type}:${normalized(name)}`;
+    let id = state.entity_index[key];
+    let entity = id && state.entity_memory[type].find(item => item.id === id);
+    if (!entity) entity = state.entity_memory[type].find(item => normalized(item.name) === normalized(name));
+    if (entity) {
+      if (!clean(entity.id)) entity.id = nextEntityId(state, type);
+      state.entity_index[key] = entity.id;
+    }
+    return entity;
+  }
+
+  function mergeEntityMemories(state, groups) {
+    ensureEntityState(state);
+    if (!Object.keys(state.entity_index).length) rebuildEntityIndex(state);
+    const result = { entities: 0, history: 0, descriptions: 0 };
+    for (const type of ENTITY_TYPES) {
+      for (const item of groups?.[type] || []) {
+        let entity = findEntity(state, type, item.name);
+        let isNew = false;
+        if (!entity) {
+          entity = { id: nextEntityId(state, type), name: item.name, description: '', history: [] };
+          state.entity_memory[type].push(entity);
+          state.entity_index[`${type}:${normalized(item.name)}`] = entity.id;
+          result.entities++;
+          isNew = true;
+        }
+        if (item.description && entity.description !== item.description) {
+          entity.description = item.description;
+          if (!isNew) result.descriptions++;
+        }
+        if (!Array.isArray(entity.history)) entity.history = [];
+        if (item.event && !entity.history.some(old => clean(old.time) === clean(item.time) && clean(old.event) === clean(item.event))) {
+          entity.history.push({ time: clean(item.time), event: clean(item.event) });
+          result.history++;
+        }
+      }
+    }
+    return result;
   }
 
   function mergeMemories(state, items) {
@@ -172,7 +283,7 @@ window.MEMORY_ENGINE = (function() {
         if (abortController?.signal?.aborted || attempt >= retries) throw error;
       }
     }
-    return [];
+    return { personal: [], entities: Object.fromEntries(ENTITY_TYPES.map(type => [type, []])) };
   }
 
   async function extractConversation(conversation, options) {
@@ -182,15 +293,23 @@ window.MEMORY_ENGINE = (function() {
     window.WORLD_ENGINE_UI?.setMemoryEvolvingUI?.(true);
     try {
       const before = options?.baseState ? clone(options.baseState) : data().loadState();
-      const items = await requestExtraction(conversation, { ...options, baseState: before });
+      const extracted = await requestExtraction(conversation, { ...options, baseState: before });
       if (options?.saveCheckpoint !== false) data().saveCheckpoint(before);
-      const next = clone(before), added = mergeMemories(next, items);
+      const next = clone(before), addedPersonal = mergeMemories(next, extracted.personal);
+      const entityChanges = mergeEntityMemories(next, extracted.entities);
+      const added = addedPersonal + entityChanges.entities + entityChanges.history + entityChanges.descriptions;
       next.round = Math.max(0, Number(next.round) || 0) + 1;
       next.chatLayer = Number.isFinite(Number(options?.layer)) ? Number(options.layer) : currentLayer();
       data().saveState(next);
       window.WORLD_ENGINE_CHATCACHE?.forScope?.('memory')?.afterEvolution?.();
       applyInjection();
-      return { added, extracted: items.length, state: next };
+      return {
+        added,
+        extracted: extracted.personal.length + ENTITY_TYPES.reduce((sum, type) => sum + extracted.entities[type].length, 0),
+        addedPersonal,
+        entityChanges,
+        state: next
+      };
     } finally {
       running = false;
       abortController = null;
@@ -264,14 +383,21 @@ window.MEMORY_ENGINE = (function() {
     const st = settings();
     if (st.engineEnabled === false || st.injectIntoPrompt === false) { clearInjection(); return ''; }
     const state = (options?.isReroll && data().loadCheckpoint()) || data().loadState();
-    if (!state?.personal_memory?.length) { clearInjection(); return ''; }
+    ensureEntityState(state);
+    const hasPeople = Boolean(state?.personal_memory?.length);
+    const hasEntities = ENTITY_TYPES.some(type => state.entity_memory[type].length);
+    if (!hasPeople && !hasEntities) { clearInjection(); return ''; }
     if (!state.knowledge_index || !Object.keys(state.knowledge_index).length) rebuildKnowledgeIndex(state);
     const scan = chat().slice(-Math.max(1, parseInt(st.searchDepth) || 5)).map(message => clean(message?.mes)).join('\n');
-    const matched = (state.personal_memory || []).filter(character => (character.names || []).some(name => {
+    const appearsInScan = name => {
       if (!name) return false;
       return new RegExp(String(name).replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'u').test(scan);
-    }));
-    if (!matched.length) { clearInjection(); return ''; }
+    };
+    const matched = (state.personal_memory || []).filter(character => (character.names || []).some(appearsInScan));
+    const matchedEntities = ENTITY_TYPES.flatMap(type => state.entity_memory[type]
+      .filter(entity => appearsInScan(entity.name))
+      .map(entity => ({ type, entity })));
+    if (!matched.length && !matchedEntities.length) { clearInjection(); return ''; }
     const sections = [], globalSeen = new Set(), limit = Math.max(1, parseInt(st.maxPerCharacter) || 20);
     for (const character of matched) {
       const records = [];
@@ -284,8 +410,17 @@ window.MEMORY_ENGINE = (function() {
       if (selected.length) sections.push(`【${character.names?.[0] || character.id}】\n` +
         selected.map(record => `- [${record.time || '时间未明'}] ${record.memory}`).join('\n'));
     }
+    if (matchedEntities.length) {
+      const entitySections = matchedEntities.map(({ type, entity }) => {
+        const lines = [`【${ENTITY_LABELS[type]}：${entity.name}】`, entity.description];
+        const history = (Array.isArray(entity.history) ? entity.history : []).slice(-limit);
+        if (history.length) lines.push(...history.map(entry => `- [${entry.time || '时间未明'}] ${entry.event}`));
+        return lines.filter(Boolean).join('\n');
+      });
+      sections.push(`【相关世界实体】\n${entitySections.join('\n\n')}`);
+    }
     if (!sections.length) { clearInjection(); return ''; }
-    const content = `${SENTINEL}\n以下内容是当前场景人物持有或明确知晓的主观记忆；允许彼此矛盾，不代表客观真相。\n\n${sections.join('\n\n')}`;
+    const content = `${SENTINEL}\n人物条目是当前场景人物持有或明确知晓的主观记忆，允许彼此矛盾；实体条目记录相关组织、物件、能力与地点的当前描述和本地历史。\n\n${sections.join('\n\n')}`;
     registerInjection(content);
     return content;
   }

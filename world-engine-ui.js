@@ -394,11 +394,13 @@ window.WORLD_ENGINE_UI = (function() {
     const data = window.MEMORY_ENGINE_DATA;
     const checkpoint = data?.loadCheckpoint?.() || null;
     const count = Array.isArray(checkpoint?.personal_memory) ? checkpoint.personal_memory.length : 0;
+    const entityCount = ['organization', 'object', 'ability', 'location']
+      .reduce((sum, type) => sum + (Array.isArray(checkpoint?.entity_memory?.[type]) ? checkpoint.entity_memory[type].length : 0), 0);
     const content = checkpoint
-      ? '<div class="we-hint">包含 ' + count + ' 个人物记忆条目</div><pre class="we-prompt-seg-pre">' + h(JSON.stringify(checkpoint, null, 2)) + '</pre>'
+      ? '<div class="we-hint">包含 ' + count + ' 个人物、' + entityCount + ' 个世界实体</div><pre class="we-prompt-seg-pre">' + h(JSON.stringify(checkpoint, null, 2)) + '</pre>'
       : '<div class="we-empty">暂无存档点</div>';
     return '<div class="we-section" style="margin-top:16px;"><div class="we-section-title">'
-      + sectionHeader(checkpoint ? '存档点 - ' + count + ' 条人物记忆' : '存档点', 'memory-checkpoint-section')
+      + sectionHeader(checkpoint ? '存档点 - ' + count + ' 人物 / ' + entityCount + ' 实体' : '存档点', 'memory-checkpoint-section')
       + '</div>' + sectionBody('memory-checkpoint-section', content) + '</div>';
   }
 
@@ -409,9 +411,10 @@ window.WORLD_ENGINE_UI = (function() {
       let time = '';
       try { time = new Date(item.createdAt).toLocaleString(); } catch (error) {}
       const count = Number(item.characters) || 0;
+      const entityCount = Number(item.entities) || 0;
       return '<div class="we-snapshot-row" data-memory-snap-id="' + u(item.id) + '">'
         + '<div class="we-snapshot-main"><div class="we-snapshot-name"><span class="we-snapshot-badge' + (item.auto ? ' is-auto' : '') + '">' + (item.auto ? '自动' : '手动') + '</span>' + h(item.name) + '</div>'
-        + '<div class="we-snapshot-meta">第 ' + (item.round || 0) + ' 轮 · ' + count + ' 个人物' + (time ? ' · ' + h(time) : '') + '</div></div>'
+        + '<div class="we-snapshot-meta">第 ' + (item.round || 0) + ' 轮 · ' + count + ' 个人物 · ' + entityCount + ' 个实体' + (time ? ' · ' + h(time) : '') + '</div></div>'
         + '<div class="we-snapshot-actions">'
         + '<button class="we-icon-btn" data-memory-snap-action="restore" title="恢复"><i class="fa-solid fa-rotate-left"></i></button>'
         + '<button class="we-icon-btn" data-memory-snap-action="rename" title="重命名"><i class="fa-solid fa-pen"></i></button>'
@@ -595,7 +598,7 @@ window.WORLD_ENGINE_UI = (function() {
       <div class="we-input-group" id="we-memory-everyx-group" style="${mode === 'auto' ? '' : 'display:none;'}">
         <label>每几轮提取一次（X）</label>
         <input type="number" id="we-memory-everyx" min="1" step="1" value="${everyX}" style="width:100%;">
-        <div style="font-size:11px;color:var(--we-text3);margin-top:3px;">重 roll 不计入新轮次；到达 X 轮时只调用一次 LLM 提取人物主观记忆。</div>
+        <div style="font-size:11px;color:var(--we-text3);margin-top:3px;">重 roll 不计入新轮次；到达 X 轮时只调用一次 LLM，同时提取人物主观记忆与世界实体记忆。</div>
       </div>
       <div class="we-input-group" id="we-memory-readrounds-group" style="${mode === 'auto' ? '' : 'display:none;'}">
         <label>每次提取读取最近几轮对话</label>
@@ -614,23 +617,23 @@ window.WORLD_ENGINE_UI = (function() {
       <div class="we-input-group">
         <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
           <input type="checkbox" id="we-memory-inject" ${settings.injectIntoPrompt !== false ? 'checked' : ''}>
-          注入人物记忆
+          注入人物与实体记忆
         </label>
-        <div style="font-size:11px;color:var(--we-text3);margin-top:3px;">生成回复前扫描最近 N 层正文中的人物名称与别名，再注入对应人物的主观记忆。</div>
+        <div style="font-size:11px;color:var(--we-text3);margin-top:3px;">生成回复前扫描最近 N 层正文中的人物及实体名称，注入相关人物记忆，以及组织、物件、能力和地点的当前描述与本地历史。</div>
       </div>
       <div class="we-input-group" style="display:flex;gap:6px;">
         <div style="flex:1;">
-          <label>人物搜寻层数（N）</label>
+          <label>名称搜寻层数（N）</label>
           <input type="number" id="we-memory-search-depth" min="1" step="1" value="${searchDepth}" style="width:100%;">
         </div>
         <div style="flex:1;">
-          <label>每个人物最多注入</label>
+          <label>每个条目最多注入</label>
           <input type="number" id="we-memory-max-per-character" min="1" step="1" value="${maxPerCharacter}" style="width:100%;">
         </div>
       </div>`;
 
     const backfillBody = `
-      <div style="font-size:11px;color:var(--we-text3);margin-bottom:6px;">从第 1 个 AI 楼层开始，分批重新提取人物主观记忆。只会重建记忆引擎数据，不会清空或改写世界引擎状态。</div>
+      <div style="font-size:11px;color:var(--we-text3);margin-bottom:6px;">从第 1 个 AI 楼层开始，分批重新提取人物主观记忆与世界实体记忆。只会重建记忆引擎数据，不会清空或改写世界引擎状态。</div>
       <div style="display:flex;gap:6px;flex-wrap:wrap;">
         <div class="we-input-group" style="flex:1;min-width:90px;margin-bottom:0;"><label>每批 AI 楼层数</label>
           <input type="number" id="we-memory-backfill-batch" min="1" step="1" value="${backfillBatch}"></div>
@@ -697,7 +700,7 @@ window.WORLD_ENGINE_UI = (function() {
           <input type="checkbox" id="we-memory-sync-to-chat" ${settings.syncToChat === true ? 'checked' : ''}>
           跨设备实时同步（存进当前聊天）
         </label>
-        <div style="font-size:11px;color:var(--we-text3);margin-top:3px;">开启后，本聊天的人物记忆会持续写入酒馆聊天文件并随之跨设备同步；换设备打开同一聊天即可续上进度。<b>不会</b>同步 API Key，也不会读写世界引擎存档。</div>
+        <div style="font-size:11px;color:var(--we-text3);margin-top:3px;">开启后，本聊天的人物与实体记忆会持续写入酒馆聊天文件并随之跨设备同步；换设备打开同一聊天即可续上进度。<b>不会</b>同步 API Key，也不会读写世界引擎存档。</div>
       </div>
       <div class="we-input-group">
         <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
@@ -725,14 +728,14 @@ window.WORLD_ENGINE_UI = (function() {
     const memoryAboutBody = `
       <div class="we-about-current"><span class="we-changelog-cur">记忆引擎 v${h(memoryVersion)}</span></div>
       <div class="we-section" style="margin-top:10px;">
-        <div class="we-section-title">人物主观记忆引擎</div>
+        <div class="we-section-title">人物与世界实体记忆引擎</div>
         <div style="font-size:12px;color:var(--we-text2);line-height:1.7;">
-          独立维护人物、时间、知情人与主观记忆；复用世界引擎的 API 请求、轮次与 reroll 基础能力，但不共享运行设置、主题、世界书选择、调试数据或存档。
+          独立维护人物主观记忆，以及组织、物件、能力、地点四类实体的当前描述与本地历史；复用世界引擎的 API 请求、轮次与 reroll 基础能力，但不共享运行设置、主题、世界书选择、调试数据或存档。
         </div>
       </div>
       <div class="we-section" style="margin-top:10px;">
-        <div class="we-section-title">v${h(memoryVersion)} · 初始版本</div>
-        <div style="font-size:12px;color:var(--we-text2);line-height:1.7;">建立独立设置页、主观记忆提取协议、绝对时间、知情人、50字限制与最少核心记忆筛选。</div>
+        <div class="we-section-title">v${h(memoryVersion)} · 世界实体记忆</div>
+        <div style="font-size:12px;color:var(--we-text2);line-height:1.7;">API 返回扁平实体更新（类型、名称、描述更新、新增事件、时间）；非空描述覆盖本地，空描述保持不变，非空事件去重追加到历史。</div>
       </div>`;
 
     const memoryWorldbookBody = `
@@ -750,7 +753,7 @@ window.WORLD_ENGINE_UI = (function() {
     const panelContent = {
       common: sec('set-memory-api', '记忆引擎 API', apiBody)
         + sec('set-memory-evolve', '记忆提取模式', modeBody)
-        + sec('set-memory-inject', '人物记忆注入', injectBody),
+        + sec('set-memory-inject', '人物与实体记忆注入', injectBody),
       advanced: sec('set-memory-retry', 'API 自动重试', retryBody)
         + sec('set-memory-backfill', '批量重填记忆推演', backfillBody)
         + sec('set-memory-filter', '输入过滤器', filterBody)
@@ -2471,11 +2474,11 @@ window.WORLD_ENGINE_UI = (function() {
       || null;
     const status = snap ? snap.status : 'NOT_YET';
     const fallbackText = memoryScope ? {
-      NOT_YET: '尚未生成，暂无人物记忆注入记录',
-      SKIPPED_DISABLED: '本轮未注入：人物记忆注入已关闭',
+      NOT_YET: '尚未生成，暂无记忆注入记录',
+      SKIPPED_DISABLED: '本轮未注入：记忆注入已关闭',
       SKIPPED_REROLL: '本轮按设计未注入：同层重 roll',
-      SKIPPED_OTHER: '本轮未注入：没有匹配到相关人物记忆',
-      SUCCESS: '✅ 本轮人物记忆已进入正文',
+      SKIPPED_OTHER: '本轮未注入：没有匹配到相关记忆',
+      SUCCESS: '✅ 本轮记忆信息已进入正文',
       MISSING: '❌ 已注册却没进最终 prompt'
     } : {};
     const text = insp?.statusText ? insp.statusText(status, memoryScope ? 'memory' : 'world') : (fallbackText[status] || fallbackText.NOT_YET || '');
@@ -5291,7 +5294,7 @@ window.WORLD_ENGINE_UI = (function() {
     if (!window.MEMORY_ENGINE?.manualExtract) { showToast('记忆提取入口未就绪', true); return; }
     try {
       const result = await window.MEMORY_ENGINE.manualExtract();
-      showToast(`记忆提取完成，新增 ${result?.added || 0} 条`);
+      showToast(`记忆提取完成，写入或更新 ${result?.added || 0} 项`);
       return result;
     } catch (error) {
       showToast(`记忆提取失败：${error?.message || error}`, true);
@@ -5302,7 +5305,7 @@ window.WORLD_ENGINE_UI = (function() {
     if (!window.MEMORY_ENGINE?.manualReextract) { showToast('记忆推演入口未就绪', true); return; }
     try {
       const result = await window.MEMORY_ENGINE.manualReextract();
-      showToast(`记忆重新推演完成，写入 ${result?.added || 0} 条`);
+      showToast(`记忆重新推演完成，写入或更新 ${result?.added || 0} 项`);
     } catch (error) { showToast(`记忆重新推演失败：${error?.message || error}`, true); }
   }
 

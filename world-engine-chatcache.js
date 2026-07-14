@@ -511,8 +511,10 @@ window.WORLD_ENGINE_CHATCACHE = (function() {
     function meta(id) {
       try {
         const state = JSON.parse(store().getItem(MSLOTS.state(id)) || '{}');
-        return { round: Number(state.round) || 0, characters: Array.isArray(state.personal_memory) ? state.personal_memory.length : 0 };
-      } catch (e) { return { round: 0, characters: 0 }; }
+        const entities = ['organization', 'object', 'ability', 'location']
+          .reduce((sum, type) => sum + (Array.isArray(state.entity_memory?.[type]) ? state.entity_memory[type].length : 0), 0);
+        return { round: Number(state.round) || 0, characters: Array.isArray(state.personal_memory) ? state.personal_memory.length : 0, entities };
+      } catch (e) { return { round: 0, characters: 0, entities: 0 }; }
     }
     function read() { const ns = getCtx()?.chatMetadata?.[MEMORY_NS]; return ns && typeof ns === 'object' ? ns : null; }
     function ensure() {
@@ -536,7 +538,7 @@ window.WORLD_ENGINE_CHATCACHE = (function() {
     }
     function add(ns, input, id) {
       const info = meta(id);
-      const snap = { id: 'm' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6), name: input.name, auto: !!input.auto, round: input.round ?? info.round, characters: input.characters ?? info.characters, createdAt: Date.now(), chatId: id, v: SCHEMA_VERSION, data: input.data };
+      const snap = { id: 'm' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6), name: input.name, auto: !!input.auto, round: input.round ?? info.round, characters: input.characters ?? info.characters, entities: input.entities ?? info.entities, createdAt: Date.now(), chatId: id, v: SCHEMA_VERSION, data: input.data };
       ns.snapshots.unshift(snap);
       const autos = ns.snapshots.filter(s => s.auto).slice(0, MAX_AUTO_BACKUPS);
       const manuals = ns.snapshots.filter(s => !s.auto).slice(0, MAX_MANUAL_BACKUPS);
@@ -596,10 +598,10 @@ window.WORLD_ENGINE_CHATCACHE = (function() {
     }
     function renameSnapshot(id, name) { const ns = ensure(), snap = ns.snapshots.find(s => s.id === id); if (!snap) return false; snap.name = String(name || snap.name).slice(0, 60); return write(ns); }
     function deleteSnapshot(id) { const ns = ensure(), before = ns.snapshots.length; ns.snapshots = ns.snapshots.filter(s => s.id !== id); return ns.snapshots.length !== before && write(ns); }
-    function exportSnapshot(id) { const s = listSnapshots().find(x => x.id === id); return s ? { type: 'memory-engine-chat-snapshot', v: SCHEMA_VERSION, name: s.name, round: s.round, characters: s.characters, createdAt: s.createdAt, data: s.data } : null; }
+    function exportSnapshot(id) { const s = listSnapshots().find(x => x.id === id); return s ? { type: 'memory-engine-chat-snapshot', v: SCHEMA_VERSION, name: s.name, round: s.round, characters: s.characters, entities: s.entities, createdAt: s.createdAt, data: s.data } : null; }
     function importSnapshot(obj) {
       const ctx = getCtx(); if (!chatUsable(ctx) || obj?.type !== 'memory-engine-chat-snapshot' || !obj.data) return null;
-      const ns = ensure(), snap = add(ns, { name: String(obj.name || '导入存档') + '（导入）', auto: false, round: obj.round, characters: obj.characters, data: obj.data }, ctx.chatId);
+      const ns = ensure(), snap = add(ns, { name: String(obj.name || '导入存档') + '（导入）', auto: false, round: obj.round, characters: obj.characters, entities: obj.entities, data: obj.data }, ctx.chatId);
       return write(ns) ? snap : null;
     }
     function getStatus() { const ctx = getCtx(), ns = read(); return { usable: chatUsable(ctx), apiAvailable: !!(ctx && (typeof ctx.updateChatMetadata === 'function' || ctx.chatMetadata)), syncEnabled: syncOn(), autoBackupEnabled: backupOn(), localRev: chatUsable(ctx) ? mrev(ctx.chatId) : 0, liveRev: Number(ns?.live?.rev) || 0, snapshotCount: ns?.snapshots?.length || 0 }; }
