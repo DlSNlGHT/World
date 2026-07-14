@@ -1309,14 +1309,16 @@ window.WORLD_ENGINE_UI = (function() {
     const memoryAboutBody = `
       <div class="we-about-current"><span class="we-changelog-cur">记忆引擎 v${h(memoryVersion)}</span></div>
       <div class="we-section" style="margin-top:10px;">
-        <div class="we-section-title">人物、实体与事件记忆引擎</div>
+        <div class="we-section-title">记忆引擎 1.0</div>
         <div style="font-size:12px;color:var(--we-text2);line-height:1.7;">
-          独立维护人物主观记忆，组织、物件、能力、地点四类实体的当前描述与本地历史，以及分层的事件大小总结；复用世界引擎的 API 请求、轮次与 reroll 基础能力，但不共享运行设置、主题、世界书选择、调试数据或存档。
+          面向长篇对话的独立记忆系统。人物记忆保留知情人边界，实体记忆维护组织、物件、能力与地点的当前状态和历史；纪要按新增轮次记录阶段事件，总述再将多条纪要压缩为长期脉络。
         </div>
       </div>
       <div class="we-section" style="margin-top:10px;">
-        <div class="we-section-title">v${h(memoryVersion)} · 世界实体记忆</div>
-        <div style="font-size:12px;color:var(--we-text2);line-height:1.7;">API 返回扁平实体更新（类型、名称、描述更新、新增事件、时间）；非空描述覆盖本地，空描述保持不变，非空事件去重追加到历史。</div>
+        <div class="we-section-title">v1.0.0 · 正式版本</div>
+        <div style="font-size:12px;color:var(--we-text2);line-height:1.7;">
+          人物、实体、纪要、总述均可在面板中查看和编辑，并支持完整 JSON 导入导出与独立存档。可选择向世界引擎提供命中人物和实体的最新记忆；该模式不会把纪要或总述重复送入世界推演。
+        </div>
       </div>`;
 
     const memoryWorldbookBody = `
@@ -1780,6 +1782,7 @@ window.WORLD_ENGINE_UI = (function() {
   //   date    —— 可选，日期不确定的留月份/年份；
   //   items   —— 该版本改动条目（每条一行，渲染时走 h() 转义）。
   const CHANGELOG = [
+    { version: '3.0.0', date: '2026-07-14', items: ['世界引擎进入 3.0 正式版本：继续以独立世界状态推演、分层注入、本地事件机制、可编辑面板与聊天级存档为核心。', '记忆引擎 1.0 正式接入：人物、实体、纪要与总述保持独立数据和故障边界，并可按需向世界推演提供命中的最新人物与实体记忆。', '自动纪要从首次进入聊天时的当前层开始统计新增轮次；历史对话整理仅由大小总结批量重填执行。'] },
     { version: '2.5.4', date: '2026-07-14', items: ['记忆引擎任务接入顶部运行提示：人物/实体、纪要、总述在自动或手动执行时均显示开始、完成、失败或停止状态。'] },
     { version: '2.5.3', date: '2026-07-14', items: ['记忆引擎标题下方新增处理游标：人物/实体处理楼层、纪要处理楼层及总述已归并纪要条数；未处理时统一显示 0，不新增存储字段。'] },
     { version: '2.5.2', date: '2026-07-14', items: ['世界与记忆设置新增“首楼为 AI 开场白”，默认开启；开启时自动总结和批量重填忽略第 0 层，关闭时首楼按普通对话参与处理。', '记忆数据编辑器统一使用深色输入框与白色文字，提升各主题下的编辑可读性。'] },
