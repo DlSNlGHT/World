@@ -384,7 +384,7 @@ window.WORLD_ENGINE_UI = (function() {
     return '<div class="we-prompt-debug">'
       + '<div class="we-prompt-debug-summary">只显示最近一次实际运行记录；内置记忆 Prompt 不在设置中展示，也不开放修改。</div>'
       + renderInjectInspector('memory')
-      + card('发送给记忆后台 API 的实际 Prompt', sentPrompt ? sentPrompt.length + '字' : '暂无', sentPrompt, '执行记忆提取后显示本次真正发送的完整 Prompt。')
+      + card('发送给记忆后台 API 的实际 Prompt', sentPrompt ? sentPrompt.length + '字' : '暂无', sentPrompt, '执行人物实体提取、小总结或大总结后，显示本次真正发送的完整 Prompt。')
       + card('记忆后台 API 原始返回', apiResult ? apiResult.length + '字' : '暂无', apiResult, '执行记忆提取后显示后台 API 的原始返回。')
       + '<div style="display:flex;gap:6px;margin-top:8px;"><button class="we-btn" id="we-memory-export-prompt" style="flex:1;">导出完整 Prompt</button><button class="we-btn" id="we-memory-export-raw-result" style="flex:1;">导出 API 返回</button></div>'
       + '</div>';
@@ -396,8 +396,11 @@ window.WORLD_ENGINE_UI = (function() {
     const count = Array.isArray(checkpoint?.personal_memory) ? checkpoint.personal_memory.length : 0;
     const entityCount = ['organization', 'object', 'ability', 'location']
       .reduce((sum, type) => sum + (Array.isArray(checkpoint?.entity_memory?.[type]) ? checkpoint.entity_memory[type].length : 0), 0);
+    const smallSummaryCount = Array.isArray(checkpoint?.event_memory?.small_summaries)
+      ? checkpoint.event_memory.small_summaries.length : 0;
+    const hasBigSummary = Boolean(checkpoint?.event_memory?.big_summary?.content);
     const content = checkpoint
-      ? '<div class="we-hint">包含 ' + count + ' 个人物、' + entityCount + ' 个世界实体</div><pre class="we-prompt-seg-pre">' + h(JSON.stringify(checkpoint, null, 2)) + '</pre>'
+      ? '<div class="we-hint">包含 ' + count + ' 个人物、' + entityCount + ' 个世界实体、' + smallSummaryCount + ' 条小总结' + (hasBigSummary ? '和 1 条大总结' : '') + '</div><pre class="we-prompt-seg-pre">' + h(JSON.stringify(checkpoint, null, 2)) + '</pre>'
       : '<div class="we-empty">暂无存档点</div>';
     return '<div class="we-section" style="margin-top:16px;"><div class="we-section-title">'
       + sectionHeader(checkpoint ? '存档点 - ' + count + ' 人物 / ' + entityCount + ' 实体' : '存档点', 'memory-checkpoint-section')
@@ -535,6 +538,8 @@ window.WORLD_ENGINE_UI = (function() {
     const everyX = Math.max(1, parseInt(settings.evolveEveryX) || 5);
     const readRounds = Math.min(everyX, Math.max(1, parseInt(settings.evolveReadRounds) || everyX));
     const manualReadRounds = Math.max(1, parseInt(settings.manualReadRounds) || 5);
+    const smallSummaryEveryX = Math.max(1, parseInt(settings.smallSummaryEveryX) || 5);
+    const bigSummaryEveryX = Math.max(1, parseInt(settings.bigSummaryEveryX) || 5);
     const searchDepth = Math.max(1, parseInt(settings.searchDepth) || 5);
     const maxPerCharacter = Math.max(1, parseInt(settings.maxPerCharacter) || 20);
     const backfillBatch = Math.max(1, parseInt(settings.backfillBatchSize) || 5);
@@ -613,13 +618,30 @@ window.WORLD_ENGINE_UI = (function() {
         <button class="we-btn we-btn-primary" id="we-memory-run-now" type="button">手动提取记忆（向前）</button>
       </div>`;
 
+    const summaryBody = `
+      <div style="font-size:11px;color:var(--we-text3);margin-bottom:8px;">小总结按独立楼层游标每 X 个 AI 楼层生成一次，正文不超过 200 字；每新增 Y 条小总结，滚动更新一次不超过 500 字的大总结。</div>
+      <div class="we-input-group" style="display:flex;gap:6px;">
+        <div style="flex:1;">
+          <label>小总结间隔楼层（X）</label>
+          <input type="number" id="we-memory-small-summary-every" min="1" step="1" value="${smallSummaryEveryX}" style="width:100%;">
+        </div>
+        <div style="flex:1;">
+          <label>大总结合并小总结数（Y）</label>
+          <input type="number" id="we-memory-big-summary-every" min="1" step="1" value="${bigSummaryEveryX}" style="width:100%;">
+        </div>
+      </div>
+      <div style="display:flex;gap:6px;flex-wrap:wrap;">
+        <button class="we-btn" id="we-memory-small-summary-now" type="button"><i class="fa-solid fa-align-left"></i> 手动小总结</button>
+        <button class="we-btn" id="we-memory-big-summary-now" type="button"><i class="fa-solid fa-book-open"></i> 手动大总结</button>
+      </div>`;
+
     const injectBody = `
       <div class="we-input-group">
         <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
           <input type="checkbox" id="we-memory-inject" ${settings.injectIntoPrompt !== false ? 'checked' : ''}>
-          注入人物与实体记忆
+          注入记忆信息
         </label>
-        <div style="font-size:11px;color:var(--we-text3);margin-top:3px;">生成回复前扫描最近 N 层正文中的人物及实体名称，注入相关人物记忆，以及组织、物件、能力和地点的当前描述与本地历史。</div>
+        <div style="font-size:11px;color:var(--we-text3);margin-top:3px;">注入当前大总结和尚未归并的小总结；同时扫描最近 N 层正文中的人物及实体名称，按需注入相关人物与实体记忆。</div>
       </div>
       <div class="we-input-group" style="display:flex;gap:6px;">
         <div style="flex:1;">
@@ -633,20 +655,22 @@ window.WORLD_ENGINE_UI = (function() {
       </div>`;
 
     const backfillBody = `
-      <div style="font-size:11px;color:var(--we-text3);margin-bottom:6px;">从第 1 个 AI 楼层开始，分批重新提取人物主观记忆与世界实体记忆。只会重建记忆引擎数据，不会清空或改写世界引擎状态。</div>
+      <div style="font-size:11px;color:var(--we-text3);margin-bottom:6px;">两类重填彼此独立：人物/实体重填不会清理大小总结；大小总结重填不会改写人物与实体。</div>
       <div style="display:flex;gap:6px;flex-wrap:wrap;">
-        <div class="we-input-group" style="flex:1;min-width:90px;margin-bottom:0;"><label>每批 AI 楼层数</label>
+        <div class="we-input-group" style="flex:1;min-width:90px;margin-bottom:0;"><label>人物实体每批楼层</label>
           <input type="number" id="we-memory-backfill-batch" min="1" step="1" value="${backfillBatch}"></div>
         <div class="we-input-group" style="flex:1;min-width:90px;margin-bottom:0;"><label>结束楼层（0=全部）</label>
           <input type="number" id="we-memory-backfill-end" min="0" step="1" value="${backfillEnd}"></div>
         <div class="we-input-group" style="flex:1;min-width:90px;margin-bottom:0;"><label>每批重试次数</label>
           <input type="number" id="we-memory-backfill-retries" min="0" step="1" value="${backfillRetries}"></div>
       </div>
-      <div class="we-hint" id="we-memory-backfill-status" style="margin:6px 0;"></div>
+      <div class="we-hint" id="we-memory-person-backfill-status" style="margin:6px 0;"></div>
       <div style="display:flex;gap:6px;flex-wrap:wrap;margin:6px 0;">
-        <button class="we-btn we-btn-primary" id="we-memory-backfill-start">▶ 开始重填记忆推演</button>
+        <button class="we-btn we-btn-primary" id="we-memory-backfill-start">▶ 重填人物与实体</button>
+        <button class="we-btn we-btn-primary" id="we-memory-summary-backfill-start">▶ 重填大小总结</button>
         <button class="we-btn" id="we-memory-backfill-stop">■ 停止</button>
-      </div>`;
+      </div>
+      <div class="we-hint" id="we-memory-summary-backfill-status" style="margin:6px 0;"></div>`;
 
     const memoryTheme = getStoredMemoryTheme();
     const memoryThemeOptions = WE_THEMES.map(theme =>
@@ -728,9 +752,9 @@ window.WORLD_ENGINE_UI = (function() {
     const memoryAboutBody = `
       <div class="we-about-current"><span class="we-changelog-cur">记忆引擎 v${h(memoryVersion)}</span></div>
       <div class="we-section" style="margin-top:10px;">
-        <div class="we-section-title">人物与世界实体记忆引擎</div>
+        <div class="we-section-title">人物、实体与事件记忆引擎</div>
         <div style="font-size:12px;color:var(--we-text2);line-height:1.7;">
-          独立维护人物主观记忆，以及组织、物件、能力、地点四类实体的当前描述与本地历史；复用世界引擎的 API 请求、轮次与 reroll 基础能力，但不共享运行设置、主题、世界书选择、调试数据或存档。
+          独立维护人物主观记忆，组织、物件、能力、地点四类实体的当前描述与本地历史，以及分层的事件大小总结；复用世界引擎的 API 请求、轮次与 reroll 基础能力，但不共享运行设置、主题、世界书选择、调试数据或存档。
         </div>
       </div>
       <div class="we-section" style="margin-top:10px;">
@@ -753,7 +777,8 @@ window.WORLD_ENGINE_UI = (function() {
     const panelContent = {
       common: sec('set-memory-api', '记忆引擎 API', apiBody)
         + sec('set-memory-evolve', '记忆提取模式', modeBody)
-        + sec('set-memory-inject', '人物与实体记忆注入', injectBody),
+        + sec('set-memory-event-summary', '事件记忆 · 大小总结', summaryBody)
+        + sec('set-memory-inject', '记忆信息注入', injectBody),
       advanced: sec('set-memory-retry', 'API 自动重试', retryBody)
         + sec('set-memory-backfill', '批量重填记忆推演', backfillBody)
         + sec('set-memory-filter', '输入过滤器', filterBody)
@@ -4071,6 +4096,8 @@ window.WORLD_ENGINE_UI = (function() {
           evolveEveryX: everyX,
           evolveReadRounds: Math.min(everyX, Math.max(1, parseInt(gv('we-memory-readrounds')) || everyX)),
           manualReadRounds: Math.max(1, parseInt(gv('we-memory-manual-readrounds')) || 5),
+          smallSummaryEveryX: Math.max(1, parseInt(gv('we-memory-small-summary-every')) || 5),
+          bigSummaryEveryX: Math.max(1, parseInt(gv('we-memory-big-summary-every')) || 5),
           injectIntoPrompt: document.getElementById('we-memory-inject')?.checked !== false,
           searchDepth: Math.max(1, parseInt(gv('we-memory-search-depth')) || 5),
           maxPerCharacter: Math.max(1, parseInt(gv('we-memory-max-per-character')) || 20),
@@ -4226,6 +4253,39 @@ window.WORLD_ENGINE_UI = (function() {
         memoryRunNow.disabled = true;
         try { await runMemoryExtract(); }
         finally { memoryRunNow.disabled = false; }
+      };
+    }
+    const memorySmallSummaryNow = document.getElementById('we-memory-small-summary-now');
+    if (memorySmallSummaryNow) {
+      memorySmallSummaryNow.onclick = async () => {
+        memorySmallSummaryNow.disabled = true;
+        try {
+          const result = await window.MEMORY_ENGINE?.manualSmallSummary?.();
+          showToast(`小总结完成${result?.updatedBig ? '，并已同步更新大总结' : ''}`);
+          refresh();
+        } catch (error) { showToast(`小总结失败：${error?.message || error}`, true); }
+        finally { memorySmallSummaryNow.disabled = false; }
+      };
+    }
+    const memoryBigSummaryNow = document.getElementById('we-memory-big-summary-now');
+    if (memoryBigSummaryNow) {
+      memoryBigSummaryNow.onclick = async () => {
+        memoryBigSummaryNow.disabled = true;
+        try {
+          await window.MEMORY_ENGINE?.manualBigSummary?.();
+          showToast('大总结完成');
+          refresh();
+        } catch (error) { showToast(`大总结失败：${error?.message || error}`, true); }
+        finally { memoryBigSummaryNow.disabled = false; }
+      };
+    }
+    const memorySummaryBackfillStart = document.getElementById('we-memory-summary-backfill-start');
+    if (memorySummaryBackfillStart) {
+      memorySummaryBackfillStart.onclick = async () => {
+        memorySummaryBackfillStart.disabled = true;
+        try { await window.MEMORY_ENGINE?.backfillSummaries?.(); }
+        catch (error) { showToast(`大小总结重填失败：${error?.message || error}`, true); }
+        finally { memorySummaryBackfillStart.disabled = false; }
       };
     }
     const memoryBackfillStop = document.getElementById('we-memory-backfill-stop');

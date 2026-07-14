@@ -8,6 +8,7 @@ window.MEMORY_ENGINE = (function() {
   let abortController = null, autoTimer = null, lastEventKey = '';
   let lastDebug = { prompt: '', rawResult: '', parsed: null, error: '' };
   let backfillStatus = { running: false, current: 0, total: 0, message: '' };
+  let summaryBackfillStatus = { running: false, current: 0, total: 0, message: '' };
 
   const clone = v => v == null ? v : JSON.parse(JSON.stringify(v));
   const clean = v => String(v == null ? '' : v).trim();
@@ -38,30 +39,52 @@ window.MEMORY_ENGINE = (function() {
     return found.length ? clean(found.at(-1)[1].split('丨').slice(0, 3).join(' ')) : '';
   }
 
-  async function buildRequestPrompt(conversation, state, st) {
-    const filtered = window.WORLD_ENGINE_CORE?.filterDialogue?.(
+  function filterConversation(conversation, st) {
+    return window.WORLD_ENGINE_CORE?.filterDialogue?.(
       conversation, { evolveFilterRegex: st.filterRegex || '' }
     ) || conversation;
-    let worldbook = '';
-    if (st.worldbookEnabled && window.WORLD_ENGINE_WORLDBOOK?.buildPromptSection) {
-      worldbook = await window.WORLD_ENGINE_WORLDBOOK.buildPromptSection(filtered, 'memory');
-    }
-    const user = window.MEMORY_ENGINE_PROMPT.buildUserPrompt({
-      currentStoryTime: extractStoryTime(filtered),
-      knownPeople: (state.personal_memory || []).map(character => unique(character.names)),
-      knownEntities: ENTITY_TYPES.flatMap(type => (state.entity_memory?.[type] || []).map(entity => ({
-        type: ENTITY_LABELS[type],
-        name: entity.name,
-        description: entity.description
-      }))),
-      worldbook,
-      conversation: filtered
-    });
-    const tone = clean(st.tonePrompt);
-    return `${window.MEMORY_ENGINE_PROMPT.SYSTEM_PROMPT}\n\n${user}${tone ? `\n\n【附加要求】\n${tone}` : ''}`;
   }
 
-  function parseResponse(raw) {
+  async function buildRequestPrompt(tasks, state, st) {
+    const segments = [];
+    if (tasks.memory) {
+      const filtered = filterConversation(tasks.memory.conversation, st);
+      let worldbook = '';
+      if (st.worldbookEnabled && window.WORLD_ENGINE_WORLDBOOK?.buildPromptSection) {
+        worldbook = await window.WORLD_ENGINE_WORLDBOOK.buildPromptSection(filtered, 'memory');
+      }
+      const user = window.MEMORY_ENGINE_PROMPT.buildUserPrompt({
+        currentStoryTime: extractStoryTime(filtered),
+        knownPeople: (state.personal_memory || []).map(character => unique(character.names)),
+        knownEntities: ENTITY_TYPES.flatMap(type => (state.entity_memory?.[type] || []).map(entity => ({
+          type: ENTITY_LABELS[type], name: entity.name, description: entity.description
+        }))),
+        worldbook,
+        conversation: filtered
+      });
+      segments.push(`【任务说明】\n${window.MEMORY_ENGINE_PROMPT.TASK_PROMPT || window.MEMORY_ENGINE_PROMPT.SYSTEM_PROMPT}\n\n${user}`);
+    }
+    if (tasks.small) {
+      segments.push(`【任务说明】\n${window.MEMORY_ENGINE_SMALL_SUMMARY_PROMPT.SYSTEM_PROMPT}\n\n${window.MEMORY_ENGINE_SMALL_SUMMARY_PROMPT.buildUserPrompt({
+        ...tasks.small,
+        conversation: filterConversation(tasks.small.conversation, st)
+      })}`);
+    }
+    if (tasks.big) {
+      segments.push(`【任务说明】\n${window.MEMORY_ENGINE_BIG_SUMMARY_PROMPT.SYSTEM_PROMPT}\n\n${window.MEMORY_ENGINE_BIG_SUMMARY_PROMPT.buildUserPrompt({
+        ...tasks.big,
+        conversation: filterConversation(tasks.big.conversation || '', st)
+      })}`);
+    }
+    const fields = [];
+    if (tasks.memory) fields.push('"personal_memory": []', '"entity_updates": []');
+    if (tasks.small) fields.push('"small_summary": ""');
+    if (tasks.big) fields.push('"big_summary": ""');
+    const tone = clean(st.tonePrompt);
+    return `${segments.join('\n\n=====\n\n')}\n\n【统一输出要求】\n只输出一个合法 JSON 对象，不要输出 Markdown、代码围栏或解释。对象包含本次要求的字段：\n{\n  ${fields.join(',\n  ')}\n}${tone ? `\n\n【附加要求】\n${tone}` : ''}`;
+  }
+
+  function parseResponse(raw, tasks) {
     const text = clean(raw).replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '');
     let value;
     try { value = JSON.parse(text); }
@@ -74,10 +97,10 @@ window.MEMORY_ENGINE = (function() {
       else throw new Error('API 返回中没有合法 JSON 对象或数组');
     }
     // 兼容 0.1.x：旧 API 只返回人物记忆数组。
-    const personalSource = Array.isArray(value)
+    const personalSource = tasks.memory ? (Array.isArray(value)
       ? value
-      : (value?.personal_memory || value?.memories || value?.memory || value?.data || []);
-    if (!Array.isArray(personalSource)) throw new Error('personal_memory 必须是 JSON 数组');
+      : (value?.personal_memory || value?.memories || value?.memory || value?.data || [])) : [];
+    if (tasks.memory && !Array.isArray(personalSource)) throw new Error('personal_memory 必须是 JSON 数组');
     const counts = new Map(), personal = [];
     for (const item of personalSource) {
       if (!item || typeof item !== 'object') continue;
@@ -98,7 +121,7 @@ window.MEMORY_ENGINE = (function() {
       });
       if (personal.length >= 8) break;
     }
-    const entitySource = !Array.isArray(value) && Array.isArray(value?.entity_updates)
+    const entitySource = tasks.memory && !Array.isArray(value) && Array.isArray(value?.entity_updates)
       ? value.entity_updates : [];
     const entities = {};
     for (const type of ENTITY_TYPES) entities[type] = [];
@@ -119,7 +142,19 @@ window.MEMORY_ENGINE = (function() {
       entities[type].push({ name, description, event, time: event ? sanitizeTime(item.time) : '' });
       entityUpdateCount++;
     }
-    return { personal, entities };
+    let smallSummary = '';
+    if (tasks.small) {
+      if (Array.isArray(value) || typeof value?.small_summary !== 'string') throw new Error('small_summary 必须是字符串');
+      smallSummary = clean(value.small_summary);
+      if (Array.from(smallSummary).length > 200) throw new Error('小总结超过 200 字');
+    }
+    let bigSummary = '';
+    if (tasks.big) {
+      if (Array.isArray(value) || typeof value?.big_summary !== 'string') throw new Error('big_summary 必须是字符串');
+      bigSummary = clean(value.big_summary);
+      if (Array.from(bigSummary).length > 500) throw new Error('大总结超过 500 字');
+    }
+    return { personal, entities, smallSummary, bigSummary };
   }
 
   function sanitizeTime(value) {
@@ -264,9 +299,27 @@ window.MEMORY_ENGINE = (function() {
     return added;
   }
 
-  async function requestExtraction(conversation, options) {
+  function ensureEventState(state) {
+    if (!state.event_memory || typeof state.event_memory !== 'object' || Array.isArray(state.event_memory)) state.event_memory = {};
+    if (!Array.isArray(state.event_memory.small_summaries)) state.event_memory.small_summaries = [];
+    if (!Number.isFinite(Number(state.event_memory.big_summary_cursor))) state.event_memory.big_summary_cursor = 0;
+    state.event_memory.big_summary_cursor = Math.max(0, Math.min(
+      state.event_memory.small_summaries.length, Number(state.event_memory.big_summary_cursor) || 0
+    ));
+    return state.event_memory;
+  }
+
+  function nextSmallSummaryId(eventMemory) {
+    const max = (eventMemory.small_summaries || []).reduce((number, item) => {
+      const match = /^small_(\d+)$/.exec(clean(item?.id));
+      return Math.max(number, match ? Number(match[1]) : 0);
+    }, 0);
+    return `small_${String(max + 1).padStart(6, '0')}`;
+  }
+
+  async function requestTasks(tasks, options) {
     const st = settings(), state = options?.baseState ? clone(options.baseState) : data().loadState();
-    const prompt = await buildRequestPrompt(conversation, state, st);
+    const prompt = await buildRequestPrompt(tasks, state, st);
     lastDebug = { prompt, requestPrompt: prompt, rawResult: '', apiResponse: '', parsed: null, error: '' };
     const retries = Math.max(0, Number(options?.retries ?? st.apiAutoRetries) || 0);
     for (let attempt = 0; attempt <= retries; attempt++) {
@@ -275,7 +328,7 @@ window.MEMORY_ENGINE = (function() {
           prompt, st.maxTokens, st.temperature, abortController?.signal, st
         );
         lastDebug.rawResult = lastDebug.apiResponse = raw;
-        const parsed = parseResponse(raw);
+        const parsed = parseResponse(raw, tasks);
         lastDebug.parsed = clone(parsed);
         return parsed;
       } catch (error) {
@@ -283,31 +336,65 @@ window.MEMORY_ENGINE = (function() {
         if (abortController?.signal?.aborted || attempt >= retries) throw error;
       }
     }
-    return { personal: [], entities: Object.fromEntries(ENTITY_TYPES.map(type => [type, []])) };
+    return {
+      personal: [], entities: Object.fromEntries(ENTITY_TYPES.map(type => [type, []])),
+      smallSummary: '', bigSummary: ''
+    };
   }
 
-  async function extractConversation(conversation, options) {
+  async function runTasks(tasks, options) {
     if (running && !options?.allowWhileBackfill) return { skipped: true, reason: 'running' };
+    if (!tasks?.memory && !tasks?.small && !tasks?.big) return { skipped: true, reason: 'no_tasks' };
     running = true;
     abortController = new AbortController();
     window.WORLD_ENGINE_UI?.setMemoryEvolvingUI?.(true);
     try {
       const before = options?.baseState ? clone(options.baseState) : data().loadState();
-      const extracted = await requestExtraction(conversation, { ...options, baseState: before });
+      const extracted = await requestTasks(tasks, { ...options, baseState: before });
       if (options?.saveCheckpoint !== false) data().saveCheckpoint(before);
-      const next = clone(before), addedPersonal = mergeMemories(next, extracted.personal);
-      const entityChanges = mergeEntityMemories(next, extracted.entities);
+      const next = clone(before);
+      const addedPersonal = tasks.memory ? mergeMemories(next, extracted.personal) : 0;
+      const entityChanges = tasks.memory
+        ? mergeEntityMemories(next, extracted.entities)
+        : { entities: 0, history: 0, descriptions: 0 };
+      const eventMemory = ensureEventState(next);
+      let addedSmall = 0, updatedBig = 0;
+      if (tasks.small && extracted.smallSummary) {
+        eventMemory.small_summaries.push({
+          id: nextSmallSummaryId(eventMemory),
+          startLayer: Number(tasks.small.startLayer) || 0,
+          endLayer: Number(tasks.small.endLayer) || 0,
+          content: extracted.smallSummary
+        });
+        eventMemory.small_summary_layer = Number(tasks.small.endLayer) || 0;
+        addedSmall = 1;
+      }
+      if (tasks.big && extracted.bigSummary) {
+        const first = eventMemory.small_summaries[0];
+        const last = eventMemory.small_summaries.at(-1);
+        eventMemory.big_summary = {
+          startLayer: Number(eventMemory.big_summary?.startLayer ?? first?.startLayer ?? tasks.big.startLayer) || 0,
+          endLayer: Number(last?.endLayer ?? tasks.big.endLayer) || 0,
+          content: extracted.bigSummary
+        };
+        eventMemory.big_summary_cursor = eventMemory.small_summaries.length;
+        updatedBig = 1;
+      }
       const added = addedPersonal + entityChanges.entities + entityChanges.history + entityChanges.descriptions;
-      next.round = Math.max(0, Number(next.round) || 0) + 1;
-      next.chatLayer = Number.isFinite(Number(options?.layer)) ? Number(options.layer) : currentLayer();
+      if (tasks.memory) {
+        next.round = Math.max(0, Number(next.round) || 0) + 1;
+        next.chatLayer = Number.isFinite(Number(options?.layer)) ? Number(options.layer) : currentLayer();
+      }
       data().saveState(next);
       window.WORLD_ENGINE_CHATCACHE?.forScope?.('memory')?.afterEvolution?.();
       applyInjection();
       return {
-        added,
+        added: added + addedSmall + updatedBig,
         extracted: extracted.personal.length + ENTITY_TYPES.reduce((sum, type) => sum + extracted.entities[type].length, 0),
         addedPersonal,
         entityChanges,
+        addedSmall,
+        updatedBig,
         state: next
       };
     } finally {
@@ -317,8 +404,46 @@ window.MEMORY_ENGINE = (function() {
     }
   }
 
+  async function extractConversation(conversation, options) {
+    return runTasks({ memory: { conversation } }, options);
+  }
+
   function countAiSince(layer) {
-    return chat().reduce((count, message, index) => count + (index > layer && message && !message.is_user ? 1 : 0), 0);
+    const anchor = layer !== null && layer !== '' && Number.isFinite(Number(layer)) ? Number(layer) : -1;
+    return chat().reduce((count, message, index) => count + (index > anchor && message && !message.is_user ? 1 : 0), 0);
+  }
+
+  function getAiBatchAfter(layer, maxAi, endLayer) {
+    const all = chat();
+    const anchor = layer !== null && layer !== '' && Number.isFinite(Number(layer)) ? Number(layer) : -1;
+    const end = endLayer !== undefined && Number.isFinite(Number(endLayer)) ? Number(endLayer) : all.length - 1;
+    const aiLayers = all.map((message, index) => (index > anchor && index <= end && message && !message.is_user ? index : -1))
+      .filter(index => index >= 0).slice(0, Math.max(1, parseInt(maxAi) || 1));
+    if (!aiLayers.length) return null;
+    const firstAi = aiLayers[0], finish = aiLayers.at(-1);
+    const start = firstAi > 0 && all[firstAi - 1]?.is_user ? firstAi - 1 : firstAi;
+    return {
+      startLayer: start,
+      endLayer: finish,
+      aiCount: aiLayers.length,
+      conversation: formatMessages(all.slice(start, finish + 1), start)
+    };
+  }
+
+  function buildBigTask(state, smallTask, force) {
+    const st = settings(), eventMemory = ensureEventState(state);
+    const pending = eventMemory.small_summaries.slice(eventMemory.big_summary_cursor);
+    const projected = pending.length + (smallTask ? 1 : 0);
+    const threshold = Math.max(1, parseInt(st.bigSummaryEveryX) || 5);
+    if (!force && projected < threshold) return null;
+    if (force && !projected) return null;
+    return {
+      currentSummary: eventMemory.big_summary?.content || '',
+      summaries: pending,
+      conversation: smallTask?.conversation || '',
+      startLayer: Number(eventMemory.big_summary?.startLayer ?? pending[0]?.startLayer ?? smallTask?.startLayer) || 0,
+      endLayer: Number(smallTask?.endLayer ?? pending.at(-1)?.endLayer) || 0
+    };
   }
 
   // 手动向前提取与重新推演共用：读取轮数 = min(配置上限, 基底状态至今的实际 AI 轮数)。
@@ -335,8 +460,25 @@ window.MEMORY_ENGINE = (function() {
     const state = data().loadState();
     const anchor = state.chatLayer !== null && state.chatLayer !== '' && Number.isFinite(Number(state.chatLayer))
       ? Number(state.chatLayer) : -1;
-    if (countAiSince(anchor) < Math.max(1, parseInt(st.evolveEveryX) || 1)) return;
-    return extractConversation(recentConversation(st.evolveReadRounds), { layer: currentLayer() });
+    const tasks = {};
+    if (countAiSince(anchor) >= Math.max(1, parseInt(st.evolveEveryX) || 1)) {
+      tasks.memory = { conversation: recentConversation(st.evolveReadRounds) };
+    }
+    const eventMemory = ensureEventState(state);
+    const smallEvery = Math.max(1, parseInt(st.smallSummaryEveryX) || 5);
+    const smallBatch = countAiSince(eventMemory.small_summary_layer) >= smallEvery
+      ? getAiBatchAfter(eventMemory.small_summary_layer, smallEvery) : null;
+    if (smallBatch) tasks.small = smallBatch;
+    const bigTask = buildBigTask(state, smallBatch, false);
+    if (bigTask) tasks.big = bigTask;
+    if (!tasks.memory && !tasks.small && !tasks.big) return;
+    const result = await runTasks(tasks, { layer: currentLayer(), baseState: state });
+    const after = data().loadState(), afterEvent = ensureEventState(after);
+    if (countAiSince(afterEvent.small_summary_layer) >= smallEvery) {
+      clearTimeout(autoTimer);
+      autoTimer = setTimeout(() => autoExtract().catch(error => console.error('[记忆引擎] 自动小总结补进度失败', error)), 0);
+    }
+    return result;
   }
 
   async function manualExtract() {
@@ -357,6 +499,26 @@ window.MEMORY_ENGINE = (function() {
       layer: currentLayer(),
       baseState: checkpoint
     });
+  }
+
+  async function manualSmallSummary() {
+    const st = settings();
+    if (st.engineEnabled === false) throw new Error('记忆引擎已关闭');
+    const state = data().loadState(), eventMemory = ensureEventState(state);
+    const batch = getAiBatchAfter(eventMemory.small_summary_layer, Math.max(1, parseInt(st.smallSummaryEveryX) || 5));
+    if (!batch) throw new Error('当前状态之后没有可总结的新对话');
+    const tasks = { small: batch };
+    const bigTask = buildBigTask(state, batch, false);
+    if (bigTask) tasks.big = bigTask;
+    return runTasks(tasks, { baseState: state });
+  }
+
+  async function manualBigSummary() {
+    const st = settings();
+    if (st.engineEnabled === false) throw new Error('记忆引擎已关闭');
+    const state = data().loadState(), bigTask = buildBigTask(state, null, true);
+    if (!bigTask) throw new Error('当前没有尚未并入大总结的小总结');
+    return runTasks({ big: bigTask }, { baseState: state });
   }
 
   function abort() {
@@ -384,9 +546,11 @@ window.MEMORY_ENGINE = (function() {
     if (st.engineEnabled === false || st.injectIntoPrompt === false) { clearInjection(); return ''; }
     const state = (options?.isReroll && data().loadCheckpoint()) || data().loadState();
     ensureEntityState(state);
+    const eventMemory = ensureEventState(state);
     const hasPeople = Boolean(state?.personal_memory?.length);
     const hasEntities = ENTITY_TYPES.some(type => state.entity_memory[type].length);
-    if (!hasPeople && !hasEntities) { clearInjection(); return ''; }
+    const hasEvents = Boolean(eventMemory.big_summary?.content || eventMemory.small_summaries.length);
+    if (!hasPeople && !hasEntities && !hasEvents) { clearInjection(); return ''; }
     if (!state.knowledge_index || !Object.keys(state.knowledge_index).length) rebuildKnowledgeIndex(state);
     const scan = chat().slice(-Math.max(1, parseInt(st.searchDepth) || 5)).map(message => clean(message?.mes)).join('\n');
     const appearsInScan = name => {
@@ -397,8 +561,16 @@ window.MEMORY_ENGINE = (function() {
     const matchedEntities = ENTITY_TYPES.flatMap(type => state.entity_memory[type]
       .filter(entity => appearsInScan(entity.name))
       .map(entity => ({ type, entity })));
-    if (!matched.length && !matchedEntities.length) { clearInjection(); return ''; }
     const sections = [], globalSeen = new Set(), limit = Math.max(1, parseInt(st.maxPerCharacter) || 20);
+    if (eventMemory.big_summary?.content) {
+      sections.push(`【故事大总结】\n${eventMemory.big_summary.content}`);
+    }
+    const pendingSmall = eventMemory.small_summaries.slice(eventMemory.big_summary_cursor);
+    if (pendingSmall.length) {
+      sections.push(`【近期事件小总结】\n${pendingSmall.map(item =>
+        `- [楼层 ${item.startLayer}-${item.endLayer}] ${item.content}`
+      ).join('\n')}`);
+    }
     for (const character of matched) {
       const records = [];
       for (const name of character.names || []) records.push(...(state.knowledge_index[normalized(name)] || []));
@@ -420,15 +592,21 @@ window.MEMORY_ENGINE = (function() {
       sections.push(`【相关世界实体】\n${entitySections.join('\n\n')}`);
     }
     if (!sections.length) { clearInjection(); return ''; }
-    const content = `${SENTINEL}\n人物条目是当前场景人物持有或明确知晓的主观记忆，允许彼此矛盾；实体条目记录相关组织、物件、能力与地点的当前描述和本地历史。\n\n${sections.join('\n\n')}`;
+    const content = `${SENTINEL}\n事件总结记录对话中已经发生的剧情；人物条目是当前场景人物持有或明确知晓的主观记忆，允许彼此矛盾；实体条目记录相关组织、物件、能力与地点的当前描述和本地历史。\n\n${sections.join('\n\n')}`;
     registerInjection(content);
     return content;
   }
 
   function setBackfillStatus(current, total, message) {
     backfillStatus = { running: backfillRunning, current, total, message: message || '' };
-    const element = document.getElementById('we-memory-backfill-status');
+    const element = document.getElementById('we-memory-person-backfill-status');
     if (element) element.textContent = backfillStatus.message;
+  }
+
+  function setSummaryBackfillStatus(current, total, message) {
+    summaryBackfillStatus = { running: backfillRunning, current, total, message: message || '' };
+    const element = document.getElementById('we-memory-summary-backfill-status');
+    if (element) element.textContent = summaryBackfillStatus.message;
   }
 
   async function backfill() {
@@ -443,8 +621,17 @@ window.MEMORY_ENGINE = (function() {
     if (!batches.length) { setBackfillStatus(0, 0, '没有可重填的 AI 楼层'); return; }
     backfillRunning = true;
     window.WORLD_ENGINE_CHATCACHE?.forScope?.('memory')?.createSnapshot?.('记忆重填前自动备份');
-    data().saveCheckpoint(data().loadState());
-    data().saveState(data().defaultState());
+    const original = data().loadState();
+    data().saveCheckpoint(original);
+    data().saveState({
+      ...original,
+      personal_memory: [],
+      knowledge_index: {},
+      entity_memory: { organization: [], object: [], ability: [], location: [] },
+      entity_index: {},
+      round: 0,
+      chatLayer: null
+    });
     try {
       for (let i = 0; i < batches.length && backfillRunning; i++) {
         const layers = batches[i], start = Math.max(0, layers[0] - 1), finish = layers.at(-1);
@@ -460,10 +647,54 @@ window.MEMORY_ENGINE = (function() {
     } finally { backfillRunning = false; backfillStatus.running = false; applyInjection(); }
   }
 
+  async function backfillSummaries() {
+    if (backfillRunning || running) return;
+    const st = settings(), all = chat();
+    if (st.engineEnabled === false) throw new Error('记忆引擎已关闭');
+    const configuredEnd = Math.max(0, parseInt(st.backfillEndLayer) || 0);
+    const end = Math.min(all.length - 1, configuredEnd || all.length - 1);
+    const aiLayers = all.map((message, index) => (!message?.is_user && index <= end ? index : -1)).filter(index => index >= 0);
+    const size = Math.max(1, parseInt(st.smallSummaryEveryX) || 5), batches = [];
+    for (let i = 0; i < aiLayers.length; i += size) batches.push(aiLayers.slice(i, i + size));
+    if (!batches.length) { setSummaryBackfillStatus(0, 0, '没有可重填的 AI 楼层'); return; }
+    backfillRunning = true;
+    window.WORLD_ENGINE_CHATCACHE?.forScope?.('memory')?.createSnapshot?.('大小总结重填前自动备份');
+    const original = data().loadState();
+    data().saveCheckpoint(original);
+    data().saveState({
+      ...original,
+      event_memory: { small_summaries: [], big_summary: null, small_summary_layer: null, big_summary_cursor: 0 }
+    });
+    try {
+      for (let i = 0; i < batches.length && backfillRunning; i++) {
+        const layers = batches[i], firstAi = layers[0], finish = layers.at(-1);
+        const start = firstAi > 0 && all[firstAi - 1]?.is_user ? firstAi - 1 : firstAi;
+        const smallTask = {
+          startLayer: start,
+          endLayer: finish,
+          conversation: formatMessages(all.slice(start, finish + 1), start)
+        };
+        const state = data().loadState();
+        const tasks = { small: smallTask };
+        const bigTask = buildBigTask(state, smallTask, false);
+        if (bigTask) tasks.big = bigTask;
+        setSummaryBackfillStatus(i, batches.length, `正在重填大小总结 ${i + 1} / ${batches.length}`);
+        await runTasks(tasks, {
+          baseState: state, retries: st.backfillRetries, saveCheckpoint: true, allowWhileBackfill: true
+        });
+      }
+      setSummaryBackfillStatus(batches.length, batches.length, backfillRunning ? '大小总结重填完成' : '大小总结重填已停止');
+    } catch (error) {
+      setSummaryBackfillStatus(summaryBackfillStatus.current, batches.length, `大小总结重填失败：${error?.message || error}`);
+      throw error;
+    } finally { backfillRunning = false; summaryBackfillStatus.running = false; applyInjection(); }
+  }
+
   function stopBackfill() {
     backfillRunning = false;
     abortController?.abort();
     setBackfillStatus(backfillStatus.current, backfillStatus.total, '正在停止…');
+    setSummaryBackfillStatus(summaryBackfillStatus.current, summaryBackfillStatus.total, '正在停止…');
   }
 
   function onMessageReceived() {
@@ -508,8 +739,10 @@ window.MEMORY_ENGINE = (function() {
 
   return {
     init, applyInjection, manualExtract, manualReextract, extractNow: manualExtract,
-    backfill, stopBackfill, abort,
+    manualSmallSummary, manualBigSummary,
+    backfill, backfillSummaries, stopBackfill, abort,
     getLastDebug: () => clone(lastDebug), getBackfillStatus: () => clone(backfillStatus),
+    getSummaryBackfillStatus: () => clone(summaryBackfillStatus),
     isRunning: () => running || backfillRunning
   };
 })();

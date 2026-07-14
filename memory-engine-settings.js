@@ -1,7 +1,7 @@
 // memory-engine-settings.js — 记忆引擎独立设置（只复用 API/调度等实现，不共享配置值）
 window.MEMORY_ENGINE_SETTINGS = (function() {
   const STORAGE_KEY = 'memory_engine_settings';
-  const VERSION = '0.2.0';
+  const VERSION = '0.3.0';
   const DEFAULTS = Object.freeze({
     apiUrl: '',
     apiKey: '',
@@ -15,6 +15,8 @@ window.MEMORY_ENGINE_SETTINGS = (function() {
     evolveEveryX: 5,
     evolveReadRounds: 5,
     manualReadRounds: 5,
+    smallSummaryEveryX: 5,
+    bigSummaryEveryX: 5,
     injectIntoPrompt: true,
     searchDepth: 5,
     maxPerCharacter: 20,

@@ -80,6 +80,13 @@ window.MEMORY_ENGINE_PROMPT = (function() {
 
 不得增加其他顶层字段或条目字段。`;
 
+  // 供组合任务使用：只声明本任务负责的字段，不排斥同一次请求中的其他独立任务字段。
+  const TASK_PROMPT = SYSTEM_PROMPT.replace(/【输出格式】[\s\S]*$/, `【本任务输出字段】
+返回 personal_memory 与 entity_updates 两个 JSON 字段。
+personal_memory 的每一项只能包含 name、known_by、memory、time；没有内容时返回 []。
+entity_updates 的每一项只能包含 type、name、description、event、time；没有内容时返回 []。
+严格遵守前述类型、长度、数量、时间和分类规则。`);
+
   function clean(value) {
     return String(value == null ? '' : value).trim();
   }
@@ -119,13 +126,14 @@ window.MEMORY_ENGINE_PROMPT = (function() {
 
   function buildMessages(options) {
     return [
-      { role: 'system', content: SYSTEM_PROMPT },
+      { role: 'system', content: TASK_PROMPT },
       { role: 'user', content: buildUserPrompt(options) }
     ];
   }
 
   return {
     SYSTEM_PROMPT,
+    TASK_PROMPT,
     buildUserPrompt,
     buildMessages
   };

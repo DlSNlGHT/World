@@ -2,7 +2,7 @@
 window.MEMORY_ENGINE_DATA = (function() {
   const STATE_PREFIX = 'memory_engine_state_';
   const CHECKPOINT_PREFIX = 'memory_engine_checkpoint_';
-  const VERSION = '0.2.0';
+  const VERSION = '0.3.0';
   const ENTITY_TYPES = ['organization', 'object', 'ability', 'location'];
 
   function getChatId() {
@@ -22,6 +22,12 @@ window.MEMORY_ENGINE_DATA = (function() {
       knowledge_index: {},
       entity_memory: { organization: [], object: [], ability: [], location: [] },
       entity_index: {},
+      event_memory: {
+        small_summaries: [],
+        big_summary: null,
+        small_summary_layer: null,
+        big_summary_cursor: 0
+      },
       round: 0,
       chatLayer: null
     };
@@ -50,6 +56,28 @@ window.MEMORY_ENGINE_DATA = (function() {
     }
     delete next.world_memory;
     if (!next.entity_index || typeof next.entity_index !== 'object' || Array.isArray(next.entity_index)) next.entity_index = {};
+    if (!next.event_memory || typeof next.event_memory !== 'object' || Array.isArray(next.event_memory)) next.event_memory = {};
+    if (!Array.isArray(next.event_memory.small_summaries)) next.event_memory.small_summaries = [];
+    next.event_memory.small_summaries = next.event_memory.small_summaries.map((item, index) => ({
+      id: String(item?.id || `small_${String(index + 1).padStart(6, '0')}`),
+      startLayer: Number.isFinite(Number(item?.startLayer)) ? Number(item.startLayer) : 0,
+      endLayer: Number.isFinite(Number(item?.endLayer)) ? Number(item.endLayer) : 0,
+      content: String(item?.content || '').trim()
+    })).filter(item => item.content);
+    const big = next.event_memory.big_summary;
+    next.event_memory.big_summary = big && typeof big === 'object' && String(big.content || '').trim() ? {
+      startLayer: Number.isFinite(Number(big.startLayer)) ? Number(big.startLayer) : 0,
+      endLayer: Number.isFinite(Number(big.endLayer)) ? Number(big.endLayer) : 0,
+      content: String(big.content || '').trim()
+    } : null;
+    next.event_memory.small_summary_layer = next.event_memory.small_summary_layer !== null
+      && next.event_memory.small_summary_layer !== ''
+      && Number.isFinite(Number(next.event_memory.small_summary_layer))
+      ? Number(next.event_memory.small_summary_layer) : null;
+    next.event_memory.big_summary_cursor = Math.min(
+      next.event_memory.small_summaries.length,
+      Math.max(0, parseInt(next.event_memory.big_summary_cursor) || 0)
+    );
     next.round = Math.max(0, parseInt(next.round) || 0);
     next.chatLayer = next.chatLayer !== null && next.chatLayer !== '' && Number.isFinite(Number(next.chatLayer))
       ? Number(next.chatLayer) : null;

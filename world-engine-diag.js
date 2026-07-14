@@ -289,7 +289,7 @@ window.WORLD_ENGINE_DIAG = (function() {
     const entityTypes = ['organization', 'object', 'ability', 'location'];
     const entities = entityTypes.flatMap(function (type) { return Array.isArray(state?.entity_memory?.[type]) ? state.entity_memory[type] : []; });
     return {
-      meta: safe(function () { return { engine: 'memory', extVersion: window.MEMORY_ENGINE_SETTINGS?.VERSION || '0.2.0', collectedAt: new Date().toISOString(), userAgent: navigator.userAgent }; }),
+      meta: safe(function () { return { engine: 'memory', extVersion: window.MEMORY_ENGINE_SETTINGS?.VERSION || '0.3.0', collectedAt: new Date().toISOString(), userAgent: navigator.userAgent }; }),
       env: safe(function () { const ctx = SillyTavern.getContext(); return { chatId: ctx?.chatId || null, chatCount: ctx?.chat?.length || 0, hasChatMetadata: !!ctx?.chatMetadata }; }),
       settings: safe(function () { return sanitizeSettings(window.MEMORY_ENGINE_SETTINGS?.getSettings?.(true) || {}); }),
       memoryState: safe(function () {
@@ -301,10 +301,13 @@ window.WORLD_ENGINE_DIAG = (function() {
             return total + Object.values(character.memory || {}).reduce(function (sum, list) { return sum + (Array.isArray(list) ? list.length : 0); }, 0);
           }, 0),
           entityCount: entities.length,
-          entityHistoryCount: entities.reduce(function (total, entity) { return total + (Array.isArray(entity.history) ? entity.history.length : 0); }, 0)
+          entityHistoryCount: entities.reduce(function (total, entity) { return total + (Array.isArray(entity.history) ? entity.history.length : 0); }, 0),
+          smallSummaryCount: Array.isArray(state?.event_memory?.small_summaries) ? state.event_memory.small_summaries.length : 0,
+          bigSummaryExists: !!state?.event_memory?.big_summary?.content,
+          bigSummaryCursor: Number(state?.event_memory?.big_summary_cursor) || 0
         };
       }),
-      checkpoint: safe(function () { const cp = data?.loadCheckpoint?.(); return { exists: !!cp, characterCount: Array.isArray(cp?.personal_memory) ? cp.personal_memory.length : 0, entityCount: entityTypes.reduce(function (sum, type) { return sum + (Array.isArray(cp?.entity_memory?.[type]) ? cp.entity_memory[type].length : 0); }, 0) }; }),
+      checkpoint: safe(function () { const cp = data?.loadCheckpoint?.(); return { exists: !!cp, characterCount: Array.isArray(cp?.personal_memory) ? cp.personal_memory.length : 0, entityCount: entityTypes.reduce(function (sum, type) { return sum + (Array.isArray(cp?.entity_memory?.[type]) ? cp.entity_memory[type].length : 0); }, 0), smallSummaryCount: Array.isArray(cp?.event_memory?.small_summaries) ? cp.event_memory.small_summaries.length : 0, bigSummaryExists: !!cp?.event_memory?.big_summary?.content }; }),
       extraction: safe(function () { return { isRunning: engine?.isRunning?.() ?? null, lastError: engine?.getLastError?.() || null, lastPrompt: debug?.prompt || debug?.requestPrompt || '', lastRawResult: debug?.rawResult || debug?.apiResponse || debug?.response || '' }; }),
       injectionInspector: safe(function () { return window.WORLD_ENGINE_INJECT_INSPECTOR?.getLastSnapshot?.('memory') || engine?.getLastInjectionDebug?.() || debug?.injection || { hasSnapshot: false }; }),
       chatcache: safe(function () { return { status: cache?.getStatus?.() || null, snapshots: (cache?.listSnapshots?.() || []).map(function (item) { return { id: item.id, name: item.name, auto: !!item.auto, round: item.round, characters: item.characters, entities: item.entities, createdAt: item.createdAt }; }) }; }),
