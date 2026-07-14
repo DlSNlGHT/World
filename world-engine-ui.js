@@ -1389,6 +1389,7 @@ window.WORLD_ENGINE_UI = (function() {
         'render',
         '<div class="we-empty">该引擎界面加载失败或尚未提供渲染器；其他引擎不受影响。</div>'
       );
+      if (currentFace.id === 'memory') updateMemoryPanelHeader();
       bindEvents(null);
       callEngineFace(currentFace, 'bind', undefined, panelBodyElement);
       return;
@@ -1665,6 +1666,7 @@ window.WORLD_ENGINE_UI = (function() {
   //   date    —— 可选，日期不确定的留月份/年份；
   //   items   —— 该版本改动条目（每条一行，渲染时走 h() 转义）。
   const CHANGELOG = [
+    { version: '2.5.3', date: '2026-07-14', items: ['记忆引擎标题下方新增处理游标：人物/实体处理楼层、纪要处理楼层及总述已归并纪要条数；未处理时统一显示 0，不新增存储字段。'] },
     { version: '2.5.2', date: '2026-07-14', items: ['世界与记忆设置新增“首楼为 AI 开场白”，默认开启；开启时自动总结和批量重填忽略第 0 层，关闭时首楼按普通对话参与处理。', '记忆数据编辑器统一使用深色输入框与白色文字，提升各主题下的编辑可读性。'] },
     { version: '2.5.1', date: '2026-07-13', items: ['新增「近端随机事件」本地机制：按概率生成一条与当前对话、主角、所在区域或正在发展事项存在明确因果的事件链或风声，结果自动转为正式 event/wind 对象。', '近端动态支持调整触发概率、成功后冷却及事件链/风声比例；类型由本地预选，返回不合格或 API 异常时保持原类型继续强制生成，冷却最小为 1。近端、远方与区域事件可在同轮分别完成。', '精简并放宽事件链创建与归并规则：删除「至少两种未来走向」等过度准入条件，以核心目标、主要对象和连续执行过程识别同一主事项；已有事项的步骤、阻碍、局部结果与善后沿用原 id，只有可独立跨轮发展的新事项才另建事件链。'] },
     { version: '2.5.0', date: '2026-07-12', items: ['新增「远方随机事件」本地机制：事件账本达到可调门槛后按概率触发，抽取最新四分之一账本并从旧记录随机补足至二分之一，要求推演 API 生成一条与主角及既有账本无直接关系的远方事件链或风声。', '远方动态由本地按可调比例预选事件链或风声（默认各 50%），使用临时标记确认生成成功后再分配正式 ID；返回不合格或 API 异常时保留同一类型与账本样本继续强制生成，成功后进入可调冷却。', '正文注入新增「全等级注入」选项：开启后事件链与风声的 Lv1–Lv4 全部注入；关闭时维持高等级筛选，并保留低等级事件已爆发/已完成时的注入。', '区域突发事件类型说明改为更中性的跨题材表达，去除官道、盐铺、乡兵等古风绑定词，并要求具体表现适配当前世界观、时代、技术、地理与社会制度。', '修复冷却配置为 0 时的异常：远方事件冷却、区域事件消散后冷却以及区域事件持续轮数统一限制为最小 1。'] },
@@ -2675,6 +2677,29 @@ window.WORLD_ENGINE_UI = (function() {
         URL.revokeObjectURL(url);
         showToast('API 返回已导出');
       };
+    }
+  }
+
+  function updateMemoryPanelHeader() {
+    const state = window.MEMORY_ENGINE_DATA?.loadState?.() || {};
+    const eventMemory = state.event_memory || {};
+    const memoryLayer = Number.isFinite(Number(state.chatLayer)) ? Math.max(0, Number(state.chatLayer)) : 0;
+    const summaryLayer = Number.isFinite(Number(eventMemory.small_summary_layer))
+      ? Math.max(0, Number(eventMemory.small_summary_layer)) : 0;
+    const overviewCursor = Math.max(0, parseInt(eventMemory.big_summary_cursor) || 0);
+    const roundEl = document.getElementById('we-header-round');
+    if (roundEl) roundEl.textContent = '';
+    const moodEl = document.getElementById('we-header-mood');
+    if (!moodEl) return;
+    const dot = moodEl.querySelector('.we-header-dot');
+    const text = moodEl.querySelector('.we-header-mood-text');
+    if (dot) {
+      dot.style.background = 'var(--we-accent)';
+      dot.style.boxShadow = '0 0 6px var(--we-accent)';
+    }
+    if (text) {
+      text.textContent = `人物/实体至第 ${memoryLayer} 层 · 纪要至第 ${summaryLayer} 层 · 总述至第 ${overviewCursor} 条`;
+      text.style.color = 'var(--we-text2)';
     }
   }
 
