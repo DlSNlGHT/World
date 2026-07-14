@@ -999,10 +999,12 @@
   margin-left: 3px;
 }
 .we-memory-core-ring .we-core-tier {
+  max-width: 86px;
   margin-top: 2px;
   font-size: 11px;
   letter-spacing: 0;
   color: var(--we-text2);
+  white-space: nowrap;
 }
 .we-memory-ring-legend {
   display: flex;

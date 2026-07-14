@@ -399,14 +399,14 @@ window.WORLD_ENGINE_UI = (function() {
     const stats = [
       ['人物', Array.isArray(state?.personal_memory) ? state.personal_memory.length : 0],
       ['实体', entityCount],
-      ['小结', smallSummaries.length],
-      ['待归档', pendingSmall]
+      ['纪要', smallSummaries.length],
+      ['总述', eventMemory.big_summary?.content ? 1 : 0]
     ].map(([label, value]) => `<div class="we-core-stat"><div class="we-core-stat-k">${label}</div><div class="we-core-stat-v">${value}</div></div>`).join('');
     const centerMain = smallRemaining > 0 ? smallRemaining : '待执行';
     const centerUnit = smallRemaining > 0 ? '<span>楼</span>' : '';
 
     return `<div class="we-section we-core-section we-memory-core-section">
-      <div class="we-core" title="小总结 ${Math.min(elapsedFloors, smallTarget)}/${smallTarget} 楼 · 大总结 ${Math.min(pendingSmall, bigTarget)}/${bigTarget} 条小总结">
+      <div class="we-core" title="纪要 ${Math.min(elapsedFloors, smallTarget)}/${smallTarget} 楼 · 总述 ${Math.min(pendingSmall, bigTarget)}/${bigTarget} 条纪要">
         <div class="we-core-ring we-memory-core-ring">
           <svg viewBox="0 0 160 160" width="160" height="160" aria-hidden="true">
             <circle cx="80" cy="80" r="64" fill="none" stroke="color-mix(in srgb, var(--we-accent) 18%, transparent)" stroke-width="6"/>
@@ -416,12 +416,12 @@ window.WORLD_ENGINE_UI = (function() {
           </svg>
           <div class="we-core-center">
             <div class="we-core-title">记忆脉络</div>
-            <div class="we-core-sub">下一次小总结</div>
+            <div class="we-core-sub">下一次纪要</div>
             <div class="we-core-pct we-memory-core-value">${centerMain}${centerUnit}</div>
-            <div class="we-core-tier">${bigRemaining > 0 ? `大总结还差 ${bigRemaining} 条` : '大总结待执行'}</div>
+            <div class="we-core-tier">${bigRemaining > 0 ? `总述差 ${bigRemaining} 条` : '总述待执行'}</div>
           </div>
         </div>
-        <div class="we-memory-ring-legend"><span><i class="we-memory-legend-small"></i>小总结 ${Math.min(elapsedFloors, smallTarget)}/${smallTarget} 楼</span><span><i class="we-memory-legend-big"></i>大总结 ${Math.min(pendingSmall, bigTarget)}/${bigTarget} 条</span></div>
+        <div class="we-memory-ring-legend"><span><i class="we-memory-legend-small"></i>纪要 ${Math.min(elapsedFloors, smallTarget)}/${smallTarget} 楼</span><span><i class="we-memory-legend-big"></i>总述 ${Math.min(pendingSmall, bigTarget)}/${bigTarget} 条</span></div>
         <div class="we-core-stats">${stats}</div>
       </div>
     </div>`;
