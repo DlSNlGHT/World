@@ -372,12 +372,47 @@
   background: radial-gradient(circle at 35% 30%, var(--we-ball-sat-hover-start), var(--we-ball-sat-hover-end));
   box-shadow: 0 0 9px var(--we-ball-sat-glow);
 }
-/* 三颗卫星中心距球心 33px（贴合球缘），正落在轨道线上。
+/* 五颗卫星沿轨道分布；四颗位于正方向，引擎快捷入口位于右下角。
    用 id 提高优先级，盖过 > .we-sat 的 inset:auto */
 #we-input-btn.we-ball > .we-sat-up    { top: -22px;    left: 50%;  transform: translateX(-50%); }
 #we-input-btn.we-ball > .we-sat-down  { bottom: -22px; left: 50%;  transform: translateX(-50%); }
 #we-input-btn.we-ball > .we-sat-right { right: -22px;  top: 50%;   transform: translateY(-50%); }
 #we-input-btn.we-ball > .we-sat-left  { left: -22px;   top: 50%;   transform: translateY(-50%); }
+#we-input-btn.we-ball > .we-sat-lower-right { right: -12px; bottom: -12px; }
+
+/* 右下角第五颗卫星始终显示另一引擎：世界面为记忆指纹行星，记忆面为小地球。 */
+#we-input-btn.we-ball > .we-sat-engine-switch::before {
+  content: "";
+  position: absolute;
+  inset: 4px;
+  background: currentColor;
+}
+#we-input-btn.we-ball > .we-sat-engine-switch.we-sat-target-memory {
+  color: var(--we-gold);
+}
+#we-input-btn.we-ball > .we-sat-engine-switch.we-sat-target-memory::before {
+  -webkit-mask: url("fingerprint-outline-with-magnifying-glass-svgrepo-com.svg") center / contain no-repeat;
+          mask: url("fingerprint-outline-with-magnifying-glass-svgrepo-com.svg") center / contain no-repeat;
+}
+#we-input-btn.we-ball > .we-sat-engine-switch.we-sat-target-world {
+  color: var(--we-ball-land);
+  overflow: hidden;
+}
+#we-input-btn.we-ball > .we-sat-engine-switch.we-sat-target-world::before {
+  inset: 3px;
+  border-radius: 50%;
+  background: var(--we-ball-ocean);
+  border: 1px solid var(--we-ball-sat-border);
+}
+#we-input-btn.we-ball > .we-sat-engine-switch.we-sat-target-world::after {
+  content: "";
+  position: absolute;
+  inset: 3px;
+  border-radius: 50%;
+  background: var(--we-ball-land);
+  -webkit-mask: url("worldmap.svg") 0 center / 200% 100% repeat-x;
+          mask: url("worldmap.svg") 0 center / 200% 100% repeat-x;
+}
 /* 「插头」钮(球左侧第四卫星)关闭态:转红边+暗底,区别于默认,提示当前"已关推演与注入" */
 #we-input-btn.we-ball > .we-sat-left.on {
   color: var(--we-danger, #d66f68);

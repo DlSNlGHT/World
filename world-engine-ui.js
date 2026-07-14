@@ -1402,11 +1402,17 @@ window.WORLD_ENGINE_UI = (function() {
   }
 
   function advanceEngineFace() {
+    switchEngineFace(getNextEngineFace().id);
+  }
+
+  function switchEngineFace(targetId) {
     if (!panelElement || _panelFlipping) return;
+    const target = getEngineFace(targetId);
+    if (!target || target.id === _engineFace) return;
     _panelFlipping = true;
     panelElement.classList.add('we-panel-flip-out');
     window.setTimeout(() => {
-      _engineFace = getNextEngineFace().id;
+      _engineFace = target.id;
       applyEngineFaceTheme();
       syncBallFace();
       panelElement.classList.remove('we-panel-flip-out');
@@ -6100,6 +6106,7 @@ window.WORLD_ENGINE_UI = (function() {
     const redo = ball.querySelector('#we-sat-redo');
     const abort = ball.querySelector('#we-sat-abort');
     const power = ball.querySelector('#we-sat-power');
+    const engineSwitch = ball.querySelector('#we-sat-engine-switch');
     if (fwd) {
       fwd.style.display = face.showForward === true ? '' : 'none';
       fwd.classList.toggle('we-sat-off', active);
@@ -6118,10 +6125,19 @@ window.WORLD_ENGINE_UI = (function() {
       power.style.display = typeof face.setEnabled === 'function' ? '' : 'none';
       power.title = `开关${face.label}推演与注入`;
     }
+    if (engineSwitch) {
+      const targetId = face.id === 'memory' ? 'world' : 'memory';
+      const target = getEngineFace(targetId);
+      engineSwitch.dataset.targetEngine = target.id;
+      engineSwitch.classList.toggle('we-sat-target-world', target.id === 'world');
+      engineSwitch.classList.toggle('we-sat-target-memory', target.id === 'memory');
+      engineSwitch.title = `切换到${target.label}`;
+      engineSwitch.setAttribute('aria-label', engineSwitch.title);
+    }
     ball.classList.toggle('we-ball-evolving', active);
     ball.title = active && runningLabel
       ? `${face.label}：正在进行${runningLabel}`
-      : `${face.label}：单击打开，双击切换到下一引擎`;
+      : `${face.label}：单击打开面板`;
     ball.setAttribute('aria-label', ball.title);
     if (active) ball.classList.remove('we-ball-success', 'we-ball-fail');
   }
@@ -6135,7 +6151,7 @@ window.WORLD_ENGINE_UI = (function() {
     }
     if (face.ballClass) ball.classList.add(face.ballClass);
     ball.dataset.engineFace = face.id;
-    ball.title = `${face.label}：单击打开，双击切换到下一引擎`;
+    ball.title = `${face.label}：单击打开面板`;
     ball.setAttribute('aria-label', ball.title);
     updateBallControls();
   }
@@ -6356,7 +6372,7 @@ window.WORLD_ENGINE_UI = (function() {
     _topStatusTimer = setTimeout(() => { el.classList.remove('show'); }, 5000);
   }
 
-  // 给悬浮球的三颗卫星按钮绑事件；阻止冒泡，避免触发拖拽 / 打开面板
+  // 给悬浮球的五颗卫星按钮绑事件；阻止冒泡，避免触发拖拽 / 打开面板
   function wireSatellites(ball) {
     const wire = (id, fn) => {
       const el = ball.querySelector('#' + id);
@@ -6400,6 +6416,10 @@ window.WORLD_ENGINE_UI = (function() {
       if (result && typeof result.then === 'function') result.then(finish);
       else finish(result);
     });
+    wire('we-sat-engine-switch', () => {
+      const shortcut = ball.querySelector('#we-sat-engine-switch');
+      switchEngineFace(shortcut?.dataset.targetEngine || (getEngineFace().id === 'memory' ? 'world' : 'memory'));
+    });
   }
 
   function buildInputButton() {
@@ -6423,17 +6443,9 @@ window.WORLD_ENGINE_UI = (function() {
         '<span class="we-sat we-sat-up" id="we-sat-forward" role="button" title="向前推进"><i class="fa-solid fa-forward"></i></span>' +
         '<span class="we-sat we-sat-right we-sat-off" id="we-sat-abort" role="button" title="停止推演"><i class="fa-solid fa-stop"></i></span>' +
         '<span class="we-sat we-sat-down" id="we-sat-redo" role="button" title="重新推进"><i class="fa-solid fa-rotate-right"></i></span>' +
-        '<span class="we-sat we-sat-left" id="we-sat-power" role="button" title="插上=关闭推演与注入 / 拔下=开启"><i class="fa-solid fa-power-off"></i></span>';
-      let clickTimer = null;
-      btn.onclick = () => {
-        clearTimeout(clickTimer);
-        clickTimer = setTimeout(() => togglePanel(), 230);
-      };
-      btn.ondblclick = (event) => {
-        event.preventDefault();
-        clearTimeout(clickTimer);
-        advanceEngineFace();
-      };
+        '<span class="we-sat we-sat-left" id="we-sat-power" role="button" title="插上=关闭推演与注入 / 拔下=开启"><i class="fa-solid fa-power-off"></i></span>' +
+        '<span class="we-sat we-sat-lower-right we-sat-engine-switch" id="we-sat-engine-switch" role="button"></span>';
+      btn.onclick = () => togglePanel();
       document.body.appendChild(btn);
       wireSatellites(btn);
       syncBallFace();
