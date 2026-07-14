@@ -491,12 +491,10 @@
         if (window.__WE_SetExternalStatus) window.__WE_SetExternalStatus(text, !!isErr);
       }
 
-      function getElapsedReadRounds(state, maxRounds) {
+      function getElapsedReadRounds(baseState, maxRounds) {
         const limit = Math.max(1, parseInt(maxRounds) || 1);
-        const cp = core.restoreCheckpoint();
         const L = core.getChatLayer();
-        let anchorL = (cp && cp.chatLayer != null) ? Number(cp.chatLayer)
-                    : (state && state.chatLayer != null ? Number(state.chatLayer) : L);
+        let anchorL = baseState && baseState.chatLayer != null ? Number(baseState.chatLayer) : L;
         if (!Number.isFinite(anchorL)) anchorL = L;
         const since = Math.floor(Math.max(0, L - anchorL) / 2);
         return Math.max(1, Math.min(since, limit));
@@ -573,7 +571,10 @@
         const aiMsg = !lastMsg?.is_user ? (lastMsg?.mes || '').trim() : '';
         const settings = api.getSettings(true);
         const state = core.loadState();
-        const readRounds = getElapsedReadRounds(state, settings.manualReadRounds);
+        // forward 只按当前状态之后新增的轮数取最近对话；redo 则从存档点重新计算。
+        // 两条路径都受 manualReadRounds 限制，buildDialogueText 最终始终取聊天末尾最新 N 轮。
+        const dialogueBase = mode === 'redo' ? core.restoreCheckpoint() : state;
+        const readRounds = getElapsedReadRounds(dialogueBase, settings.manualReadRounds);
         return performEvolution(aiMsg, chat, null, readRounds, {
           mode,
           displayScope: scope,
@@ -609,7 +610,7 @@
         const lastMsg = chat[chat.length - 1];
         const aiMsg = !lastMsg?.is_user ? (lastMsg?.mes || '').trim() : '';
         // 与自动路径一致：读取 min(经过轮数, 上限X) 轮
-        const readRounds = getElapsedReadRounds(st, settings.evolveTimeMaxRounds);
+        const readRounds = getElapsedReadRounds(cp || st, settings.evolveTimeMaxRounds);
         await performEvolution(aiMsg, chat, Number(currentDay), readRounds);
       }
 
