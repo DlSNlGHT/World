@@ -970,8 +970,8 @@
   padding: 10px 0 0;
 }
 .we-memory-core-ring {
-  width: 160px;
-  height: 160px;
+  width: 176px;
+  height: 176px;
 }
 .we-memory-core-ring svg circle {
   transition: stroke-dasharray 0.6s ease;
