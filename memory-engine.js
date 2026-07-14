@@ -336,6 +336,32 @@ window.MEMORY_ENGINE = (function() {
     return added;
   }
 
+  function replaceKnownByRecords(state, ownerId, records) {
+    if (!state || typeof state !== 'object') return state;
+    if (!state.knowledge_index || typeof state.knowledge_index !== 'object' || Array.isArray(state.knowledge_index)) state.knowledge_index = {};
+    const owner = (state.personal_memory || []).find(character => character.id === ownerId);
+    if (!owner) return state;
+    for (const [name, indexed] of Object.entries(state.knowledge_index)) {
+      state.knowledge_index[name] = (Array.isArray(indexed) ? indexed : []).filter(record => record.ownerId !== ownerId);
+      if (!state.knowledge_index[name].length) delete state.knowledge_index[name];
+    }
+    for (const item of records || []) {
+      const time = clean(item?.time), memory = clean(item?.memory ?? item?.content);
+      if (!memory) continue;
+      const record = { ownerId, time, memory };
+      addKnowledge(state.knowledge_index, owner.names, record);
+      for (const knowerName of unique(item?.known_by).filter(name => !(owner.names || []).some(alias => normalized(alias) === normalized(name)))) {
+        let knower = findCharacter(state, [knowerName]);
+        if (!knower) {
+          knower = { id: nextCharacterId(state), names: [knowerName], memory: {} };
+          state.personal_memory.push(knower);
+        }
+        addKnowledge(state.knowledge_index, knower.names, record);
+      }
+    }
+    return state;
+  }
+
   function ensureEventState(state) {
     if (!state.event_memory || typeof state.event_memory !== 'object' || Array.isArray(state.event_memory)) state.event_memory = {};
     if (!Array.isArray(state.event_memory.small_summaries)) state.event_memory.small_summaries = [];
@@ -833,7 +859,7 @@ window.MEMORY_ENGINE = (function() {
     init, applyInjection, manualExtract, manualReextract, extractNow: manualExtract,
     manualSmallSummary, manualBigSummary,
     backfill, backfillSummaries, stopBackfill, abort,
-    repairStateIndexes,
+    repairStateIndexes, replaceKnownByRecords,
     getLastDebug: () => clone(lastDebug), getBackfillStatus: () => clone(backfillStatus),
     getSummaryBackfillStatus: () => clone(summaryBackfillStatus),
     getRunningLabel: () => runningLabel,

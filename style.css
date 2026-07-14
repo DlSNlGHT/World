@@ -1233,6 +1233,8 @@
   width: 100%;
   min-width: 0;
 }
+.we-memory-entry-known-by { grid-column: 2; grid-row: 2; }
+.we-memory-entry-edit .we-memory-remove-entry { grid-column: 3; grid-row: 1 / span 2; }
 .we-memory-entry-empty {
   padding: 7px 0;
   color: var(--we-text3);
@@ -1253,7 +1255,8 @@
   .we-memory-entry-edit { grid-template-columns: 1fr 28px; }
   .we-memory-entry-time { grid-column: 1; }
   .we-memory-entry-content { grid-column: 1; }
-  .we-memory-remove-entry { grid-column: 2; grid-row: 1 / span 2; }
+  .we-memory-entry-known-by { grid-column: 1; grid-row: 3; }
+  .we-memory-entry-edit .we-memory-remove-entry { grid-column: 2; grid-row: 1 / span 3; }
 }
 
 /* 尾点发光：外晕呼吸 + 亮核明灭 */

@@ -229,6 +229,11 @@ for (const filename of [
   const roundTripped = sandbox.MEMORY_ENGINE_DATA.importData(exported);
   assert.ok(roundTripped.knowledge_index['乙'].some(record => record.memory === '甲掌握秘密。'), '导入 portable JSON 必须重建 knowledge_index');
   assert.strictEqual(sandbox.MEMORY_ENGINE_DATA.loadCheckpoint().event_memory.small_summaries.length, 5, '完整 JSON 导入必须恢复 checkpoint');
+  sandbox.MEMORY_ENGINE.replaceKnownByRecords(roundTripped, 'char_000001', [
+    { time: '', memory: '甲掌握秘密。', known_by: ['丙'] }
+  ]);
+  assert.ok(!roundTripped.knowledge_index['乙'], 'UI 修改知情人后必须移除旧 known_by 索引');
+  assert.ok(roundTripped.knowledge_index['丙'].some(record => record.memory === '甲掌握秘密。'), 'UI 修改知情人后必须建立新 known_by 索引');
 
   sandbox.MEMORY_ENGINE_DATA.saveState(sandbox.MEMORY_ENGINE_DATA.defaultState());
   calls.length = 0;
