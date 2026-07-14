@@ -202,6 +202,14 @@ window.MEMORY_ENGINE = (function() {
     return chat().reduce((count, message, index) => count + (index > layer && message && !message.is_user ? 1 : 0), 0);
   }
 
+  // 手动向前提取与重新推演共用：读取轮数 = min(配置上限, 基底状态至今的实际 AI 轮数)。
+  function getElapsedReadRounds(baseState, maxRounds) {
+    const limit = Math.max(1, parseInt(maxRounds) || 1);
+    const anchor = baseState?.chatLayer !== null && baseState?.chatLayer !== '' && Number.isFinite(Number(baseState?.chatLayer))
+      ? Number(baseState.chatLayer) : -1;
+    return Math.max(1, Math.min(countAiSince(anchor), limit));
+  }
+
   async function autoExtract() {
     const st = settings();
     if (st.engineEnabled === false || st.evolveMode !== 'auto' || running || backfillRunning) return;
@@ -215,7 +223,9 @@ window.MEMORY_ENGINE = (function() {
   async function manualExtract() {
     const st = settings();
     if (st.engineEnabled === false) throw new Error('记忆引擎已关闭');
-    return extractConversation(recentConversation(st.manualReadRounds), { layer: currentLayer() });
+    const state = data().loadState();
+    const readRounds = getElapsedReadRounds(state, st.manualReadRounds);
+    return extractConversation(recentConversation(readRounds), { layer: currentLayer(), baseState: state });
   }
 
   async function manualReextract() {
@@ -223,7 +233,8 @@ window.MEMORY_ENGINE = (function() {
     if (st.engineEnabled === false) throw new Error('记忆引擎已关闭');
     const checkpoint = data().loadCheckpoint();
     if (!checkpoint) throw new Error('没有可用于重新推演的记忆存档点');
-    return extractConversation(recentConversation(st.manualReadRounds), {
+    const readRounds = getElapsedReadRounds(checkpoint, st.manualReadRounds);
+    return extractConversation(recentConversation(readRounds), {
       layer: currentLayer(),
       baseState: checkpoint
     });

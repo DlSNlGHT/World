@@ -109,6 +109,9 @@ window.WORLD_ENGINE_UI = (function() {
       isSettingsOpen: () => _memorySettingsOpen,
       onSettingsTab: key => { _memorySettingsTab = key; },
       refreshDebug: () => refreshMemoryDebugRender(),
+      showForward: true,
+      forwardTitle: '手动提取记忆',
+      forward: () => runMemoryExtract(),
       redo: () => runMemoryReextract(),
       abort: () => window.MEMORY_ENGINE?.abort?.()
     });
@@ -598,12 +601,13 @@ window.WORLD_ENGINE_UI = (function() {
         <label>每次提取读取最近几轮对话</label>
         <input type="number" id="we-memory-readrounds" min="1" max="${everyX}" step="1" value="${readRounds}" style="width:100%;">
       </div>
-      <div class="we-input-group" id="we-memory-manual-readrounds-group" style="${mode === 'manual' ? '' : 'display:none;'}">
-        <label>手动提取读取最近几轮对话</label>
+      <div class="we-input-group" id="we-memory-manual-readrounds-group">
+        <label>手动提取最多读取最近 X 轮对话</label>
         <input type="number" id="we-memory-manual-readrounds" min="1" step="1" value="${manualReadRounds}" style="width:100%;">
+        <div style="font-size:11px;color:var(--we-text3);margin-top:3px;">实际读取 min（X，自上次记忆状态以来经过的轮数）；重新推演则从存档点计算差值。</div>
       </div>
       <div class="we-input-group">
-        <button class="we-btn we-btn-primary" id="we-memory-run-now" type="button">立即提取记忆</button>
+        <button class="we-btn we-btn-primary" id="we-memory-run-now" type="button">手动提取记忆（向前）</button>
       </div>`;
 
     const injectBody = `
@@ -4090,10 +4094,8 @@ window.WORLD_ENGINE_UI = (function() {
         const automatic = memoryModeSelect.value !== 'manual';
         const everyXGroup = document.getElementById('we-memory-everyx-group');
         const readRoundsGroup = document.getElementById('we-memory-readrounds-group');
-        const manualGroup = document.getElementById('we-memory-manual-readrounds-group');
         if (everyXGroup) everyXGroup.style.display = automatic ? '' : 'none';
         if (readRoundsGroup) readRoundsGroup.style.display = automatic ? '' : 'none';
-        if (manualGroup) manualGroup.style.display = automatic ? 'none' : '';
       };
     }
 
@@ -4218,12 +4220,8 @@ window.WORLD_ENGINE_UI = (function() {
     const memoryRunNow = document.getElementById('we-memory-run-now');
     if (memoryRunNow) {
       memoryRunNow.onclick = async () => {
-        if (!window.MEMORY_ENGINE?.manualExtract) { showToast('记忆引擎尚未加载', true); return; }
         memoryRunNow.disabled = true;
-        try {
-          const result = await window.MEMORY_ENGINE.manualExtract();
-          showToast(`记忆提取完成，新增 ${result?.added || 0} 条`);
-        } catch (error) { showToast(`记忆提取失败：${error?.message || error}`, true); }
+        try { await runMemoryExtract(); }
         finally { memoryRunNow.disabled = false; }
       };
     }
@@ -5289,6 +5287,17 @@ window.WORLD_ENGINE_UI = (function() {
     else if (evolution.getLastError?.()) showToast(evolution.getLastError(), true);
   }
 
+  async function runMemoryExtract() {
+    if (!window.MEMORY_ENGINE?.manualExtract) { showToast('记忆提取入口未就绪', true); return; }
+    try {
+      const result = await window.MEMORY_ENGINE.manualExtract();
+      showToast(`记忆提取完成，新增 ${result?.added || 0} 条`);
+      return result;
+    } catch (error) {
+      showToast(`记忆提取失败：${error?.message || error}`, true);
+    }
+  }
+
   async function runMemoryReextract() {
     if (!window.MEMORY_ENGINE?.manualReextract) { showToast('记忆推演入口未就绪', true); return; }
     try {
@@ -5414,6 +5423,7 @@ window.WORLD_ENGINE_UI = (function() {
     if (fwd) {
       fwd.style.display = face.showForward === true ? '' : 'none';
       fwd.classList.toggle('we-sat-off', active);
+      fwd.title = face.forwardTitle || `向前推进${face.label}`;
     }
     if (redo) {
       redo.classList.toggle('we-sat-off', active);
