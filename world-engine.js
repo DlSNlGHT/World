@@ -505,7 +505,7 @@
       }
 
       function buildDialogueText(chat, readRounds, settings) {
-        const start = Math.max(0, chat.length - readRounds * 2);
+        const start = Math.max(settings.firstLayerIsAiOpening !== false ? 1 : 0, chat.length - readRounds * 2);
         return chat.slice(start)
           .map(m => (m.is_user ? '用户' : 'AI') + '：' + core.filterDialogue((m.mes || '').trim(), settings))
           .filter(line => line.length > 3)

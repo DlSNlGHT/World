@@ -20,6 +20,7 @@ window.MEMORY_ENGINE = (function() {
   function context() { try { return SillyTavern.getContext(); } catch (_) { return null; } }
   const chat = () => context()?.chat || [];
   const currentLayer = () => Math.max(0, chat().length - 1);
+  const ignoreFirstLayer = st => st?.firstLayerIsAiOpening !== false;
 
   function formatMessages(messages, startLayer) {
     const ctx = context();
@@ -31,7 +32,7 @@ window.MEMORY_ENGINE = (function() {
 
   function recentConversation(rounds) {
     const all = chat(), count = Math.max(1, parseInt(rounds) || 1) * 2;
-    const start = Math.max(0, all.length - count);
+    const start = Math.max(ignoreFirstLayer(settings()) ? 1 : 0, all.length - count);
     return formatMessages(all.slice(start), start);
   }
 
@@ -445,16 +446,20 @@ window.MEMORY_ENGINE = (function() {
     return runTasks({ memory: { conversation } }, options);
   }
 
-  function countAiSince(layer) {
+  function countAiSince(layer, st) {
     const anchor = layer !== null && layer !== '' && Number.isFinite(Number(layer)) ? Number(layer) : -1;
-    return chat().reduce((count, message, index) => count + (index > anchor && message && !message.is_user ? 1 : 0), 0);
+    const all = chat(), skipOpening = anchor < 0 && ignoreFirstLayer(st || settings());
+    return all.reduce((count, message, index) => count + (
+      index > anchor && !(skipOpening && index === 0) && message && !message.is_user ? 1 : 0
+    ), 0);
   }
 
-  function getAiBatchAfter(layer, maxAi, endLayer) {
+  function getAiBatchAfter(layer, maxAi, endLayer, settingsOverride) {
     const all = chat();
     const anchor = layer !== null && layer !== '' && Number.isFinite(Number(layer)) ? Number(layer) : -1;
+    const skipOpening = anchor < 0 && ignoreFirstLayer(settingsOverride || settings());
     const end = endLayer !== undefined && Number.isFinite(Number(endLayer)) ? Number(endLayer) : all.length - 1;
-    const aiLayers = all.map((message, index) => (index > anchor && index <= end && message && !message.is_user ? index : -1))
+    const aiLayers = all.map((message, index) => (index > anchor && index <= end && !(skipOpening && index === 0) && message && !message.is_user ? index : -1))
       .filter(index => index >= 0).slice(0, Math.max(1, parseInt(maxAi) || 1));
     if (!aiLayers.length) return null;
     const firstAi = aiLayers[0], finish = aiLayers.at(-1);
@@ -668,7 +673,8 @@ window.MEMORY_ENGINE = (function() {
     if (st.engineEnabled === false) throw new Error('记忆引擎已关闭');
     const configuredEnd = Math.max(0, parseInt(st.backfillEndLayer) || 0);
     const end = Math.min(all.length - 1, configuredEnd || all.length - 1);
-    const aiLayers = all.map((message, index) => (!message?.is_user && index <= end ? index : -1)).filter(i => i >= 0);
+    const opening = ignoreFirstLayer(st);
+    const aiLayers = all.map((message, index) => (!message?.is_user && index <= end && !(opening && index === 0) ? index : -1)).filter(i => i >= 0);
     const size = Math.max(1, parseInt(st.backfillBatchSize) || 5), batches = [];
     for (let i = 0; i < aiLayers.length; i += size) batches.push(aiLayers.slice(i, i + size));
     if (!batches.length) { setBackfillStatus(0, 0, '没有可重填的 AI 楼层'); return; }
@@ -706,7 +712,8 @@ window.MEMORY_ENGINE = (function() {
     if (st.engineEnabled === false) throw new Error('记忆引擎已关闭');
     const configuredEnd = Math.max(0, parseInt(st.backfillEndLayer) || 0);
     const end = Math.min(all.length - 1, configuredEnd || all.length - 1);
-    const aiLayers = all.map((message, index) => (!message?.is_user && index <= end ? index : -1)).filter(index => index >= 0);
+    const opening = ignoreFirstLayer(st);
+    const aiLayers = all.map((message, index) => (!message?.is_user && index <= end && !(opening && index === 0) ? index : -1)).filter(index => index >= 0);
     const size = Math.max(1, parseInt(st.summaryBackfillSmallEveryX) || 5), batches = [];
     for (let i = 0; i < aiLayers.length; i += size) batches.push(aiLayers.slice(i, i + size));
     if (!batches.length) { setSummaryBackfillStatus(0, 0, '没有可重填的 AI 楼层'); return; }

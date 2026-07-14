@@ -11,6 +11,7 @@ const listeners = new Map();
 const runningLabels = [];
 const settings = {
   engineEnabled: true,
+  firstLayerIsAiOpening: true,
   evolveMode: 'auto',
   evolveEveryX: 2,
   evolveReadRounds: 2,
@@ -31,6 +32,7 @@ const settings = {
   filterRegex: ''
 };
 const chat = [
+  { is_user: false, name: '角色', mes: '这是角色卡的开场白，不应进入纪要或批量重填。' },
   { is_user: true, name: '用户', mes: '进入城镇。' },
   { is_user: false, name: '角色', mes: '发现城门已经关闭。' },
   { is_user: true, name: '用户', mes: '询问守卫。' },
@@ -95,6 +97,8 @@ for (const filename of [
   const combined = await sandbox.MEMORY_ENGINE.manualSmallSummary();
   assert.strictEqual(calls.length, 2, '达到阈值时应先生成并保存小总结，再独立请求大总结');
   assert.ok(calls[0].includes('事件记忆的小总结器'));
+  assert.ok(!calls[0].includes('这是角色卡的开场白'), '初始化纪要必须忽略第 0 层 AI 开场白');
+  assert.ok(calls[0].includes('守卫说明北方发生叛乱'), '忽略开场白后仍应读取窗口内最新的 AI 回复');
   assert.ok(!calls[0].includes('事件记忆的大总结器'));
   assert.ok(!calls[0].includes('"personal_memory": []'), '未到人物实体任务时不应携带人物实体输出字段');
   assert.ok(calls[1].includes('事件记忆的大总结器'));
@@ -110,6 +114,14 @@ for (const filename of [
   assert.strictEqual(checkpointAfterCombined.event_memory.small_summaries.length, 0,
     '链式大总结不得覆盖小总结请求之前建立的 checkpoint');
 
+  settings.firstLayerIsAiOpening = false;
+  sandbox.MEMORY_ENGINE_DATA.saveState(sandbox.MEMORY_ENGINE_DATA.defaultState());
+  calls.length = 0;
+  await sandbox.MEMORY_ENGINE.manualSmallSummary();
+  assert.ok(calls[0].includes('这是角色卡的开场白'), '取消“首楼为 AI 开场白”后，第 0 层必须正常参与纪要');
+  settings.firstLayerIsAiOpening = true;
+
+  state = sandbox.MEMORY_ENGINE_DATA.loadState();
   state.personal_memory = [{ id: 'char_000001', names: ['保留人物'], memory: {}, }];
   sandbox.MEMORY_ENGINE_DATA.saveState(state);
   calls.length = 0;

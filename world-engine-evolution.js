@@ -1397,9 +1397,10 @@ ${JSON.stringify(sample || [], null, 2)}
       if (ctx && ctx.chatId) startChatId = ctx.chatId;
     } catch (e) { chat = []; }
     const aiIdx = [];
+    const ignoreFirstLayer = settings.firstLayerIsAiOpening !== false;
     for (let i = 0; i < chat.length; i++) {
       const m = chat[i];
-      if (m && !m.is_user && String(m.mes || '').trim()) aiIdx.push(i);
+      if (m && !m.is_user && String(m.mes || '').trim() && !(ignoreFirstLayer && i === 0)) aiIdx.push(i);
     }
     if (!aiIdx.length) {
       return { done: false, reason: 'no-ai-layers', totalBatches: 0 };
@@ -1449,7 +1450,7 @@ ${JSON.stringify(sample || [], null, 2)}
         }
         const { pStart, pEnd } = batches[b];
         const lastChatIdx = aiIdx[pEnd];
-        const startChatIdx = pStart === 0 ? 0 : aiIdx[pStart - 1] + 1;
+        const startChatIdx = pStart === 0 ? (ignoreFirstLayer ? 1 : 0) : aiIdx[pStart - 1] + 1;
         const aiMsg = String(chat[lastChatIdx].mes || '').trim();
 
         // 构造本批对话文本（与 performEvolution 一致：含夹在中间的 user 楼层）

@@ -361,12 +361,13 @@ window.WORLD_ENGINE_UI = (function() {
     return renderMemorySubView(_memoryView);
   }
 
-  function countMemoryAiSince(layer) {
+  function countMemoryAiSince(layer, memorySettings) {
     const anchor = layer !== null && layer !== '' && Number.isFinite(Number(layer)) ? Number(layer) : -1;
     try {
       const chat = SillyTavern.getContext()?.chat || [];
+      const skipOpening = anchor < 0 && memorySettings?.firstLayerIsAiOpening !== false;
       return chat.reduce((count, message, index) => count + (
-        index > anchor && message && !message.is_user && String(message.mes || '').trim() ? 1 : 0
+        index > anchor && !(skipOpening && index === 0) && message && !message.is_user && String(message.mes || '').trim() ? 1 : 0
       ), 0);
     } catch (_) {
       return 0;
@@ -388,7 +389,7 @@ window.WORLD_ENGINE_UI = (function() {
     const cursor = Math.max(0, Math.min(smallSummaries.length, parseInt(eventMemory.big_summary_cursor) || 0));
     const smallTarget = Math.max(1, parseInt(settings.smallSummaryEveryX) || 5);
     const bigTarget = Math.max(1, parseInt(settings.bigSummaryEveryX) || 5);
-    const elapsedFloors = countMemoryAiSince(eventMemory.small_summary_layer);
+    const elapsedFloors = countMemoryAiSince(eventMemory.small_summary_layer, settings);
     const pendingSmall = Math.max(0, smallSummaries.length - cursor);
     const smallProgress = Math.min(1, elapsedFloors / smallTarget);
     const bigProgress = Math.min(1, pendingSmall / bigTarget);
@@ -1020,6 +1021,13 @@ window.WORLD_ENGINE_UI = (function() {
           启用记忆引擎
         </label>
         <div style="font-size:11px;color:var(--we-text3);margin-top:3px;">关闭后停止记忆提取与记忆注入，不影响世界引擎。</div>
+      </div>
+      <div class="we-input-group">
+        <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
+          <input type="checkbox" id="we-memory-first-layer-ai-opening" ${settings.firstLayerIsAiOpening !== false ? 'checked' : ''}>
+          首楼为 AI 开场白
+        </label>
+        <div style="font-size:11px;color:var(--we-text3);margin-top:3px;">默认勾选：第 0 层不参与人物/实体提取、纪要和批量重填；取消勾选后，第 0 层按普通对话参与处理。</div>
       </div>
       <div class="we-input-group">
         <label>记忆推演模式</label>
@@ -1657,6 +1665,7 @@ window.WORLD_ENGINE_UI = (function() {
   //   date    —— 可选，日期不确定的留月份/年份；
   //   items   —— 该版本改动条目（每条一行，渲染时走 h() 转义）。
   const CHANGELOG = [
+    { version: '2.5.2', date: '2026-07-14', items: ['世界与记忆设置新增“首楼为 AI 开场白”，默认开启；开启时自动总结和批量重填忽略第 0 层，关闭时首楼按普通对话参与处理。', '记忆数据编辑器统一使用深色输入框与白色文字，提升各主题下的编辑可读性。'] },
     { version: '2.5.1', date: '2026-07-13', items: ['新增「近端随机事件」本地机制：按概率生成一条与当前对话、主角、所在区域或正在发展事项存在明确因果的事件链或风声，结果自动转为正式 event/wind 对象。', '近端动态支持调整触发概率、成功后冷却及事件链/风声比例；类型由本地预选，返回不合格或 API 异常时保持原类型继续强制生成，冷却最小为 1。近端、远方与区域事件可在同轮分别完成。', '精简并放宽事件链创建与归并规则：删除「至少两种未来走向」等过度准入条件，以核心目标、主要对象和连续执行过程识别同一主事项；已有事项的步骤、阻碍、局部结果与善后沿用原 id，只有可独立跨轮发展的新事项才另建事件链。'] },
     { version: '2.5.0', date: '2026-07-12', items: ['新增「远方随机事件」本地机制：事件账本达到可调门槛后按概率触发，抽取最新四分之一账本并从旧记录随机补足至二分之一，要求推演 API 生成一条与主角及既有账本无直接关系的远方事件链或风声。', '远方动态由本地按可调比例预选事件链或风声（默认各 50%），使用临时标记确认生成成功后再分配正式 ID；返回不合格或 API 异常时保留同一类型与账本样本继续强制生成，成功后进入可调冷却。', '正文注入新增「全等级注入」选项：开启后事件链与风声的 Lv1–Lv4 全部注入；关闭时维持高等级筛选，并保留低等级事件已爆发/已完成时的注入。', '区域突发事件类型说明改为更中性的跨题材表达，去除官道、盐铺、乡兵等古风绑定词，并要求具体表现适配当前世界观、时代、技术、地理与社会制度。', '修复冷却配置为 0 时的异常：远方事件冷却、区域事件消散后冷却以及区域事件持续轮数统一限制为最小 1。'] },
     { version: '2.4.2', date: '2026-07-12', items: ['世界状态注入与正文行为规则改为更中性的跨题材表达，并对齐当前世界引擎机制。', '新增 6 套界面配色，面板、顶部状态与悬浮球同步换色；本地机制四个区块新增独立恢复默认。', '高级设置新增 API 异常自动重试次数：支持空返回、乱码、解析失败、HTTP、超时及网络错误重试，默认关闭。'] },
@@ -3212,6 +3221,13 @@ window.WORLD_ENGINE_UI = (function() {
         <div style="font-size:11px;color:var(--we-text3);margin-top:3px;">关闭后停止世界推演与世界状态注入，不影响记忆引擎。</div>
       </div>
       <div class="we-input-group">
+        <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
+          <input type="checkbox" id="we-first-layer-ai-opening" ${settings.firstLayerIsAiOpening !== false ? 'checked' : ''}>
+          首楼为 AI 开场白
+        </label>
+        <div style="font-size:11px;color:var(--we-text3);margin-top:3px;">默认勾选：批量重填忽略第 0 层；取消勾选后，第 0 层按普通对话参与重填。</div>
+      </div>
+      <div class="we-input-group">
         <label>推演模式</label>
         <select id="we-evolve-mode" style="width:100%;">
           <option value="auto" ${mode === 'auto' ? 'selected' : ''}>自动 · 按轮（每 X 轮推演一次）</option>
@@ -4524,6 +4540,7 @@ window.WORLD_ENGINE_UI = (function() {
         const memorySettings = {
           ...memoryCurrent,
           engineEnabled: document.getElementById('we-memory-engine-enabled')?.checked !== false,
+          firstLayerIsAiOpening: document.getElementById('we-memory-first-layer-ai-opening')?.checked !== false,
           apiUrl: gv('we-api-url') || '',
           apiKey: gv('we-api-key') || '',
           model: gv('we-model') || 'gpt-3.5-turbo',
@@ -4750,6 +4767,7 @@ window.WORLD_ENGINE_UI = (function() {
         const ns = {
           ...(window.WORLD_ENGINE_API ? window.WORLD_ENGINE_API.getSettings(true) : {}),
           engineEnabled: document.getElementById('we-world-engine-enabled')?.checked !== false,
+          firstLayerIsAiOpening: document.getElementById('we-first-layer-ai-opening')?.checked !== false,
           apiUrl: document.getElementById('we-api-url')?.value || '',
           apiKey: document.getElementById('we-api-key')?.value || '',
           model: document.getElementById('we-model')?.value || 'gpt-3.5-turbo',
@@ -5831,7 +5849,11 @@ window.WORLD_ENGINE_UI = (function() {
     try {
       const ctx = SillyTavern.getContext();
       const chat = (ctx && ctx.chat) || [];
-      for (const m of chat) if (m && !m.is_user && String(m.mes || '').trim()) aiCount++;
+      const ignoreFirstLayer = st.firstLayerIsAiOpening !== false;
+      for (let index = 0; index < chat.length; index++) {
+        const m = chat[index];
+        if (m && !m.is_user && String(m.mes || '').trim() && !(ignoreFirstLayer && index === 0)) aiCount++;
+      }
     } catch (e) {}
     if (!aiCount) { showToast('当前聊天没有可推演的 AI 楼层', true); return; }
     const effectiveEnd = (endLayer > 0 && endLayer <= aiCount) ? endLayer : aiCount;

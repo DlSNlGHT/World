@@ -1169,6 +1169,30 @@
   padding-top: 10px;
   border-top: 1px solid var(--we-border);
 }
+.we-memory-editor input[type="text"],
+.we-memory-editor input[type="password"],
+.we-memory-editor input[type="number"],
+.we-memory-editor select,
+.we-memory-editor textarea {
+  box-sizing: border-box;
+  background: #101820 !important;
+  border: 1px solid #34454d !important;
+  color: #f4f7f6 !important;
+  caret-color: #ffffff;
+  color-scheme: dark;
+}
+.we-memory-editor input::placeholder,
+.we-memory-editor textarea::placeholder {
+  color: #82949a;
+  opacity: 1;
+}
+.we-memory-editor input:focus,
+.we-memory-editor select:focus,
+.we-memory-editor textarea:focus {
+  outline: none;
+  border-color: var(--we-accent) !important;
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--we-accent) 28%, transparent);
+}
 .we-memory-record-new .we-memory-editor {
   margin-top: 0;
   padding-top: 0;
