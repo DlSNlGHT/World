@@ -1139,7 +1139,7 @@
 }
 .we-memory-line {
   display: grid;
-  grid-template-columns: minmax(62px, auto) 1fr;
+  grid-template-columns: 104px minmax(0, 1fr);
   gap: 9px;
   padding: 7px 0;
   border-top: 1px solid var(--we-hairline);
@@ -1152,6 +1152,14 @@
   color: var(--we-text3);
   font-size: 10px;
   padding-top: 2px;
+}
+.we-memory-line-main { min-width: 0; }
+.we-memory-line-content { white-space: pre-wrap; overflow-wrap: anywhere; }
+.we-memory-line-known {
+  margin-top: 4px;
+  color: var(--we-text3);
+  font-size: 10px;
+  line-height: 1.45;
 }
 .we-memory-description {
   margin-bottom: 8px;
@@ -1252,6 +1260,7 @@
 }
 @media (max-width: 520px) {
   .we-memory-sub-poem { display: none; }
+  .we-memory-line { grid-template-columns: 84px minmax(0, 1fr); gap: 7px; }
   .we-memory-entry-edit { grid-template-columns: 1fr 28px; }
   .we-memory-entry-time { grid-column: 1; }
   .we-memory-entry-content { grid-column: 1; }

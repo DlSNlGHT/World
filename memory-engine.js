@@ -716,6 +716,43 @@ window.MEMORY_ENGINE = (function() {
     return content;
   }
 
+  function buildWorldEngineContext(worldState) {
+    const st = settings();
+    if (st.engineEnabled === false || st.injectIntoWorldEngine !== true || !worldState) return '';
+    const state = data().loadState();
+    ensureEntityState(state);
+    if (!state.knowledge_index || !Object.keys(state.knowledge_index).length) rebuildKnowledgeIndex(state);
+    const scan = JSON.stringify(worldState);
+    const appears = name => name && scan.includes(String(name));
+    const limit = Math.max(1, parseInt(st.worldEngineMemoryLimit) || 5);
+    const sections = [], seenRecords = new Set();
+    for (const character of state.personal_memory || []) {
+      if (!(character.names || []).some(appears)) continue;
+      const records = [];
+      for (const name of character.names || []) records.push(...(state.knowledge_index[normalized(name)] || []));
+      const selected = records.filter(record => {
+        const key = `${record.ownerId}\u0000${record.time}\u0000${record.memory}`;
+        if (seenRecords.has(key)) return false;
+        seenRecords.add(key);
+        return true;
+      }).slice(-limit);
+      if (selected.length) sections.push(`【人物：${character.names?.[0] || character.id}】\n` +
+        selected.map(record => `- [${record.time || '时间未明'}] ${record.memory}`).join('\n'));
+    }
+    for (const type of ENTITY_TYPES) {
+      for (const entity of state.entity_memory[type] || []) {
+        if (!appears(entity.name)) continue;
+        const lines = [`【${ENTITY_LABELS[type]}：${entity.name}】`];
+        if (entity.description) lines.push(entity.description);
+        lines.push(...(Array.isArray(entity.history) ? entity.history : []).slice(-limit)
+          .map(entry => `- [${entry.time || '时间未明'}] ${entry.event}`));
+        sections.push(lines.join('\n'));
+      }
+    }
+    if (!sections.length) return '';
+    return `【记忆引擎提供的相关人物与实体信息】\n以下信息只用于辅助世界推演；不包含纪要或总述。\n\n${sections.join('\n\n')}`;
+  }
+
   function setBackfillStatus(current, total, message) {
     backfillStatus = { running: backfillRunning, current, total, message: message || '' };
     const element = document.getElementById('we-memory-person-backfill-status');
@@ -856,7 +893,7 @@ window.MEMORY_ENGINE = (function() {
   }
 
   return {
-    init, applyInjection, manualExtract, manualReextract, extractNow: manualExtract,
+    init, applyInjection, buildWorldEngineContext, manualExtract, manualReextract, extractNow: manualExtract,
     manualSmallSummary, manualBigSummary,
     backfill, backfillSummaries, stopBackfill, abort,
     repairStateIndexes, replaceKnownByRecords,

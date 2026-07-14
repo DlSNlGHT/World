@@ -2,7 +2,7 @@
 window.MEMORY_ENGINE_DATA = (function() {
   const STATE_PREFIX = 'memory_engine_state_';
   const CHECKPOINT_PREFIX = 'memory_engine_checkpoint_';
-  const VERSION = '0.6.0';
+  const VERSION = '1.0.0';
   const ENTITY_TYPES = ['organization', 'object', 'ability', 'location'];
 
   function getChatId() {

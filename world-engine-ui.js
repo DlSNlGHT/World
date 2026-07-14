@@ -140,6 +140,7 @@ window.WORLD_ENGINE_UI = (function() {
   // 六套纯 CSS 变量主题。写在 <html> 上，面板、悬浮球和顶部状态条同步换色。
   const WE_THEME_KEY = 'we-theme';
   const MEMORY_THEME_KEY = 'memory-engine-theme';
+  const MEMORY_THEME_NIGHT_MIGRATION_KEY = 'memory-engine-theme-night-default-v1';
   const WE_THEMES = [
     { id: 'default', name: '墨玉 · 默认' },
     { id: 'night', name: '夜阑 · 近黑' },
@@ -216,7 +217,17 @@ window.WORLD_ENGINE_UI = (function() {
   }
 
   function getStoredMemoryTheme() {
-    try { return normalizeTheme(localStorage.getItem(MEMORY_THEME_KEY) || 'night'); }
+    try {
+      let stored = localStorage.getItem(MEMORY_THEME_KEY);
+      if (!localStorage.getItem(MEMORY_THEME_NIGHT_MIGRATION_KEY)) {
+        if (!stored || stored === 'default') {
+          stored = 'night';
+          localStorage.setItem(MEMORY_THEME_KEY, stored);
+        }
+        localStorage.setItem(MEMORY_THEME_NIGHT_MIGRATION_KEY, '1');
+      }
+      return normalizeTheme(stored || 'night');
+    }
     catch (e) { return 'night'; }
   }
 
@@ -501,7 +512,10 @@ window.WORLD_ENGINE_UI = (function() {
     const cards = people.map(person => {
       const editing = _memoryEditingPerson === person.id;
       const entries = Object.entries(person.memory || {}).flatMap(([time, memories]) =>
-        (Array.isArray(memories) ? memories : []).map(memory => `<div class="we-memory-line"><span>${h(time || '时间未明')}</span>${h(memory)}</div>`)
+        (Array.isArray(memories) ? memories : []).map(memory => {
+          const knownBy = memoryKnownBy(state, person, time, memory);
+          return `<div class="we-memory-line"><span class="we-memory-line-time">${h(time || '时间未明')}</span><div class="we-memory-line-main"><div class="we-memory-line-content">${h(memory)}</div><div class="we-memory-line-known">知情人：${h(knownBy.length ? knownBy.join(' · ') : '仅本人')}</div></div></div>`;
+        })
       ).join('');
       return `<div class="we-memory-record" data-person-id="${h(person.id)}">
         <div class="we-memory-record-head"><div><div class="we-memory-record-title">${h(person.names?.[0] || '未命名人物')}</div><div class="we-memory-record-meta">${h((person.names || []).slice(1).join(' · ') || person.id)}</div></div>
@@ -534,7 +548,7 @@ window.WORLD_ENGINE_UI = (function() {
       (Array.isArray(state.entity_memory?.[type]) ? state.entity_memory[type] : []).map(entity => {
         const key = `${type}:${entity.id}`;
         const history = (Array.isArray(entity.history) ? entity.history : []).map(entry =>
-          `<div class="we-memory-line"><span>${h(entry.time || '时间未明')}</span>${h(entry.event)}</div>`
+          `<div class="we-memory-line"><span class="we-memory-line-time">${h(entry.time || '时间未明')}</span><div class="we-memory-line-main"><div class="we-memory-line-content">${h(entry.event)}</div></div></div>`
         ).join('');
         return `<div class="we-memory-record" data-entity-id="${h(entity.id)}" data-entity-type="${type}">
           <div class="we-memory-record-head"><div><div class="we-memory-record-title"><span class="we-memory-type-badge">${label}</span>${h(entity.name || '未命名实体')}</div><div class="we-memory-record-meta">${h(entity.id)}</div></div>
@@ -1049,6 +1063,7 @@ window.WORLD_ENGINE_UI = (function() {
     const smallSummaryEveryX = Math.max(1, parseInt(settings.smallSummaryEveryX) || 5);
     const bigSummaryEveryX = Math.max(1, parseInt(settings.bigSummaryEveryX) || 5);
     const bigSummaryInjectLimit = Math.max(1, parseInt(settings.bigSummaryInjectLimit) || 3);
+    const worldEngineMemoryLimit = Math.max(1, parseInt(settings.worldEngineMemoryLimit) || 5);
     const searchDepth = Math.max(1, parseInt(settings.searchDepth) || 5);
     const maxPerCharacter = Math.max(1, parseInt(settings.maxPerCharacter) || 20);
     const backfillBatch = Math.max(1, parseInt(settings.backfillBatchSize) || 5);
@@ -1176,6 +1191,17 @@ window.WORLD_ENGINE_UI = (function() {
         <label>最多注入最新总述数（Y）</label>
         <input type="number" id="we-memory-big-summary-inject-limit" min="1" step="1" value="${bigSummaryInjectLimit}" style="width:100%;">
         <div style="font-size:11px;color:var(--we-text3);margin-top:3px;">只限制总述数量；尚未整理的纪要仍会全部注入。本地与 JSON 中的历史总述不会被删除或截断。</div>
+      </div>
+      <div class="we-input-group">
+        <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
+          <input type="checkbox" id="we-memory-inject-world-engine" ${settings.injectIntoWorldEngine === true ? 'checked' : ''}>
+          向世界引擎提供记忆
+        </label>
+        <div style="font-size:11px;color:var(--we-text3);margin-top:3px;">世界推演时扫描完整世界状态中出现的人名、别名和实体名，仅提供匹配的人物/实体记忆；不会提供纪要或总述。记忆引擎异常不会中断世界推演。</div>
+      </div>
+      <div class="we-input-group">
+        <label>世界推演每个匹配条目最多注入（X）</label>
+        <input type="number" id="we-memory-world-engine-limit" min="1" step="1" value="${worldEngineMemoryLimit}" style="width:100%;">
       </div>`;
 
     const backfillBody = `
@@ -4670,6 +4696,8 @@ window.WORLD_ENGINE_UI = (function() {
           bigSummaryEveryX: Math.max(1, parseInt(gv('we-memory-big-summary-every')) || 5),
           bigSummaryInjectLimit: Math.max(1, parseInt(gv('we-memory-big-summary-inject-limit')) || 3),
           injectIntoPrompt: document.getElementById('we-memory-inject')?.checked !== false,
+          injectIntoWorldEngine: document.getElementById('we-memory-inject-world-engine')?.checked === true,
+          worldEngineMemoryLimit: Math.max(1, parseInt(gv('we-memory-world-engine-limit')) || 5),
           searchDepth: Math.max(1, parseInt(gv('we-memory-search-depth')) || 5),
           maxPerCharacter: Math.max(1, parseInt(gv('we-memory-max-per-character')) || 20),
           apiAutoRetries: Math.max(0, parseInt(gv('we-memory-api-auto-retries')) || 0),

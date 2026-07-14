@@ -21,6 +21,8 @@ const settings = {
   smallSummaryEveryX: 2,
   bigSummaryEveryX: 1,
   bigSummaryInjectLimit: 3,
+  injectIntoWorldEngine: false,
+  worldEngineMemoryLimit: 1,
   injectIntoPrompt: true,
   searchDepth: 5,
   maxPerCharacter: 20,
@@ -213,6 +215,10 @@ for (const filename of [
     { id: 'big_000002', startLayer: 11, endLayer: 20, content: '总述二' }
   ];
   latest.event_memory.big_summary_cursor = 10;
+  latest.entity_memory.organization = [{
+    id: 'org_000001', name: '青石盟', description: '控制青石城商路。',
+    history: [{ time: '昨日', event: '青石盟封锁北门。' }, { time: '今日', event: '青石盟开始盘查行人。' }]
+  }];
   sandbox.MEMORY_ENGINE_DATA.saveState(latest);
   const oldCheckpoint = JSON.parse(JSON.stringify(latest));
   oldCheckpoint.event_memory.small_summaries = oldCheckpoint.event_memory.small_summaries.slice(0, 5);
@@ -234,6 +240,18 @@ for (const filename of [
   ]);
   assert.ok(!roundTripped.knowledge_index['乙'], 'UI 修改知情人后必须移除旧 known_by 索引');
   assert.ok(roundTripped.knowledge_index['丙'].some(record => record.memory === '甲掌握秘密。'), 'UI 修改知情人后必须建立新 known_by 索引');
+  sandbox.MEMORY_ENGINE_DATA.saveState(roundTripped);
+  settings.injectIntoWorldEngine = true;
+  const worldMemory = sandbox.MEMORY_ENGINE.buildWorldEngineContext({
+    factions: [{ name: '青石盟', core_person: '丙' }],
+    world_digest: '青石盟正在搜寻丙。'
+  });
+  assert.ok(worldMemory.includes('甲掌握秘密。'), '世界状态命中的人物必须注入其知晓的记忆');
+  assert.ok(worldMemory.includes('青石盟开始盘查行人。'), '世界状态命中的实体必须注入最近历史');
+  assert.ok(!worldMemory.includes('青石盟封锁北门。'), '世界引擎每个匹配条目的注入上限必须生效');
+  assert.ok(!worldMemory.includes('纪要1') && !worldMemory.includes('总述一'), '注入世界引擎时不得携带纪要或总述');
+  settings.injectIntoWorldEngine = false;
+  assert.strictEqual(sandbox.MEMORY_ENGINE.buildWorldEngineContext({ factions: [{ name: '青石盟' }] }), '', '关闭跨引擎注入后必须返回空内容');
 
   sandbox.MEMORY_ENGINE_DATA.saveState(sandbox.MEMORY_ENGINE_DATA.defaultState());
   calls.length = 0;
