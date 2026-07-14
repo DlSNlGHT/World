@@ -228,6 +228,39 @@ window.MEMORY_ENGINE = (function() {
     state.entity_index = index;
   }
 
+  function repairStateIndexes(state, previousState) {
+    if (!state || typeof state !== 'object' || Array.isArray(state)) return state;
+    const oldState = previousState && typeof previousState === 'object' ? previousState : state;
+    const oldIndex = clone(oldState.knowledge_index || {});
+    const aliasTargets = {};
+    const removedAliases = new Set();
+    for (const oldPerson of oldState.personal_memory || []) {
+      const current = (state.personal_memory || []).find(person => person.id === oldPerson.id);
+      if (!current) {
+        for (const oldName of oldPerson.names || []) removedAliases.add(normalized(oldName));
+        continue;
+      }
+      for (const oldName of oldPerson.names || []) aliasTargets[normalized(oldName)] = unique(current.names || []);
+    }
+    rebuildKnowledgeIndex(state);
+    const validRecords = new Set();
+    for (const person of state.personal_memory || []) {
+      for (const [time, memories] of Object.entries(person.memory || {})) {
+        for (const memory of Array.isArray(memories) ? memories : []) validRecords.add(`${person.id}\u0000${time}\u0000${memory}`);
+      }
+    }
+    for (const [oldName, records] of Object.entries(oldIndex)) {
+      if (removedAliases.has(normalized(oldName))) continue;
+      const targets = aliasTargets[normalized(oldName)] || [oldName];
+      for (const record of Array.isArray(records) ? records : []) {
+        if (!validRecords.has(`${record.ownerId}\u0000${record.time}\u0000${record.memory}`)) continue;
+        addKnowledge(state.knowledge_index, targets, record);
+      }
+    }
+    rebuildEntityIndex(state);
+    return state;
+  }
+
   function findEntity(state, type, name) {
     ensureEntityState(state);
     const key = `${type}:${normalized(name)}`;
@@ -758,6 +791,7 @@ window.MEMORY_ENGINE = (function() {
     init, applyInjection, manualExtract, manualReextract, extractNow: manualExtract,
     manualSmallSummary, manualBigSummary,
     backfill, backfillSummaries, stopBackfill, abort,
+    repairStateIndexes,
     getLastDebug: () => clone(lastDebug), getBackfillStatus: () => clone(backfillStatus),
     getSummaryBackfillStatus: () => clone(summaryBackfillStatus),
     getRunningLabel: () => runningLabel,

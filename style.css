@@ -965,24 +965,51 @@
 .we-memory-core-section {
   background: radial-gradient(120% 90% at 50% 0%, color-mix(in srgb, var(--we-accent) 11%, transparent), var(--we-card) 60%);
 }
+.we-memory-core-section .we-core {
+  gap: 10px;
+  padding: 10px 0 0;
+}
+.we-memory-core-ring {
+  width: 160px;
+  height: 160px;
+}
 .we-memory-core-ring svg circle {
   transition: stroke-dasharray 0.6s ease;
 }
+.we-memory-core-ring .we-core-title {
+  font-size: 15px;
+  letter-spacing: 1px;
+  transform: none;
+}
+.we-memory-core-ring .we-core-sub {
+  font-size: 11px;
+  margin-top: 3px;
+}
 .we-memory-core-value {
-  font-size: 31px;
+  max-width: 104px;
+  margin: 3px 0 1px;
+  font-size: 24px;
+  line-height: 1.1;
   color: var(--we-accent);
+  white-space: nowrap;
 }
 .we-memory-core-value span {
   font-family: "SimSun", "宋体", "Songti SC", "STSong", serif;
   font-size: 12px;
   margin-left: 3px;
 }
+.we-memory-core-ring .we-core-tier {
+  margin-top: 2px;
+  font-size: 11px;
+  letter-spacing: 0;
+  color: var(--we-text2);
+}
 .we-memory-ring-legend {
   display: flex;
   align-items: center;
   justify-content: center;
   gap: 16px;
-  margin-top: -5px;
+  margin-top: 0;
   color: var(--we-text3);
   font-size: 11px;
 }
@@ -1040,6 +1067,159 @@
   line-height: 1.65;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
+}
+.we-memory-nav-list {
+  margin-top: 0;
+}
+.we-memory-sub-poem {
+  margin-left: auto;
+  padding-left: 12px;
+  color: var(--we-accent);
+  font-family: "SimSun", "宋体", "Songti SC", "STSong", serif;
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  white-space: nowrap;
+}
+.we-memory-subview {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+}
+.we-memory-page-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: 1px;
+}
+.we-memory-record {
+  position: relative;
+  padding: 12px;
+  border: 1px solid var(--we-border);
+  border-radius: 7px;
+  background: color-mix(in srgb, var(--we-accent) 4%, var(--we-card));
+}
+.we-memory-record-new {
+  border-color: color-mix(in srgb, var(--we-accent) 48%, var(--we-border));
+}
+.we-memory-record-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 9px;
+}
+.we-memory-record-title {
+  color: var(--we-text);
+  font-family: "SimSun", "宋体", "Songti SC", "STSong", serif;
+  font-size: 15px;
+  line-height: 1.35;
+}
+.we-memory-record-meta {
+  margin-top: 3px;
+  color: var(--we-text3);
+  font-size: 10px;
+}
+.we-memory-record-actions {
+  display: flex;
+  flex-shrink: 0;
+  gap: 4px;
+}
+.we-memory-delete-person,
+.we-memory-delete-entity {
+  color: var(--we-danger);
+}
+.we-memory-line {
+  display: grid;
+  grid-template-columns: minmax(62px, auto) 1fr;
+  gap: 9px;
+  padding: 7px 0;
+  border-top: 1px solid var(--we-hairline);
+  color: var(--we-text2);
+  font-size: 12px;
+  line-height: 1.55;
+  overflow-wrap: anywhere;
+}
+.we-memory-line > span {
+  color: var(--we-text3);
+  font-size: 10px;
+  padding-top: 2px;
+}
+.we-memory-description {
+  margin-bottom: 8px;
+  color: var(--we-text2);
+  font-size: 12px;
+  line-height: 1.65;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.we-memory-type-badge {
+  display: inline-flex;
+  margin-right: 7px;
+  padding: 1px 5px;
+  border: 1px solid color-mix(in srgb, var(--we-accent) 40%, var(--we-border));
+  border-radius: 8px;
+  color: var(--we-accent);
+  font-family: sans-serif;
+  font-size: 9px;
+  vertical-align: 2px;
+}
+.we-memory-editor {
+  margin-top: 8px;
+  padding-top: 10px;
+  border-top: 1px solid var(--we-border);
+}
+.we-memory-record-new .we-memory-editor {
+  margin-top: 0;
+  padding-top: 0;
+  border-top: 0;
+}
+.we-memory-form-grid {
+  display: grid;
+  grid-template-columns: minmax(92px, 0.7fr) 1.3fr;
+  gap: 8px;
+}
+.we-memory-editor-label {
+  margin: 3px 0 7px;
+  color: var(--we-text3);
+  font-size: 11px;
+}
+.we-memory-entry-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 7px;
+}
+.we-memory-entry-edit {
+  display: grid;
+  grid-template-columns: minmax(85px, 0.34fr) 1fr 28px;
+  align-items: start;
+  gap: 6px;
+}
+.we-memory-entry-edit input,
+.we-memory-entry-edit textarea {
+  width: 100%;
+  min-width: 0;
+}
+.we-memory-entry-empty {
+  padding: 7px 0;
+  color: var(--we-text3);
+  font-size: 11px;
+}
+.we-memory-editor-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 6px;
+  margin-top: 10px;
+}
+.we-memory-overview-record .we-memory-summary-text {
+  font-size: 13px;
+  line-height: 1.8;
+}
+@media (max-width: 520px) {
+  .we-memory-sub-poem { display: none; }
+  .we-memory-entry-edit { grid-template-columns: 1fr 28px; }
+  .we-memory-entry-time { grid-column: 1; }
+  .we-memory-entry-content { grid-column: 1; }
+  .we-memory-remove-entry { grid-column: 2; grid-row: 1 / span 2; }
 }
 
 /* 尾点发光：外晕呼吸 + 亮核明灭 */

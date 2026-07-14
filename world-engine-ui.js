@@ -10,6 +10,12 @@ window.WORLD_ENGINE_UI = (function() {
   const _engineFaceOrder = [];
   const _engineFaceRegistry = new Map();
   let _memorySettingsOpen = false;
+  let _memoryView = 'home';
+  let _memorySelectedNavView = null;
+  let _memoryEditingPerson = null;
+  let _memoryEditingEntity = null;
+  let _memoryEditingSmall = null;
+  let _memoryEditingBig = false;
   let _memoryRunningLabel = '';
   let _panelFlipping = false;
   let isEvolving = false;
@@ -107,6 +113,7 @@ window.WORLD_ENGINE_UI = (function() {
       isRunning: () => Boolean(window.MEMORY_ENGINE?.isRunning?.()),
       getRunningLabel: () => window.MEMORY_ENGINE?.getRunningLabel?.() || _memoryRunningLabel,
       render: () => renderMemoryView(),
+      bind: () => bindMemoryView(),
       openSettings: () => { _memorySettingsOpen = !_memorySettingsOpen; },
       isSettingsOpen: () => _memorySettingsOpen,
       onSettingsTab: key => { _memorySettingsTab = key; },
@@ -350,7 +357,8 @@ window.WORLD_ENGINE_UI = (function() {
 
   function renderMemoryView() {
     if (_memorySettingsOpen) return renderMemorySettingsView();
-    return renderMemoryHomeView();
+    if (_memoryView === 'home') return renderMemoryHomeView();
+    return renderMemorySubView(_memoryView);
   }
 
   function countMemoryAiSince(layer) {
@@ -401,10 +409,10 @@ window.WORLD_ENGINE_UI = (function() {
       <div class="we-core" title="小总结 ${Math.min(elapsedFloors, smallTarget)}/${smallTarget} 楼 · 大总结 ${Math.min(pendingSmall, bigTarget)}/${bigTarget} 条小总结">
         <div class="we-core-ring we-memory-core-ring">
           <svg viewBox="0 0 160 160" width="160" height="160" aria-hidden="true">
-            <circle cx="80" cy="80" r="66" fill="none" stroke="rgba(255,255,255,0.08)" stroke-width="6"/>
-            <circle cx="80" cy="80" r="55" fill="none" stroke="rgba(255,255,255,0.05)" stroke-width="3"/>
-            ${memoryProgressCircle(66, smallProgress, 'var(--we-accent)', 6, 'we-memory-small-progress')}
-            ${memoryProgressCircle(55, bigProgress, 'var(--we-gold)', 3, 'we-memory-big-progress')}
+            <circle cx="80" cy="80" r="64" fill="none" stroke="color-mix(in srgb, var(--we-accent) 18%, transparent)" stroke-width="6"/>
+            <circle cx="80" cy="80" r="52" fill="none" stroke="color-mix(in srgb, var(--we-gold) 24%, transparent)" stroke-width="5"/>
+            ${memoryProgressCircle(64, smallProgress, 'var(--we-accent)', 6, 'we-memory-small-progress')}
+            ${memoryProgressCircle(52, bigProgress, 'var(--we-gold)', 5, 'we-memory-big-progress')}
           </svg>
           <div class="we-core-center">
             <div class="we-core-title">记忆脉络</div>
@@ -419,37 +427,341 @@ window.WORLD_ENGINE_UI = (function() {
     </div>`;
   }
 
-  function renderMemorySummaryOverview(state) {
-    const eventMemory = state?.event_memory || {};
-    const smallSummaries = Array.isArray(eventMemory.small_summaries) ? eventMemory.small_summaries : [];
-    const cursor = Math.max(0, Math.min(smallSummaries.length, parseInt(eventMemory.big_summary_cursor) || 0));
-    const big = String(eventMemory.big_summary?.content || '').trim();
-    const recent = smallSummaries.slice(-3).map((item, offset) => {
-      const index = smallSummaries.length - Math.min(3, smallSummaries.length) + offset;
-      const status = index < cursor ? '已归入大总结' : '等待归档';
-      return `<div class="we-memory-summary-item">
-        <div class="we-memory-summary-meta"><span>楼层 ${h(item.startLayer)}–${h(item.endLayer)}</span><span>${status}</span></div>
-        <div class="we-memory-summary-text">${h(item.content)}</div>
-      </div>`;
-    }).join('');
-    return `<div class="we-section we-memory-summary-section">
-      <div class="we-section-title">事件记忆</div>
-      <div class="we-memory-big-summary">
-        <div class="we-memory-summary-label">当前大总结</div>
-        <div class="we-memory-summary-text">${big ? h(big) : '尚未生成大总结'}</div>
-      </div>
-      <div class="we-memory-summary-label we-memory-recent-label">最近小总结</div>
-      ${recent || '<div class="we-empty">尚未生成小总结</div>'}
-    </div>`;
-  }
-
   function renderMemoryHomeView() {
     const state = window.MEMORY_ENGINE_DATA?.loadState?.() || {};
     const settings = window.MEMORY_ENGINE_SETTINGS?.getSettings?.(true) || {};
+    const rows = [
+      { view: 'people', label: '人物', sub: '人物记忆 · 别名 · 时间', poem: '知人者智' },
+      { view: 'entities', label: '实体', sub: '组织 · 物件 · 能力 · 地点', poem: '名者，实之宾也' },
+      { view: 'minutes', label: '纪要', sub: '阶段小总结 · 楼层范围', poem: '纪事者必提其要' },
+      { view: 'overview', label: '总述', sub: '滚动大总结 · 全局脉络', poem: '壹引其纲，万目皆张' }
+    ];
+    const nav = rows.map((row, index) => {
+      const selected = _memorySelectedNavView === row.view ? ' we-nav-row--selected' : '';
+      const topLine = index === 0 ? '<div class="we-nav-line we-nav-line-hidden"></div>' : '<div class="we-nav-line"></div>';
+      const bottomLine = index === rows.length - 1 ? '<div class="we-nav-line we-nav-line-hidden"></div>' : '<div class="we-nav-line"></div>';
+      return `<div class="we-nav-row we-memory-nav-row${selected}" data-memory-view="${row.view}">
+        <div class="we-nav-label">${row.label}</div>
+        <div class="we-nav-track">${topLine}<div class="we-nav-dot"></div>${bottomLine}</div>
+        <div class="we-nav-content"><span class="we-nav-sub">${row.sub}</span><span class="we-nav-poem">${row.poem}</span></div>
+        <i class="fa-solid fa-chevron-right we-nav-arrow"></i>
+      </div>`;
+    }).join('');
     return '<div class="we-memory-home">'
       + renderMemoryCore(state, settings)
-      + renderMemorySummaryOverview(state)
+      + '<div class="we-nav-list we-memory-nav-list">' + nav + '</div>'
       + '</div>';
+  }
+
+  const MEMORY_VIEW_META = {
+    people: { title: '人物', poem: '知人者智' },
+    entities: { title: '实体', poem: '名者，实之宾也' },
+    minutes: { title: '纪要', poem: '纪事者必提其要' },
+    overview: { title: '总述', poem: '壹引其纲，万目皆张' }
+  };
+  const MEMORY_ENTITY_LABELS = { organization: '组织', object: '物件', ability: '能力', location: '地点' };
+
+  function renderMemoryEntryRow(time, content, kind) {
+    const placeholder = kind === 'history' ? '事件内容' : '人物记忆';
+    return `<div class="we-memory-entry-edit" data-memory-entry-row>
+      <input class="we-memory-entry-time" type="text" value="${h(time || '')}" placeholder="时间（可留空）">
+      <textarea class="we-memory-entry-content" rows="2" placeholder="${placeholder}">${h(content || '')}</textarea>
+      <button class="we-icon-btn we-memory-remove-entry" type="button" title="移除此条"><i class="fa-solid fa-xmark"></i></button>
+    </div>`;
+  }
+
+  function renderMemoryPersonEditor(person, isNew) {
+    const entries = Object.entries(person?.memory || {}).flatMap(([time, memories]) =>
+      (Array.isArray(memories) ? memories : []).map(memory => renderMemoryEntryRow(time, memory, 'memory'))
+    ).join('');
+    return `<div class="we-memory-editor" data-person-editor data-person-id="${h(person?.id || '')}" data-new="${isNew ? 'true' : 'false'}">
+      <div class="we-input-group"><label>姓名与别名（用 / 分隔）</label><input class="we-memory-person-names" type="text" value="${h((person?.names || []).join(' / '))}" placeholder="例如：沈鹤亭 / 鹤亭"></div>
+      <div class="we-memory-editor-label">人物记忆</div>
+      <div class="we-memory-entry-list">${entries || '<div class="we-memory-entry-empty">暂无记忆，可在下方增加</div>'}</div>
+      <button class="we-btn we-memory-add-entry" type="button" data-entry-kind="memory"><i class="fa-solid fa-plus"></i> 增加记忆</button>
+      <div class="we-memory-editor-actions"><button class="we-btn we-memory-cancel-edit" type="button">取消</button><button class="we-btn we-btn-primary we-memory-save-person" type="button">保存</button></div>
+    </div>`;
+  }
+
+  function renderMemoryPeople(state) {
+    const people = Array.isArray(state.personal_memory) ? state.personal_memory : [];
+    const draft = _memoryEditingPerson === '__new__'
+      ? `<div class="we-memory-record we-memory-record-new">${renderMemoryPersonEditor({ id: '', names: [], memory: {} }, true)}</div>` : '';
+    const cards = people.map(person => {
+      const editing = _memoryEditingPerson === person.id;
+      const entries = Object.entries(person.memory || {}).flatMap(([time, memories]) =>
+        (Array.isArray(memories) ? memories : []).map(memory => `<div class="we-memory-line"><span>${h(time || '时间未明')}</span>${h(memory)}</div>`)
+      ).join('');
+      return `<div class="we-memory-record" data-person-id="${h(person.id)}">
+        <div class="we-memory-record-head"><div><div class="we-memory-record-title">${h(person.names?.[0] || '未命名人物')}</div><div class="we-memory-record-meta">${h((person.names || []).slice(1).join(' · ') || person.id)}</div></div>
+          <div class="we-memory-record-actions"><button class="we-icon-btn we-memory-edit-person" type="button" title="编辑"><i class="fa-solid fa-pen"></i></button><button class="we-icon-btn we-memory-delete-person" type="button" title="删除"><i class="fa-solid fa-trash"></i></button></div>
+        </div>
+        ${editing ? renderMemoryPersonEditor(person, false) : (entries || '<div class="we-empty">暂无人物记忆</div>')}
+      </div>`;
+    }).join('');
+    return `<div class="we-memory-page-actions"><button class="we-btn we-btn-primary" id="we-memory-add-person" type="button"><i class="fa-solid fa-plus"></i> 新增人物</button></div>${draft}${cards || '<div class="we-empty">暂无人物，点击“新增人物”手动建立。</div>'}`;
+  }
+
+  function renderMemoryEntityEditor(entity, type, isNew) {
+    const history = (Array.isArray(entity?.history) ? entity.history : [])
+      .map(entry => renderMemoryEntryRow(entry.time, entry.event, 'history')).join('');
+    const options = Object.entries(MEMORY_ENTITY_LABELS).map(([value, label]) => `<option value="${value}" ${value === type ? 'selected' : ''}>${label}</option>`).join('');
+    return `<div class="we-memory-editor" data-entity-editor data-entity-id="${h(entity?.id || '')}" data-original-type="${h(type || 'organization')}" data-new="${isNew ? 'true' : 'false'}">
+      <div class="we-memory-form-grid"><div class="we-input-group"><label>类型</label><select class="we-memory-entity-type">${options}</select></div><div class="we-input-group"><label>名称</label><input class="we-memory-entity-name" type="text" value="${h(entity?.name || '')}" placeholder="实体名称"></div></div>
+      <div class="we-input-group"><label>当前描述</label><textarea class="we-memory-entity-description" rows="3" placeholder="实体当前状态与特征">${h(entity?.description || '')}</textarea></div>
+      <div class="we-memory-editor-label">历史事件</div>
+      <div class="we-memory-entry-list">${history || '<div class="we-memory-entry-empty">暂无历史，可在下方增加</div>'}</div>
+      <button class="we-btn we-memory-add-entry" type="button" data-entry-kind="history"><i class="fa-solid fa-plus"></i> 增加历史</button>
+      <div class="we-memory-editor-actions"><button class="we-btn we-memory-cancel-edit" type="button">取消</button><button class="we-btn we-btn-primary we-memory-save-entity" type="button">保存</button></div>
+    </div>`;
+  }
+
+  function renderMemoryEntities(state) {
+    const draft = _memoryEditingEntity === '__new__'
+      ? `<div class="we-memory-record we-memory-record-new">${renderMemoryEntityEditor({ id: '', name: '', description: '', history: [] }, 'organization', true)}</div>` : '';
+    const cards = Object.entries(MEMORY_ENTITY_LABELS).flatMap(([type, label]) =>
+      (Array.isArray(state.entity_memory?.[type]) ? state.entity_memory[type] : []).map(entity => {
+        const key = `${type}:${entity.id}`;
+        const history = (Array.isArray(entity.history) ? entity.history : []).map(entry =>
+          `<div class="we-memory-line"><span>${h(entry.time || '时间未明')}</span>${h(entry.event)}</div>`
+        ).join('');
+        return `<div class="we-memory-record" data-entity-id="${h(entity.id)}" data-entity-type="${type}">
+          <div class="we-memory-record-head"><div><div class="we-memory-record-title"><span class="we-memory-type-badge">${label}</span>${h(entity.name || '未命名实体')}</div><div class="we-memory-record-meta">${h(entity.id)}</div></div>
+            <div class="we-memory-record-actions"><button class="we-icon-btn we-memory-edit-entity" type="button" title="编辑"><i class="fa-solid fa-pen"></i></button><button class="we-icon-btn we-memory-delete-entity" type="button" title="删除"><i class="fa-solid fa-trash"></i></button></div>
+          </div>
+          ${_memoryEditingEntity === key ? renderMemoryEntityEditor(entity, type, false) : `<div class="we-memory-description">${h(entity.description || '暂无描述')}</div>${history}`}
+        </div>`;
+      })
+    ).join('');
+    return `<div class="we-memory-page-actions"><button class="we-btn we-btn-primary" id="we-memory-add-entity" type="button"><i class="fa-solid fa-plus"></i> 新增实体</button></div>${draft}${cards || '<div class="we-empty">暂无实体，点击“新增实体”手动建立。</div>'}`;
+  }
+
+  function renderMemoryMinutes(state) {
+    const eventMemory = state.event_memory || {};
+    const items = Array.isArray(eventMemory.small_summaries) ? eventMemory.small_summaries : [];
+    const cursor = Math.max(0, Math.min(items.length, parseInt(eventMemory.big_summary_cursor) || 0));
+    return items.map((item, index) => `<div class="we-memory-record" data-small-id="${h(item.id)}">
+      <div class="we-memory-record-head"><div><div class="we-memory-record-title">楼层 ${h(String(item.startLayer))}–${h(String(item.endLayer))}</div><div class="we-memory-record-meta">${index < cursor ? '已归入总述' : '等待归档'} · ${h(item.id)}</div></div>
+        <div class="we-memory-record-actions"><button class="we-icon-btn we-memory-edit-small" type="button" title="修改"><i class="fa-solid fa-pen"></i></button></div>
+      </div>
+      ${_memoryEditingSmall === item.id ? `<div class="we-memory-editor"><div class="we-input-group"><label>纪要内容</label><textarea class="we-memory-small-content" rows="6" maxlength="200">${h(item.content || '')}</textarea><div class="we-hint">最多 200 字；允许清空，不提供新增或删除操作。</div></div><div class="we-memory-editor-actions"><button class="we-btn we-memory-cancel-edit" type="button">取消</button><button class="we-btn we-btn-primary we-memory-save-small" type="button">保存修改</button></div></div>` : `<div class="we-memory-summary-text">${h(item.content || '（内容为空）')}</div>`}
+    </div>`).join('') || '<div class="we-empty">尚未生成纪要。纪要只能由总结流程生成。</div>';
+  }
+
+  function renderMemoryOverview(state) {
+    const big = state.event_memory?.big_summary;
+    if (!big) return '<div class="we-empty">尚未生成总述。总述只能由大总结流程生成。</div>';
+    return `<div class="we-memory-record we-memory-overview-record">
+      <div class="we-memory-record-head"><div><div class="we-memory-record-title">全局总述</div><div class="we-memory-record-meta">楼层 ${h(String(big.startLayer))}–${h(String(big.endLayer))}</div></div>
+        <div class="we-memory-record-actions"><button class="we-icon-btn" id="we-memory-edit-big" type="button" title="修改"><i class="fa-solid fa-pen"></i></button></div>
+      </div>
+      ${_memoryEditingBig ? `<div class="we-memory-editor"><div class="we-input-group"><label>总述内容</label><textarea id="we-memory-big-content" rows="10" maxlength="500">${h(big.content || '')}</textarea><div class="we-hint">最多 500 字；允许清空，不提供新增或删除操作。</div></div><div class="we-memory-editor-actions"><button class="we-btn we-memory-cancel-edit" type="button">取消</button><button class="we-btn we-btn-primary" id="we-memory-save-big" type="button">保存修改</button></div></div>` : `<div class="we-memory-summary-text">${h(big.content || '（内容为空）')}</div>`}
+    </div>`;
+  }
+
+  function renderMemorySubView(view) {
+    const state = window.MEMORY_ENGINE_DATA?.loadState?.() || {};
+    const meta = MEMORY_VIEW_META[view] || { title: view, poem: '' };
+    const content = view === 'people' ? renderMemoryPeople(state)
+      : view === 'entities' ? renderMemoryEntities(state)
+      : view === 'minutes' ? renderMemoryMinutes(state)
+      : renderMemoryOverview(state);
+    return `<div class="we-sub-topbar"><button class="we-icon-btn" id="we-memory-btn-back" type="button" title="返回"><i class="fa-solid fa-arrow-left"></i></button><span class="we-sub-title">${meta.title}</span><span class="we-memory-sub-poem">${meta.poem}</span></div><div class="we-memory-subview">${content}</div>`;
+  }
+
+  function clearMemoryEditing() {
+    _memoryEditingPerson = null;
+    _memoryEditingEntity = null;
+    _memoryEditingSmall = null;
+    _memoryEditingBig = false;
+  }
+
+  function nextMemoryUiId(items, prefix) {
+    const pattern = new RegExp(`^${prefix}_(\\d+)$`);
+    const max = (items || []).reduce((number, item) => {
+      const match = pattern.exec(String(item?.id || ''));
+      return Math.max(number, match ? Number(match[1]) : 0);
+    }, 0);
+    return `${prefix}_${String(max + 1).padStart(6, '0')}`;
+  }
+
+  function saveEditedMemoryState(state, message) {
+    if (window.MEMORY_ENGINE?.isRunning?.()) {
+      showToast('记忆任务运行中，暂不能修改数据', true);
+      return false;
+    }
+    const previousState = window.MEMORY_ENGINE_DATA?.loadState?.();
+    window.MEMORY_ENGINE?.repairStateIndexes?.(state, previousState);
+    window.MEMORY_ENGINE_DATA?.saveState?.(state);
+    window.WORLD_ENGINE_CHATCACHE?.forScope?.('memory')?.afterEvolution?.();
+    window.MEMORY_ENGINE?.applyInjection?.();
+    showToast(message || '记忆数据已保存');
+    return true;
+  }
+
+  function readMemoryEntryRows(editor) {
+    return Array.from(editor?.querySelectorAll?.('[data-memory-entry-row]') || []).map(row => ({
+      time: String(row.querySelector('.we-memory-entry-time')?.value || '').trim(),
+      content: String(row.querySelector('.we-memory-entry-content')?.value || '').trim()
+    })).filter(entry => entry.content);
+  }
+
+  function bindMemoryView() {
+    const back = document.getElementById('we-memory-btn-back');
+    if (back) back.onclick = () => { clearMemoryEditing(); _memoryView = 'home'; _memorySelectedNavView = null; refresh(); };
+    const settingsBack = document.getElementById('we-memory-settings-back');
+    if (settingsBack) settingsBack.onclick = () => { _memorySettingsOpen = false; clearMemoryEditing(); refresh(); };
+
+    document.querySelectorAll('.we-memory-nav-row[data-memory-view]').forEach(row => {
+      row.onclick = () => {
+        const view = row.dataset.memoryView;
+        if (_memorySelectedNavView === view) {
+          _memorySelectedNavView = null;
+          _memoryView = view;
+        } else {
+          _memorySelectedNavView = view;
+        }
+        refresh();
+      };
+    });
+
+    const addPerson = document.getElementById('we-memory-add-person');
+    if (addPerson) addPerson.onclick = () => { clearMemoryEditing(); _memoryEditingPerson = '__new__'; refresh(); };
+    document.querySelectorAll('.we-memory-edit-person').forEach(button => {
+      button.onclick = () => { clearMemoryEditing(); _memoryEditingPerson = button.closest('[data-person-id]')?.dataset.personId || null; refresh(); };
+    });
+    document.querySelectorAll('.we-memory-delete-person').forEach(button => {
+      button.onclick = () => {
+        const id = button.closest('[data-person-id]')?.dataset.personId;
+        const state = window.MEMORY_ENGINE_DATA?.loadState?.();
+        const person = state?.personal_memory?.find(item => item.id === id);
+        if (!person || !confirm(`删除人物“${person.names?.[0] || id}”及其全部记忆？`)) return;
+        state.personal_memory = state.personal_memory.filter(item => item.id !== id);
+        if (saveEditedMemoryState(state, '人物已删除')) { clearMemoryEditing(); refresh(); }
+      };
+    });
+    document.querySelectorAll('.we-memory-save-person').forEach(button => {
+      button.onclick = () => {
+        const editor = button.closest('[data-person-editor]');
+        const state = window.MEMORY_ENGINE_DATA?.loadState?.();
+        if (!editor || !state) return;
+        const names = Array.from(new Set(String(editor.querySelector('.we-memory-person-names')?.value || '')
+          .split(/[\/／,，\n]/).map(value => value.trim()).filter(Boolean)));
+        if (!names.length) { showToast('人物至少需要一个姓名', true); return; }
+        const id = editor.dataset.new === 'true'
+          ? nextMemoryUiId(state.personal_memory, 'char') : editor.dataset.personId;
+        const duplicated = state.personal_memory.some(item => item.id !== id && (item.names || []).some(name =>
+          names.some(candidate => candidate.toLocaleLowerCase() === String(name).trim().toLocaleLowerCase())
+        ));
+        if (duplicated) { showToast('姓名或别名已被其他人物使用', true); return; }
+        const entries = readMemoryEntryRows(editor);
+        if (entries.some(entry => Array.from(entry.content).length > 50)) { showToast('单条人物记忆不能超过 50 字', true); return; }
+        const memory = {};
+        for (const entry of entries) {
+          if (!Array.isArray(memory[entry.time])) memory[entry.time] = [];
+          if (!memory[entry.time].includes(entry.content)) memory[entry.time].push(entry.content);
+        }
+        const person = { id, names, memory };
+        const index = state.personal_memory.findIndex(item => item.id === id);
+        if (index >= 0) state.personal_memory[index] = person; else state.personal_memory.push(person);
+        if (saveEditedMemoryState(state, '人物记忆已保存')) { clearMemoryEditing(); refresh(); }
+      };
+    });
+
+    const addEntity = document.getElementById('we-memory-add-entity');
+    if (addEntity) addEntity.onclick = () => { clearMemoryEditing(); _memoryEditingEntity = '__new__'; refresh(); };
+    document.querySelectorAll('.we-memory-edit-entity').forEach(button => {
+      button.onclick = () => {
+        const card = button.closest('[data-entity-id]');
+        clearMemoryEditing();
+        _memoryEditingEntity = card ? `${card.dataset.entityType}:${card.dataset.entityId}` : null;
+        refresh();
+      };
+    });
+    document.querySelectorAll('.we-memory-delete-entity').forEach(button => {
+      button.onclick = () => {
+        const card = button.closest('[data-entity-id]'), type = card?.dataset.entityType, id = card?.dataset.entityId;
+        const state = window.MEMORY_ENGINE_DATA?.loadState?.();
+        const entity = state?.entity_memory?.[type]?.find(item => item.id === id);
+        if (!entity || !confirm(`删除${MEMORY_ENTITY_LABELS[type] || '实体'}“${entity.name || id}”及其全部历史？`)) return;
+        state.entity_memory[type] = state.entity_memory[type].filter(item => item.id !== id);
+        if (saveEditedMemoryState(state, '实体已删除')) { clearMemoryEditing(); refresh(); }
+      };
+    });
+    document.querySelectorAll('.we-memory-save-entity').forEach(button => {
+      button.onclick = () => {
+        const editor = button.closest('[data-entity-editor]');
+        const state = window.MEMORY_ENGINE_DATA?.loadState?.();
+        if (!editor || !state) return;
+        const oldType = editor.dataset.originalType;
+        const type = editor.querySelector('.we-memory-entity-type')?.value;
+        const name = String(editor.querySelector('.we-memory-entity-name')?.value || '').trim();
+        if (!MEMORY_ENTITY_LABELS[type] || !name) { showToast('请选择类型并填写实体名称', true); return; }
+        const oldId = editor.dataset.entityId;
+        const duplicate = (state.entity_memory?.[type] || []).some(item => item.id !== oldId && String(item.name || '').trim().toLocaleLowerCase() === name.toLocaleLowerCase());
+        if (duplicate) { showToast('同类型下已存在同名实体', true); return; }
+        const prefix = { organization: 'org', object: 'obj', ability: 'ability', location: 'location' }[type];
+        let id = oldId;
+        if (editor.dataset.new === 'true' || oldType !== type) id = nextMemoryUiId(state.entity_memory?.[type], prefix);
+        const entity = {
+          id, name,
+          description: String(editor.querySelector('.we-memory-entity-description')?.value || '').trim(),
+          history: readMemoryEntryRows(editor).map(entry => ({ time: entry.time, event: entry.content }))
+        };
+        if (editor.dataset.new !== 'true') state.entity_memory[oldType] = state.entity_memory[oldType].filter(item => item.id !== oldId);
+        state.entity_memory[type].push(entity);
+        if (saveEditedMemoryState(state, '实体记忆已保存')) { clearMemoryEditing(); refresh(); }
+      };
+    });
+
+    document.querySelectorAll('.we-memory-add-entry').forEach(button => {
+      button.onclick = () => {
+        const editor = button.closest('.we-memory-editor');
+        const list = editor?.querySelector('.we-memory-entry-list');
+        if (!list) return;
+        list.querySelector('.we-memory-entry-empty')?.remove();
+        list.insertAdjacentHTML('beforeend', renderMemoryEntryRow('', '', button.dataset.entryKind));
+        bindMemoryEntryRemoveButtons(list);
+      };
+    });
+    bindMemoryEntryRemoveButtons(panelBodyElement);
+    document.querySelectorAll('.we-memory-cancel-edit').forEach(button => {
+      button.onclick = () => { clearMemoryEditing(); refresh(); };
+    });
+
+    document.querySelectorAll('.we-memory-edit-small').forEach(button => {
+      button.onclick = () => { clearMemoryEditing(); _memoryEditingSmall = button.closest('[data-small-id]')?.dataset.smallId || null; refresh(); };
+    });
+    document.querySelectorAll('.we-memory-save-small').forEach(button => {
+      button.onclick = () => {
+        const card = button.closest('[data-small-id]'), id = card?.dataset.smallId;
+        const content = String(card?.querySelector('.we-memory-small-content')?.value || '').trim();
+        if (Array.from(content).length > 200) { showToast('纪要不能超过 200 字', true); return; }
+        const state = window.MEMORY_ENGINE_DATA?.loadState?.(), items = state?.event_memory?.small_summaries || [];
+        const index = items.findIndex(item => item.id === id);
+        if (index < 0) return;
+        if (!content && index < (parseInt(state.event_memory.big_summary_cursor) || 0)) state.event_memory.big_summary_cursor--;
+        items[index].content = content;
+        if (saveEditedMemoryState(state, '纪要已修改')) { clearMemoryEditing(); refresh(); }
+      };
+    });
+    const editBig = document.getElementById('we-memory-edit-big');
+    if (editBig) editBig.onclick = () => { clearMemoryEditing(); _memoryEditingBig = true; refresh(); };
+    const saveBig = document.getElementById('we-memory-save-big');
+    if (saveBig) saveBig.onclick = () => {
+      const content = String(document.getElementById('we-memory-big-content')?.value || '').trim();
+      if (Array.from(content).length > 500) { showToast('总述不能超过 500 字', true); return; }
+      const state = window.MEMORY_ENGINE_DATA?.loadState?.();
+      if (!state?.event_memory?.big_summary) return;
+      state.event_memory.big_summary.content = content;
+      if (saveEditedMemoryState(state, '总述已修改')) { clearMemoryEditing(); refresh(); }
+    };
+  }
+
+  function bindMemoryEntryRemoveButtons(root) {
+    root?.querySelectorAll?.('.we-memory-remove-entry').forEach(button => {
+      button.onclick = () => button.closest('[data-memory-entry-row]')?.remove();
+    });
   }
 
   const MEMORY_SETTINGS_TABS = [
@@ -930,10 +1242,10 @@ window.WORLD_ENGINE_UI = (function() {
       + (tab.key === _memorySettingsTab ? '' : ' style="display:none;"') + '>'
       + (panelContent[tab.key] || '') + '</div>').join('');
 
-    return '<div class="we-sub-topbar"><span class="we-sub-title">记忆引擎设置</span></div>'
+    return '<div class="we-sub-topbar"><button class="we-icon-btn" id="we-memory-settings-back" type="button" title="返回"><i class="fa-solid fa-arrow-left"></i></button><span class="we-sub-title">设置</span></div>'
       + tabBar + panels
       + '<div class="we-settings-save-actions we-settings-save-sticky">'
-      + '<button class="we-btn" id="we-save-memory-settings">保存记忆设置</button>'
+      + '<button class="we-btn" id="we-save-memory-settings">保存设置</button>'
       + '</div>';
   }
 
@@ -1044,7 +1356,8 @@ window.WORLD_ENGINE_UI = (function() {
 
   function isEditingPanelContent() {
     if (editingEvent || editingFaction || editingWind || editingTrend || editingDigest ||
-        editingEnemy || editingInfluence || editingRI || editingSecret) return true;
+        editingEnemy || editingInfluence || editingRI || editingSecret || _memoryEditingPerson ||
+        _memoryEditingEntity || _memoryEditingSmall || _memoryEditingBig) return true;
 
     // 经济信号等少数内容使用 contentEditable 行内编辑，不经过上面的编辑状态变量。
     const active = document.activeElement;
@@ -4242,7 +4555,7 @@ window.WORLD_ENGINE_UI = (function() {
         };
         window.MEMORY_ENGINE_SETTINGS?.saveSettings(memorySettings);
         window.MEMORY_ENGINE?.applyInjection?.();
-        showToast('记忆引擎设置已保存');
+        showToast('设置已保存');
       };
     }
 

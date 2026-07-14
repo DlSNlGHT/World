@@ -105,6 +105,28 @@ async function run() {
   state = MEMORY_ENGINE_DATA.loadState();
   assert(state.personal_memory.some(person => person.names.includes('旧版人物')), '应兼容旧版人物数组响应');
 
+  const beforeEdit = {
+    personal_memory: [
+      { id: 'char_000001', names: ['知情人'], memory: {} },
+      { id: 'char_000002', names: ['记忆主人'], memory: { '某日': ['记忆主人记得一件事。'] } }
+    ],
+    knowledge_index: {
+      '知情人': [{ ownerId: 'char_000002', time: '某日', memory: '记忆主人记得一件事。' }],
+      '记忆主人': [{ ownerId: 'char_000002', time: '某日', memory: '记忆主人记得一件事。' }]
+    },
+    entity_memory: { organization: [{ id: 'org_000001', name: '旧组织', description: '', history: [] }], object: [], ability: [], location: [] },
+    entity_index: { 'organization:旧组织': 'org_000001' },
+    event_memory: { small_summaries: [], big_summary: null, small_summary_layer: null, big_summary_cursor: 0 },
+    round: 0, chatLayer: null
+  };
+  const afterEdit = JSON.parse(JSON.stringify(beforeEdit));
+  afterEdit.personal_memory[0].names = ['新知情人'];
+  afterEdit.entity_memory.organization[0].name = '新组织';
+  MEMORY_ENGINE.repairStateIndexes(afterEdit, beforeEdit);
+  assert(afterEdit.knowledge_index['新知情人']?.some(record => record.ownerId === 'char_000002'), '人物改名后应保留其知晓的他人记忆');
+  assert(!afterEdit.knowledge_index['知情人'], '人物改名后不应残留旧别名索引');
+  assert(afterEdit.entity_index['organization:新组织'] === 'org_000001', '实体改名后应重建名称索引并保留稳定 ID');
+
   console.log('memory-engine entity tests passed');
 }
 
