@@ -171,8 +171,70 @@
   -webkit-mask: url("fingerprint-outline-with-magnifying-glass-svgrepo-com.svg") center / contain no-repeat;
           mask: url("fingerprint-outline-with-magnifying-glass-svgrepo-com.svg") center / contain no-repeat;
 }
+.we-ball-memory::after {
+  content: "";
+  position: absolute;
+  inset: 5px;
+  background: var(--we-ball-land);
+  opacity: 0;
+  pointer-events: none;
+  -webkit-mask: url("fingerprint-outline-with-magnifying-glass-svgrepo-com.svg") center / contain no-repeat;
+          mask: url("fingerprint-outline-with-magnifying-glass-svgrepo-com.svg") center / contain no-repeat;
+}
+.we-memory-scan {
+  position: absolute;
+  inset: 5px;
+  z-index: 2;
+  opacity: 0;
+  pointer-events: none;
+  background: linear-gradient(
+    to bottom,
+    transparent 42%,
+    color-mix(in srgb, var(--we-ball-glow) 45%, transparent) 47%,
+    rgba(255,255,255,0.96) 50%,
+    color-mix(in srgb, var(--we-ball-glow) 65%, transparent) 53%,
+    transparent 58%
+  );
+  background-size: 100% 260%;
+  background-position: center -130%;
+  -webkit-mask: url("fingerprint-outline-with-magnifying-glass-svgrepo-com.svg") center / contain no-repeat;
+          mask: url("fingerprint-outline-with-magnifying-glass-svgrepo-com.svg") center / contain no-repeat;
+}
 #we-input-btn.we-ball-memory-face.we-ball-evolving .we-ball-memory {
   animation: we-globe-glow 1.8s ease-in-out infinite;
+}
+#we-input-btn.we-ball-memory-face.we-ball-evolving .we-ball-memory::before {
+  animation: we-memory-fingerprint-pulse 1.8s ease-in-out infinite;
+}
+#we-input-btn.we-ball-memory-face.we-ball-evolving .we-ball-memory::after {
+  animation: we-memory-fingerprint-ghost 1.8s ease-out infinite;
+}
+#we-input-btn.we-ball-memory-face.we-ball-evolving .we-memory-scan {
+  animation: we-memory-scan 1.55s linear infinite;
+}
+@keyframes we-memory-fingerprint-pulse {
+  0%, 100% { transform: translateY(1px) scale(0.97); opacity: 0.72; }
+  50%      { transform: translateY(-1px) scale(1.025); opacity: 1; }
+}
+@keyframes we-memory-fingerprint-ghost {
+  0%   { transform: translateY(1px) scale(0.96); opacity: 0.34; }
+  65%  { transform: translateY(-1px) scale(1.09); opacity: 0.10; }
+  100% { transform: translateY(-2px) scale(1.14); opacity: 0; }
+}
+@keyframes we-memory-scan {
+  0%   { background-position: center -130%; opacity: 0; }
+  12%  { opacity: 1; }
+  88%  { opacity: 1; }
+  100% { background-position: center 130%; opacity: 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  #we-input-btn.we-ball-memory-face.we-ball-evolving .we-ball-memory,
+  #we-input-btn.we-ball-memory-face.we-ball-evolving .we-ball-memory::before,
+  #we-input-btn.we-ball-memory-face.we-ball-evolving .we-ball-memory::after,
+  #we-input-btn.we-ball-memory-face.we-ball-evolving .we-memory-scan {
+    animation: none;
+  }
 }
 
 /* 地球本体：扁平平涂海洋（面板深青灰同族，去饱和） */

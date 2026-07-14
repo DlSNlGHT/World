@@ -5732,7 +5732,7 @@ window.WORLD_ENGINE_UI = (function() {
       btn.innerHTML =
         '<span class="we-ball-orbit"></span>' +
         '<span class="we-ball-ring"></span>' +
-        '<span class="we-ball-core"><span class="we-ball-globe"></span><span class="we-ball-memory"></span></span>' +
+        '<span class="we-ball-core"><span class="we-ball-globe"></span><span class="we-ball-memory"><span class="we-memory-scan"></span></span></span>' +
         '<span class="we-ball-count"></span>' +
         '<span class="we-ball-badge"></span>' +
         '<span class="we-ball-tip"></span>' +
