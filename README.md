@@ -348,7 +348,7 @@ WORLD_ENGINE_UI.registerEngineFace({
 
 记忆引擎同时保存三类内容：人物主观认知、实体记忆和事件记忆。实体分为组织、物件、能力、地点；事件记忆由阶段性小总结与滚动大总结组成。
 
-人物实体、小总结和大总结分别拥有独立 Prompt 与触发游标。同一时刻有多个任务到期时会合并为一次 LLM 请求；只有大总结到期时只发送大总结 Prompt。没有 embedding 或向量数据库。
+人物实体、小总结和大总结分别拥有独立 Prompt 与触发游标。人物实体与小总结同轮到期时可合并为一次 LLM 请求；小总结返回并落库后，再判断未合并数量，大总结始终使用独立的第二次请求且只发送大总结 Prompt。没有 embedding 或向量数据库。
 
 ### 2. LLM 输入与输出
 
@@ -361,7 +361,7 @@ WORLD_ENGINE_UI.registerEngineFace({
 - 过滤后的最近对话；
 - 用户设置的附加要求。
 
-`memory-engine-small-summary-prompt.js` 每 `smallSummaryEveryX` 个 AI 楼层生成一条不超过 200 字的小总结。`memory-engine-big-summary-prompt.js` 在未合并小总结达到 `bigSummaryEveryX` 条后，使用旧大总结与新增阶段内容滚动生成不超过 500 字的新大总结。
+`memory-engine-small-summary-prompt.js` 每 `smallSummaryEveryX` 个 AI 楼层生成一条不超过 200 字的小总结。小总结保存后，`memory-engine-big-summary-prompt.js` 在未合并数量达到 `bigSummaryEveryX` 条时，使用旧大总结与新增小总结滚动生成不超过 500 字的新大总结。批量总结回填另用 `summaryBackfillSmallEveryX` 与 `summaryBackfillBigEveryX`，不改变日常自动周期。
 
 API 必须返回一个 JSON 对象。`entity_updates` 是扁平更新数组，不返回本地 ID、索引或 `history`：
 

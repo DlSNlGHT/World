@@ -5,6 +5,7 @@ window.MEMORY_ENGINE = (function() {
   const ENTITY_TYPES = ['organization', 'object', 'ability', 'location'];
   const ENTITY_LABELS = { organization: '组织', object: '物件', ability: '能力', location: '地点' };
   let initialized = false, running = false, backfillRunning = false;
+  let runningLabel = '';
   let abortController = null, autoTimer = null, lastEventKey = '';
   let lastDebug = { prompt: '', rawResult: '', parsed: null, error: '' };
   let backfillStatus = { running: false, current: 0, total: 0, message: '' };
@@ -72,8 +73,7 @@ window.MEMORY_ENGINE = (function() {
     }
     if (tasks.big) {
       segments.push(`【任务说明】\n${window.MEMORY_ENGINE_BIG_SUMMARY_PROMPT.SYSTEM_PROMPT}\n\n${window.MEMORY_ENGINE_BIG_SUMMARY_PROMPT.buildUserPrompt({
-        ...tasks.big,
-        conversation: filterConversation(tasks.big.conversation || '', st)
+        ...tasks.big
       })}`);
     }
     const fields = [];
@@ -345,9 +345,12 @@ window.MEMORY_ENGINE = (function() {
   async function runTasks(tasks, options) {
     if (running && !options?.allowWhileBackfill) return { skipped: true, reason: 'running' };
     if (!tasks?.memory && !tasks?.small && !tasks?.big) return { skipped: true, reason: 'no_tasks' };
+    if (tasks.small && tasks.big) throw new Error('大总结必须在小总结落库后独立运行');
     running = true;
+    runningLabel = tasks.memory && tasks.small ? '人物/实体与小总结'
+      : (tasks.memory ? '人物/实体总结' : (tasks.small ? '小总结' : '大总结'));
     abortController = new AbortController();
-    window.WORLD_ENGINE_UI?.setMemoryEvolvingUI?.(true);
+    window.WORLD_ENGINE_UI?.setMemoryEvolvingUI?.(true, runningLabel);
     try {
       const before = options?.baseState ? clone(options.baseState) : data().loadState();
       const extracted = await requestTasks(tasks, { ...options, baseState: before });
@@ -399,8 +402,9 @@ window.MEMORY_ENGINE = (function() {
       };
     } finally {
       running = false;
+      runningLabel = '';
       abortController = null;
-      window.WORLD_ENGINE_UI?.setMemoryEvolvingUI?.(false);
+      window.WORLD_ENGINE_UI?.setMemoryEvolvingUI?.(false, '');
     }
   }
 
@@ -430,19 +434,36 @@ window.MEMORY_ENGINE = (function() {
     };
   }
 
-  function buildBigTask(state, smallTask, force) {
+  function buildBigTask(state, force, thresholdOverride) {
     const st = settings(), eventMemory = ensureEventState(state);
     const pending = eventMemory.small_summaries.slice(eventMemory.big_summary_cursor);
-    const projected = pending.length + (smallTask ? 1 : 0);
-    const threshold = Math.max(1, parseInt(st.bigSummaryEveryX) || 5);
-    if (!force && projected < threshold) return null;
-    if (force && !projected) return null;
+    const threshold = Math.max(1, parseInt(thresholdOverride ?? st.bigSummaryEveryX) || 5);
+    if (!force && pending.length < threshold) return null;
+    if (force && !pending.length) return null;
     return {
       currentSummary: eventMemory.big_summary?.content || '',
       summaries: pending,
-      conversation: smallTask?.conversation || '',
-      startLayer: Number(eventMemory.big_summary?.startLayer ?? pending[0]?.startLayer ?? smallTask?.startLayer) || 0,
-      endLayer: Number(smallTask?.endLayer ?? pending.at(-1)?.endLayer) || 0
+      startLayer: Number(eventMemory.big_summary?.startLayer ?? pending[0]?.startLayer) || 0,
+      endLayer: Number(pending.at(-1)?.endLayer) || 0
+    };
+  }
+
+  async function runTasksThenDueBig(tasks, options, bigThresholdOverride) {
+    const primary = await runTasks(tasks, options);
+    if (primary?.skipped) return primary;
+    const after = data().loadState();
+    const bigTask = buildBigTask(after, false, bigThresholdOverride);
+    if (!bigTask) return primary;
+    const bigResult = await runTasks({ big: bigTask }, {
+      ...options,
+      baseState: after,
+      saveCheckpoint: false
+    });
+    return {
+      ...primary,
+      added: Number(primary.added || 0) + Number(bigResult?.updatedBig || 0),
+      updatedBig: Number(bigResult?.updatedBig || 0),
+      state: bigResult?.state || primary.state
     };
   }
 
@@ -469,10 +490,12 @@ window.MEMORY_ENGINE = (function() {
     const smallBatch = countAiSince(eventMemory.small_summary_layer) >= smallEvery
       ? getAiBatchAfter(eventMemory.small_summary_layer, smallEvery) : null;
     if (smallBatch) tasks.small = smallBatch;
-    const bigTask = buildBigTask(state, smallBatch, false);
-    if (bigTask) tasks.big = bigTask;
-    if (!tasks.memory && !tasks.small && !tasks.big) return;
-    const result = await runTasks(tasks, { layer: currentLayer(), baseState: state });
+    const bigTask = buildBigTask(state, false);
+    if (!tasks.memory && !tasks.small) {
+      if (!bigTask) return;
+      return runTasks({ big: bigTask }, { baseState: state });
+    }
+    const result = await runTasksThenDueBig(tasks, { layer: currentLayer(), baseState: state });
     const after = data().loadState(), afterEvent = ensureEventState(after);
     if (countAiSince(afterEvent.small_summary_layer) >= smallEvery) {
       clearTimeout(autoTimer);
@@ -507,16 +530,13 @@ window.MEMORY_ENGINE = (function() {
     const state = data().loadState(), eventMemory = ensureEventState(state);
     const batch = getAiBatchAfter(eventMemory.small_summary_layer, Math.max(1, parseInt(st.smallSummaryEveryX) || 5));
     if (!batch) throw new Error('当前状态之后没有可总结的新对话');
-    const tasks = { small: batch };
-    const bigTask = buildBigTask(state, batch, false);
-    if (bigTask) tasks.big = bigTask;
-    return runTasks(tasks, { baseState: state });
+    return runTasksThenDueBig({ small: batch }, { baseState: state });
   }
 
   async function manualBigSummary() {
     const st = settings();
     if (st.engineEnabled === false) throw new Error('记忆引擎已关闭');
-    const state = data().loadState(), bigTask = buildBigTask(state, null, true);
+    const state = data().loadState(), bigTask = buildBigTask(state, true);
     if (!bigTask) throw new Error('当前没有尚未并入大总结的小总结');
     return runTasks({ big: bigTask }, { baseState: state });
   }
@@ -654,7 +674,7 @@ window.MEMORY_ENGINE = (function() {
     const configuredEnd = Math.max(0, parseInt(st.backfillEndLayer) || 0);
     const end = Math.min(all.length - 1, configuredEnd || all.length - 1);
     const aiLayers = all.map((message, index) => (!message?.is_user && index <= end ? index : -1)).filter(index => index >= 0);
-    const size = Math.max(1, parseInt(st.smallSummaryEveryX) || 5), batches = [];
+    const size = Math.max(1, parseInt(st.summaryBackfillSmallEveryX) || 5), batches = [];
     for (let i = 0; i < aiLayers.length; i += size) batches.push(aiLayers.slice(i, i + size));
     if (!batches.length) { setSummaryBackfillStatus(0, 0, '没有可重填的 AI 楼层'); return; }
     backfillRunning = true;
@@ -675,13 +695,10 @@ window.MEMORY_ENGINE = (function() {
           conversation: formatMessages(all.slice(start, finish + 1), start)
         };
         const state = data().loadState();
-        const tasks = { small: smallTask };
-        const bigTask = buildBigTask(state, smallTask, false);
-        if (bigTask) tasks.big = bigTask;
         setSummaryBackfillStatus(i, batches.length, `正在重填大小总结 ${i + 1} / ${batches.length}`);
-        await runTasks(tasks, {
+        await runTasksThenDueBig({ small: smallTask }, {
           baseState: state, retries: st.backfillRetries, saveCheckpoint: true, allowWhileBackfill: true
-        });
+        }, st.summaryBackfillBigEveryX);
       }
       setSummaryBackfillStatus(batches.length, batches.length, backfillRunning ? '大小总结重填完成' : '大小总结重填已停止');
     } catch (error) {
@@ -743,6 +760,7 @@ window.MEMORY_ENGINE = (function() {
     backfill, backfillSummaries, stopBackfill, abort,
     getLastDebug: () => clone(lastDebug), getBackfillStatus: () => clone(backfillStatus),
     getSummaryBackfillStatus: () => clone(summaryBackfillStatus),
+    getRunningLabel: () => runningLabel,
     isRunning: () => running || backfillRunning
   };
 })();

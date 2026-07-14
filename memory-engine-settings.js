@@ -1,7 +1,7 @@
 // memory-engine-settings.js — 记忆引擎独立设置（只复用 API/调度等实现，不共享配置值）
 window.MEMORY_ENGINE_SETTINGS = (function() {
   const STORAGE_KEY = 'memory_engine_settings';
-  const VERSION = '0.3.0';
+  const VERSION = '0.3.1';
   const DEFAULTS = Object.freeze({
     apiUrl: '',
     apiKey: '',
@@ -28,6 +28,8 @@ window.MEMORY_ENGINE_SETTINGS = (function() {
     syncToChat: false,
     autoBackup: false,
     backfillBatchSize: 5,
+    summaryBackfillSmallEveryX: 5,
+    summaryBackfillBigEveryX: 5,
     backfillRetries: 2,
     backfillEndLayer: 0
   });

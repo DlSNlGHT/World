@@ -10,6 +10,7 @@ window.WORLD_ENGINE_UI = (function() {
   const _engineFaceOrder = [];
   const _engineFaceRegistry = new Map();
   let _memorySettingsOpen = false;
+  let _memoryRunningLabel = '';
   let _panelFlipping = false;
   let isEvolving = false;
   let editingEvent = null;
@@ -104,6 +105,7 @@ window.WORLD_ENGINE_UI = (function() {
         window.MEMORY_ENGINE?.applyInjection?.();
       },
       isRunning: () => Boolean(window.MEMORY_ENGINE?.isRunning?.()),
+      getRunningLabel: () => window.MEMORY_ENGINE?.getRunningLabel?.() || _memoryRunningLabel,
       render: () => renderMemoryView(),
       openSettings: () => { _memorySettingsOpen = !_memorySettingsOpen; },
       isSettingsOpen: () => _memorySettingsOpen,
@@ -399,8 +401,21 @@ window.WORLD_ENGINE_UI = (function() {
     const smallSummaryCount = Array.isArray(checkpoint?.event_memory?.small_summaries)
       ? checkpoint.event_memory.small_summaries.length : 0;
     const hasBigSummary = Boolean(checkpoint?.event_memory?.big_summary?.content);
+    const bigSummaryContent = hasBigSummary
+      ? '<pre class="we-prompt-seg-pre">' + h(checkpoint.event_memory.big_summary.content) + '</pre>'
+      : '<div class="we-empty">暂无大总结</div>';
+    const smallSummaryContent = smallSummaryCount
+      ? '<div class="we-chatcache-list">' + checkpoint.event_memory.small_summaries.map(item =>
+          '<div class="we-prompt-seg-card"><div class="we-prompt-seg-head"><span class="we-prompt-seg-label">楼层 '
+          + h(item.startLayer) + '-' + h(item.endLayer) + '</span></div><div class="we-prompt-seg-body" style="display:block;"><pre class="we-prompt-seg-pre">'
+          + h(item.content) + '</pre></div></div>'
+        ).join('') + '</div>'
+      : '<div class="we-empty">暂无小总结</div>';
     const content = checkpoint
-      ? '<div class="we-hint">包含 ' + count + ' 个人物、' + entityCount + ' 个世界实体、' + smallSummaryCount + ' 条小总结' + (hasBigSummary ? '和 1 条大总结' : '') + '</div><pre class="we-prompt-seg-pre">' + h(JSON.stringify(checkpoint, null, 2)) + '</pre>'
+      ? '<div class="we-hint">包含 ' + count + ' 个人物、' + entityCount + ' 个世界实体、' + smallSummaryCount + ' 条小总结' + (hasBigSummary ? '和 1 条大总结' : '') + '</div>'
+        + '<div class="we-section" style="margin-top:10px;"><div class="we-section-title">' + sectionHeader('大总结', 'memory-checkpoint-big-summary') + '</div>' + sectionBody('memory-checkpoint-big-summary', bigSummaryContent) + '</div>'
+        + '<div class="we-section" style="margin-top:10px;"><div class="we-section-title">' + sectionHeader('小总结 · ' + smallSummaryCount + ' 条', 'memory-checkpoint-small-summaries') + '</div>' + sectionBody('memory-checkpoint-small-summaries', smallSummaryContent) + '</div>'
+        + '<div class="we-section" style="margin-top:10px;"><div class="we-section-title">' + sectionHeader('完整 JSON', 'memory-checkpoint-json') + '</div>' + sectionBody('memory-checkpoint-json', '<pre class="we-prompt-seg-pre">' + h(JSON.stringify(checkpoint, null, 2)) + '</pre>') + '</div>'
       : '<div class="we-empty">暂无存档点</div>';
     return '<div class="we-section" style="margin-top:16px;"><div class="we-section-title">'
       + sectionHeader(checkpoint ? '存档点 - ' + count + ' 人物 / ' + entityCount + ' 实体' : '存档点', 'memory-checkpoint-section')
@@ -545,6 +560,8 @@ window.WORLD_ENGINE_UI = (function() {
     const backfillBatch = Math.max(1, parseInt(settings.backfillBatchSize) || 5);
     const backfillEnd = Math.max(0, parseInt(settings.backfillEndLayer) || 0);
     const backfillRetries = Math.max(0, parseInt(settings.backfillRetries) || 0);
+    const summaryBackfillSmallEveryX = Math.max(1, parseInt(settings.summaryBackfillSmallEveryX) || 5);
+    const summaryBackfillBigEveryX = Math.max(1, parseInt(settings.summaryBackfillBigEveryX) || 5);
     const apiTemperature = Number.isFinite(Number(settings.temperature)) ? Math.max(0, Number(settings.temperature)) : 0.2;
     const apiMaxTokens = Math.max(1, parseInt(settings.maxTokens) || 2000);
     const apiTimeoutSec = Math.max(0, Math.round((Number(settings.apiTimeoutMs) || 120000) / 1000));
@@ -633,7 +650,8 @@ window.WORLD_ENGINE_UI = (function() {
       <div style="display:flex;gap:6px;flex-wrap:wrap;">
         <button class="we-btn" id="we-memory-small-summary-now" type="button"><i class="fa-solid fa-align-left"></i> 手动小总结</button>
         <button class="we-btn" id="we-memory-big-summary-now" type="button"><i class="fa-solid fa-book-open"></i> 手动大总结</button>
-      </div>`;
+      </div>
+      <div class="we-hint" id="we-memory-task-status" style="margin-top:8px;">${_memoryRunningLabel ? '正在进行' + h(_memoryRunningLabel) : '当前没有运行中的记忆任务'}</div>`;
 
     const injectBody = `
       <div class="we-input-group">
@@ -663,6 +681,12 @@ window.WORLD_ENGINE_UI = (function() {
           <input type="number" id="we-memory-backfill-end" min="0" step="1" value="${backfillEnd}"></div>
         <div class="we-input-group" style="flex:1;min-width:90px;margin-bottom:0;"><label>每批重试次数</label>
           <input type="number" id="we-memory-backfill-retries" min="0" step="1" value="${backfillRetries}"></div>
+      </div>
+      <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px;">
+        <div class="we-input-group" style="flex:1;min-width:120px;margin-bottom:0;"><label>总结回填：小总结每 X 个 AI 楼层</label>
+          <input type="number" id="we-memory-summary-backfill-small-every" min="1" step="1" value="${summaryBackfillSmallEveryX}"></div>
+        <div class="we-input-group" style="flex:1;min-width:120px;margin-bottom:0;"><label>总结回填：大总结每 Y 条小总结</label>
+          <input type="number" id="we-memory-summary-backfill-big-every" min="1" step="1" value="${summaryBackfillBigEveryX}"></div>
       </div>
       <div class="we-hint" id="we-memory-person-backfill-status" style="margin:6px 0;"></div>
       <div style="display:flex;gap:6px;flex-wrap:wrap;margin:6px 0;">
@@ -4112,6 +4136,8 @@ window.WORLD_ENGINE_UI = (function() {
           syncToChat: document.getElementById('we-memory-sync-to-chat')?.checked === true,
           autoBackup: document.getElementById('we-memory-auto-backup')?.checked === true,
           backfillBatchSize: Math.max(1, parseInt(gv('we-memory-backfill-batch')) || 5),
+          summaryBackfillSmallEveryX: Math.max(1, parseInt(gv('we-memory-summary-backfill-small-every')) || 5),
+          summaryBackfillBigEveryX: Math.max(1, parseInt(gv('we-memory-summary-backfill-big-every')) || 5),
           backfillEndLayer: Math.max(0, parseInt(gv('we-memory-backfill-end')) || 0),
           backfillRetries: Math.max(0, parseInt(gv('we-memory-backfill-retries')) || 0)
         };
@@ -5334,7 +5360,12 @@ window.WORLD_ENGINE_UI = (function() {
     updateBallControls();
   }
 
-  function setMemoryEvolvingUI() { updateBallControls(); }
+  function setMemoryEvolvingUI(active, label) {
+    _memoryRunningLabel = active ? String(label || '记忆任务') : '';
+    const status = document.getElementById('we-memory-task-status');
+    if (status) status.textContent = active ? `正在进行${_memoryRunningLabel}` : '当前没有运行中的记忆任务';
+    updateBallControls();
+  }
 
   function setInjectedScope(scope) {
     _injectedScope = scope === 'checkpoint' ? 'checkpoint' : 'state';
@@ -5482,6 +5513,7 @@ window.WORLD_ENGINE_UI = (function() {
     if (!ball) return;
     const face = getEngineFace();
     const active = Boolean(callEngineFace(face, 'isRunning', false));
+    const runningLabel = String(callEngineFace(face, 'getRunningLabel', '') || '');
     const fwd = ball.querySelector('#we-sat-forward');
     const redo = ball.querySelector('#we-sat-redo');
     const abort = ball.querySelector('#we-sat-abort');
@@ -5497,7 +5529,7 @@ window.WORLD_ENGINE_UI = (function() {
     }
     if (abort) {
       abort.classList.toggle('we-sat-off', !active);
-      abort.title = `停止${face.label}推演`;
+      abort.title = active && runningLabel ? `停止${runningLabel}` : `停止${face.label}推演`;
     }
     if (power) {
       power.classList.toggle('on', getFaceSettings().engineEnabled === false);
@@ -5505,6 +5537,10 @@ window.WORLD_ENGINE_UI = (function() {
       power.title = `开关${face.label}推演与注入`;
     }
     ball.classList.toggle('we-ball-evolving', active);
+    ball.title = active && runningLabel
+      ? `${face.label}：正在进行${runningLabel}`
+      : `${face.label}：单击打开，双击切换到下一引擎`;
+    ball.setAttribute('aria-label', ball.title);
     if (active) ball.classList.remove('we-ball-success', 'we-ball-fail');
   }
 

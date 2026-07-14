@@ -8,6 +8,7 @@ const root = path.resolve(__dirname, '..');
 const storeMap = new Map();
 const calls = [];
 const listeners = new Map();
+const runningLabels = [];
 const settings = {
   engineEnabled: true,
   evolveMode: 'auto',
@@ -23,6 +24,8 @@ const settings = {
   temperature: 0.2,
   apiAutoRetries: 0,
   backfillBatchSize: 2,
+  summaryBackfillSmallEveryX: 2,
+  summaryBackfillBigEveryX: 1,
   backfillRetries: 0,
   backfillEndLayer: 0,
   filterRegex: ''
@@ -60,6 +63,7 @@ const sandbox = {
   },
   WORLD_ENGINE_WORLDBOOK: { async buildPromptSection() { return ''; } },
   WORLD_ENGINE_CHATCACHE: { forScope() { return { afterEvolution() {}, createSnapshot() {} }; } },
+  WORLD_ENGINE_UI: { setMemoryEvolvingUI(active, label) { if (active) runningLabels.push(label); } },
   MEMORY_ENGINE_SETTINGS: { getSettings() { return { ...settings }; } },
   WORLD_ENGINE_API: {
     async callApi(prompt) {
@@ -89,19 +93,27 @@ for (const filename of [
 
 (async () => {
   const combined = await sandbox.MEMORY_ENGINE.manualSmallSummary();
-  assert.strictEqual(calls.length, 1, '达到大总结阈值时，小总结与大总结应合并为一次 API 请求');
+  assert.strictEqual(calls.length, 2, '达到阈值时应先生成并保存小总结，再独立请求大总结');
   assert.ok(calls[0].includes('事件记忆的小总结器'));
-  assert.ok(calls[0].includes('事件记忆的大总结器'));
+  assert.ok(!calls[0].includes('事件记忆的大总结器'));
   assert.ok(!calls[0].includes('"personal_memory": []'), '未到人物实体任务时不应携带人物实体输出字段');
+  assert.ok(calls[1].includes('事件记忆的大总结器'));
+  assert.ok(!calls[1].includes('事件记忆的小总结器'));
+  assert.ok(!calls[1].includes('【最新对话片段】'), '大总结只能读取已落库的小总结与既有大总结');
+  assert.deepStrictEqual(runningLabels.slice(0, 2), ['小总结', '大总结']);
   assert.strictEqual(combined.addedSmall, 1);
   assert.strictEqual(combined.updatedBig, 1);
   let state = sandbox.MEMORY_ENGINE_DATA.loadState();
   assert.strictEqual(state.event_memory.small_summaries.length, 1);
   assert.strictEqual(state.event_memory.big_summary_cursor, 1);
+  const checkpointAfterCombined = sandbox.MEMORY_ENGINE_DATA.loadCheckpoint();
+  assert.strictEqual(checkpointAfterCombined.event_memory.small_summaries.length, 0,
+    '链式大总结不得覆盖小总结请求之前建立的 checkpoint');
 
   state.personal_memory = [{ id: 'char_000001', names: ['保留人物'], memory: {}, }];
   sandbox.MEMORY_ENGINE_DATA.saveState(state);
   calls.length = 0;
+  runningLabels.length = 0;
   await sandbox.MEMORY_ENGINE.backfillSummaries();
   state = sandbox.MEMORY_ENGINE_DATA.loadState();
   assert.strictEqual(state.personal_memory[0].names[0], '保留人物', '大小总结回填不得清理人物实体');
@@ -125,13 +137,17 @@ for (const filename of [
 
   sandbox.MEMORY_ENGINE_DATA.saveState(sandbox.MEMORY_ENGINE_DATA.defaultState());
   calls.length = 0;
+  runningLabels.length = 0;
   sandbox.MEMORY_ENGINE.init();
   listeners.get('generation_ended')();
   await new Promise(resolve => setTimeout(resolve, 1600));
-  assert.strictEqual(calls.length, 1, '三个任务同轮到期时应只发送一次 API 请求');
+  assert.strictEqual(calls.length, 2, '人物实体与小总结同轮合并一次，大总结随后独立请求');
   assert.ok(calls[0].includes('"personal_memory": []'));
   assert.ok(calls[0].includes('事件记忆的小总结器'));
-  assert.ok(calls[0].includes('事件记忆的大总结器'));
+  assert.ok(!calls[0].includes('事件记忆的大总结器'));
+  assert.ok(calls[1].includes('事件记忆的大总结器'));
+  assert.ok(!calls[1].includes('"personal_memory": []'));
+  assert.deepStrictEqual(runningLabels, ['人物/实体与小总结', '大总结']);
 
   console.log('✓ 事件记忆大小总结测试通过');
 })().catch(error => {
