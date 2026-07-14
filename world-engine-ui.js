@@ -1200,10 +1200,11 @@ window.WORLD_ENGINE_UI = (function() {
 
     const dataBody = `
       <div style="display:flex;gap:6px;flex-wrap:wrap;">
-        <button class="we-btn" id="we-memory-export-data">导出 JSON</button>
+        <button class="we-btn" id="we-memory-export-data">导出全部记忆 JSON</button>
         <button class="we-btn" id="we-memory-import-data">导入 JSON</button>
         <input type="file" id="we-memory-import-data-file" accept=".json,application/json" style="display:none;">
-      </div>`;
+      </div>
+      <div style="font-size:11px;color:var(--we-text3);margin-top:5px;">完整导出同时包含 <b>state（最新当前数据）</b>和 <b>checkpoint（重新推演前的旧存档点）</b>，两部分分别标注人物、实体、纪要和总述数量；人物记忆逐条保留 known_by。</div>`;
 
     const memoryVersion = window.MEMORY_ENGINE_SETTINGS?.VERSION || '0.1.0';
     const memoryAboutBody = `
@@ -4645,7 +4646,7 @@ window.WORLD_ENGINE_UI = (function() {
     if (memoryExportData) memoryExportData.onclick = () => {
       if (!memoryData) { showToast('记忆数据模块未加载', true); return; }
       setupDownload(JSON.stringify(memoryData.exportData(), null, 2), 'memory-engine-data-' + Date.now() + '.json');
-      showToast('记忆数据已导出');
+      showToast('已导出全部记忆数据（最新状态与存档点已分开标明）');
     };
     const memoryImportData = document.getElementById('we-memory-import-data');
     const memoryImportDataFile = document.getElementById('we-memory-import-data-file');

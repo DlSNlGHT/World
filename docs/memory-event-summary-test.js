@@ -198,6 +198,38 @@ for (const filename of [
   assert.ok(injectionContent.includes('尚未整理纪要'), '未整理纪要不受总述条数上限影响');
   settings.bigSummaryInjectLimit = 3;
 
+  const latest = sandbox.MEMORY_ENGINE_DATA.defaultState();
+  latest.personal_memory = [
+    { id: 'char_000001', names: ['甲'], memory: { '': ['甲掌握秘密。'] } },
+    { id: 'char_000002', names: ['乙'], memory: {} }
+  ];
+  const secretRecord = { ownerId: 'char_000001', time: '', memory: '甲掌握秘密。' };
+  latest.knowledge_index = { '甲': [secretRecord], '乙': [secretRecord] };
+  latest.event_memory.small_summaries = Array.from({ length: 12 }, (_, index) => ({
+    id: `small_${String(index + 1).padStart(6, '0')}`, startLayer: index * 2 + 1, endLayer: index * 2 + 2, content: `纪要${index + 1}`
+  }));
+  latest.event_memory.big_summaries = [
+    { id: 'big_000001', startLayer: 1, endLayer: 10, content: '总述一' },
+    { id: 'big_000002', startLayer: 11, endLayer: 20, content: '总述二' }
+  ];
+  latest.event_memory.big_summary_cursor = 10;
+  sandbox.MEMORY_ENGINE_DATA.saveState(latest);
+  const oldCheckpoint = JSON.parse(JSON.stringify(latest));
+  oldCheckpoint.event_memory.small_summaries = oldCheckpoint.event_memory.small_summaries.slice(0, 5);
+  oldCheckpoint.event_memory.big_summaries = oldCheckpoint.event_memory.big_summaries.slice(0, 1);
+  oldCheckpoint.event_memory.big_summary_cursor = 5;
+  sandbox.MEMORY_ENGINE_DATA.saveCheckpoint(oldCheckpoint);
+  const exported = sandbox.MEMORY_ENGINE_DATA.exportData();
+  assert.strictEqual(exported.counts.state.minutes, 12, '完整 JSON 的 state 必须是最新当前纪要');
+  assert.strictEqual(exported.counts.state.overviews, 2, '完整 JSON 的 state 必须是最新当前总述');
+  assert.strictEqual(exported.counts.checkpoint.minutes, 5, '完整 JSON 必须同时保留并明确标记旧 checkpoint 纪要数');
+  assert.strictEqual(exported.counts.checkpoint.overviews, 1, '完整 JSON 必须同时保留并明确标记旧 checkpoint 总述数');
+  assert.strictEqual(JSON.stringify(exported.state.personal_memory[0].memories[0].known_by), JSON.stringify(['乙']), '当前状态导出必须把内部知识索引还原成 known_by');
+  assert.strictEqual(JSON.stringify(exported.checkpoint.personal_memory[0].memories[0].known_by), JSON.stringify(['乙']), '存档点导出也必须保留 known_by');
+  const roundTripped = sandbox.MEMORY_ENGINE_DATA.importData(exported);
+  assert.ok(roundTripped.knowledge_index['乙'].some(record => record.memory === '甲掌握秘密。'), '导入 portable JSON 必须重建 knowledge_index');
+  assert.strictEqual(sandbox.MEMORY_ENGINE_DATA.loadCheckpoint().event_memory.small_summaries.length, 5, '完整 JSON 导入必须恢复 checkpoint');
+
   sandbox.MEMORY_ENGINE_DATA.saveState(sandbox.MEMORY_ENGINE_DATA.defaultState());
   calls.length = 0;
   runningLabels.length = 0;

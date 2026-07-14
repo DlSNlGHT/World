@@ -2,7 +2,7 @@
 window.MEMORY_ENGINE_DATA = (function() {
   const STATE_PREFIX = 'memory_engine_state_';
   const CHECKPOINT_PREFIX = 'memory_engine_checkpoint_';
-  const VERSION = '0.5.1';
+  const VERSION = '0.5.2';
   const ENTITY_TYPES = ['organization', 'object', 'ability', 'location'];
 
   function getChatId() {
@@ -11,6 +11,9 @@ window.MEMORY_ENGINE_DATA = (function() {
 
   function key(prefix) { return prefix + getChatId(); }
   function clone(value) { return value == null ? value : JSON.parse(JSON.stringify(value)); }
+  const clean = value => String(value == null ? '' : value).trim();
+  const normalized = value => clean(value).toLocaleLowerCase();
+  const unique = values => Array.from(new Set((Array.isArray(values) ? values : [values]).map(clean).filter(Boolean)));
   function parse(raw, fallback) {
     if (!raw) return clone(fallback);
     try { return JSON.parse(raw); } catch (error) { return clone(fallback); }
@@ -108,14 +111,57 @@ window.MEMORY_ENGINE_DATA = (function() {
   }
   function clearCheckpoint() { window.WORLD_ENGINE_STORE?.removeItem(key(CHECKPOINT_PREFIX)); }
 
+  function recordMatches(record, ownerId, time, memory) {
+    return record?.ownerId === ownerId && clean(record?.time) === clean(time) && clean(record?.memory) === clean(memory);
+  }
+  function portableState(state) {
+    const current = normalizeState(state);
+    const people = current.personal_memory || [];
+    return {
+      personal_memory: people.map(person => ({
+        id: person.id,
+        names: clone(person.names || []),
+        memories: Object.entries(person.memory || {}).flatMap(([time, memories]) =>
+          (Array.isArray(memories) ? memories : []).map(memory => ({
+            time,
+            memory,
+            known_by: people.filter(knower => knower.id !== person.id && (knower.names || []).some(name =>
+              (current.knowledge_index?.[normalized(name)] || []).some(record => recordMatches(record, person.id, time, memory))
+            )).map(knower => knower.names?.[0] || knower.id)
+          }))
+        )
+      })),
+      entity_memory: clone(current.entity_memory),
+      event_memory: clone(current.event_memory),
+      round: current.round,
+      chatLayer: current.chatLayer
+    };
+  }
+  function portableCounts(state) {
+    if (!state) return null;
+    return {
+      people: state.personal_memory?.length || 0,
+      entities: ENTITY_TYPES.reduce((sum, type) => sum + (state.entity_memory?.[type]?.length || 0), 0),
+      minutes: state.event_memory?.small_summaries?.length || 0,
+      overviews: state.event_memory?.big_summaries?.length || 0
+    };
+  }
   function exportData() {
+    const state = portableState(loadState());
+    const rawCheckpoint = loadCheckpoint();
+    const checkpoint = rawCheckpoint ? portableState(rawCheckpoint) : null;
     return {
       __memoryEngineData: true,
+      format: 'portable-full-backup',
       version: VERSION,
       exportedAt: new Date().toISOString(),
       chatId: getChatId(),
-      state: loadState(),
-      checkpoint: loadCheckpoint()
+      counts: {
+        state: portableCounts(state),
+        checkpoint: portableCounts(checkpoint)
+      },
+      state,
+      checkpoint
     };
   }
   function currentChatLayer() {
@@ -132,8 +178,60 @@ window.MEMORY_ENGINE_DATA = (function() {
     next.event_memory.small_summary_layer = layer;
     return next;
   }
+  function nextImportedCharacterId(people) {
+    const max = (people || []).reduce((number, person) => {
+      const match = /^char_(\d+)$/.exec(clean(person?.id));
+      return Math.max(number, match ? Number(match[1]) : 0);
+    }, 0);
+    return `char_${String(max + 1).padStart(6, '0')}`;
+  }
+  function internalizePortableState(input) {
+    const raw = clone(input);
+    const source = Array.isArray(raw?.personal_memory) ? raw.personal_memory : [];
+    if (!source.some(person => Array.isArray(person?.memories))) return raw;
+    const people = source.map(person => ({
+      id: clean(person?.id),
+      names: unique(person?.names),
+      memory: Array.isArray(person?.memories) ? {} : clone(person?.memory || {})
+    }));
+    for (const person of people) if (!person.id) person.id = nextImportedCharacterId(people);
+    const index = {};
+    const addIndex = (names, record) => {
+      for (const name of unique(names)) {
+        const keyName = normalized(name);
+        if (!Array.isArray(index[keyName])) index[keyName] = [];
+        if (!index[keyName].some(old => recordMatches(old, record.ownerId, record.time, record.memory))) index[keyName].push(clone(record));
+      }
+    };
+    const findOrCreateKnower = name => {
+      const wanted = normalized(name);
+      let person = people.find(candidate => (candidate.names || []).some(alias => normalized(alias) === wanted));
+      if (!person) {
+        person = { id: nextImportedCharacterId(people), names: [clean(name)], memory: {} };
+        people.push(person);
+      }
+      return person;
+    };
+    source.forEach((sourcePerson, personIndex) => {
+      const owner = people[personIndex];
+      const records = Array.isArray(sourcePerson?.memories) ? sourcePerson.memories : [];
+      for (const item of records) {
+        const time = clean(item?.time), memory = clean(item?.memory ?? item?.content);
+        if (!memory) continue;
+        if (!Array.isArray(owner.memory[time])) owner.memory[time] = [];
+        if (!owner.memory[time].includes(memory)) owner.memory[time].push(memory);
+        const record = { ownerId: owner.id, time, memory };
+        addIndex(owner.names, record);
+        for (const knowerName of unique(item?.known_by)) addIndex(findOrCreateKnower(knowerName).names, record);
+      }
+    });
+    raw.personal_memory = people;
+    raw.knowledge_index = index;
+    return raw;
+  }
   function importData(payload) {
-    const state = payload?.__memoryEngineData ? payload.state : (payload?.state || payload);
+    const selected = payload?.__memoryEngineData ? (payload.state || payload.current_state || payload.data || payload) : (payload?.state || payload);
+    const state = internalizePortableState(selected);
     const hasPersonal = Array.isArray(state?.personal_memory);
     const hasWorld = (state?.entity_memory && typeof state.entity_memory === 'object' && !Array.isArray(state.entity_memory))
       || (state?.world_memory && typeof state.world_memory === 'object' && !Array.isArray(state.world_memory));
@@ -142,8 +240,10 @@ window.MEMORY_ENGINE_DATA = (function() {
       throw new Error('缺少合法的记忆数据');
     }
     saveState(rebaseImportedState(state));
-    if (payload?.__memoryEngineData || Object.prototype.hasOwnProperty.call(payload || {}, 'checkpoint')) {
-      if (payload.checkpoint) saveCheckpoint(rebaseImportedState(payload.checkpoint)); else clearCheckpoint();
+    if (payload?.format === 'portable-current-state') {
+      clearCheckpoint();
+    } else if (payload?.__memoryEngineData || Object.prototype.hasOwnProperty.call(payload || {}, 'checkpoint')) {
+      if (payload.checkpoint) saveCheckpoint(rebaseImportedState(internalizePortableState(payload.checkpoint))); else clearCheckpoint();
     }
     return loadState();
   }
