@@ -2,7 +2,7 @@
 window.MEMORY_ENGINE_DATA = (function() {
   const STATE_PREFIX = 'memory_engine_state_';
   const CHECKPOINT_PREFIX = 'memory_engine_checkpoint_';
-  const VERSION = '0.4.5';
+  const VERSION = '0.5.0';
   const ENTITY_TYPES = ['organization', 'object', 'ability', 'location'];
 
   function getChatId() {
@@ -24,7 +24,7 @@ window.MEMORY_ENGINE_DATA = (function() {
       entity_index: {},
       event_memory: {
         small_summaries: [],
-        big_summary: null,
+        big_summaries: [],
         small_summary_layer: null,
         big_summary_cursor: 0
       },
@@ -64,12 +64,18 @@ window.MEMORY_ENGINE_DATA = (function() {
       endLayer: Number.isFinite(Number(item?.endLayer)) ? Number(item.endLayer) : 0,
       content: String(item?.content || '').trim()
     })).filter(item => item.content);
-    const big = next.event_memory.big_summary;
-    next.event_memory.big_summary = big && typeof big === 'object' && String(big.content || '').trim() ? {
-      startLayer: Number.isFinite(Number(big.startLayer)) ? Number(big.startLayer) : 0,
-      endLayer: Number.isFinite(Number(big.endLayer)) ? Number(big.endLayer) : 0,
-      content: String(big.content || '').trim()
-    } : null;
+    // 0.4.x 只有一条滚动 big_summary；升级后迁移成可追加的 big_summaries。
+    const legacyBig = next.event_memory.big_summary;
+    const bigSource = Array.isArray(next.event_memory.big_summaries)
+      ? next.event_memory.big_summaries
+      : (legacyBig && typeof legacyBig === 'object' ? [legacyBig] : []);
+    next.event_memory.big_summaries = bigSource.map((item, index) => ({
+      id: String(item?.id || `big_${String(index + 1).padStart(6, '0')}`),
+      startLayer: Number.isFinite(Number(item?.startLayer)) ? Number(item.startLayer) : 0,
+      endLayer: Number.isFinite(Number(item?.endLayer)) ? Number(item.endLayer) : 0,
+      content: String(item?.content || '').trim()
+    })).filter(item => item.content);
+    delete next.event_memory.big_summary;
     next.event_memory.small_summary_layer = next.event_memory.small_summary_layer !== null
       && next.event_memory.small_summary_layer !== ''
       && Number.isFinite(Number(next.event_memory.small_summary_layer))
@@ -112,6 +118,20 @@ window.MEMORY_ENGINE_DATA = (function() {
       checkpoint: loadCheckpoint()
     };
   }
+  function currentChatLayer() {
+    const fromCore = window.WORLD_ENGINE_CORE?.getChatLayer?.();
+    if (Number.isFinite(Number(fromCore))) return Math.max(0, Number(fromCore));
+    try { return Math.max(0, (SillyTavern.getContext()?.chat || []).length - 1); }
+    catch (_) { return 0; }
+  }
+  function rebaseImportedState(state) {
+    const next = normalizeState(state);
+    const layer = currentChatLayer();
+    // 导入是把既有记忆接到当前聊天；楼层游标必须从当前聊天重新起步。
+    next.chatLayer = layer;
+    next.event_memory.small_summary_layer = layer;
+    return next;
+  }
   function importData(payload) {
     const state = payload?.__memoryEngineData ? payload.state : (payload?.state || payload);
     const hasPersonal = Array.isArray(state?.personal_memory);
@@ -121,9 +141,9 @@ window.MEMORY_ENGINE_DATA = (function() {
       || (!hasPersonal && !hasWorld)) {
       throw new Error('缺少合法的记忆数据');
     }
-    saveState(state);
+    saveState(rebaseImportedState(state));
     if (payload?.__memoryEngineData || Object.prototype.hasOwnProperty.call(payload || {}, 'checkpoint')) {
-      if (payload.checkpoint) saveCheckpoint(payload.checkpoint); else clearCheckpoint();
+      if (payload.checkpoint) saveCheckpoint(rebaseImportedState(payload.checkpoint)); else clearCheckpoint();
     }
     return loadState();
   }

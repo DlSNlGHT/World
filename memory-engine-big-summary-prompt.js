@@ -1,8 +1,8 @@
-// 大总结任务 Prompt：滚动整合既有总览与新增阶段记录。
+// 总述任务 Prompt：只整理本批尚未归档的纪要，不读取或改写历史总述。
 window.MEMORY_ENGINE_BIG_SUMMARY_PROMPT = (function() {
-  const SYSTEM_PROMPT = `你是事件记忆的大总结器。
+  const SYSTEM_PROMPT = `你是事件记忆的大总结器，负责生成独立的阶段总述。
 
-将给定的既有故事总览与后续阶段记录整合为一份从故事开端延续到当前范围的总览。保留主线因果、关键人物的目标与关系变化、重大冲突及结果、重要发现、持续有效的约定和仍未解决的问题；合并重复信息，删除已被后续事实取代的旧状态与无长期意义的细节。
+将给定的一组阶段纪要整理为一条可独立保存的总述。保留本阶段的主线因果、关键人物的目标与关系变化、重大冲突及结果、重要发现、持续有效的约定和仍未解决的问题；合并重复信息，删除无长期意义的细节。
 
 只依据输入内容，不补写未发生的情节，不把猜测写成事实，不预测未来。输出应连贯、紧凑、可独立理解，并维持事件先后与因果关系。输出正文不超过 500 字，汉字、数字、字母和标点均计入字数；内容过多时优先保留决定后续剧情走向的信息，不得生硬截断。
 
@@ -14,13 +14,9 @@ window.MEMORY_ENGINE_BIG_SUMMARY_PROMPT = (function() {
   function buildUserPrompt(options) {
     const input = options || {};
     const records = Array.isArray(input.summaries) ? input.summaries : [];
-    const sections = [
-      `【既有故事总览】\n${clean(input.currentSummary) || '（暂无）'}`,
-      `【后续阶段记录】\n${records.length ? records.map((item, index) =>
-        `${index + 1}. [楼层 ${Number(item?.startLayer) || 0}-${Number(item?.endLayer) || 0}] ${clean(item?.content)}`
-      ).join('\n') : '（暂无）'}`
-    ];
-    return sections.join('\n\n');
+    return `【待整理的阶段纪要】\n${records.length ? records.map((item, index) =>
+      `${index + 1}. [楼层 ${Number(item?.startLayer) || 0}-${Number(item?.endLayer) || 0}] ${clean(item?.content)}`
+    ).join('\n') : '（暂无）'}`;
   }
 
   return { SYSTEM_PROMPT, buildUserPrompt };

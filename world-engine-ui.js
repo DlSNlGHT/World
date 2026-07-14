@@ -15,7 +15,7 @@ window.WORLD_ENGINE_UI = (function() {
   let _memoryEditingPerson = null;
   let _memoryEditingEntity = null;
   let _memoryEditingSmall = null;
-  let _memoryEditingBig = false;
+  let _memoryEditingBig = null;
   let _memoryRunningLabel = '';
   let _panelFlipping = false;
   let isEvolving = false;
@@ -386,6 +386,7 @@ window.WORLD_ENGINE_UI = (function() {
   function renderMemoryCore(state, settings) {
     const eventMemory = state?.event_memory || {};
     const smallSummaries = Array.isArray(eventMemory.small_summaries) ? eventMemory.small_summaries : [];
+    const bigSummaries = Array.isArray(eventMemory.big_summaries) ? eventMemory.big_summaries : [];
     const cursor = Math.max(0, Math.min(smallSummaries.length, parseInt(eventMemory.big_summary_cursor) || 0));
     const smallTarget = Math.max(1, parseInt(settings.smallSummaryEveryX) || 5);
     const bigTarget = Math.max(1, parseInt(settings.bigSummaryEveryX) || 5);
@@ -401,7 +402,7 @@ window.WORLD_ENGINE_UI = (function() {
       ['人物', Array.isArray(state?.personal_memory) ? state.personal_memory.length : 0],
       ['实体', entityCount],
       ['纪要', smallSummaries.length],
-      ['总述', eventMemory.big_summary?.content ? 1 : 0]
+      ['总述', bigSummaries.length]
     ].map(([label, value]) => `<div class="we-core-stat"><div class="we-core-stat-k">${label}</div><div class="we-core-stat-v">${value}</div></div>`).join('');
     const centerMain = smallRemaining > 0 ? smallRemaining : '待执行';
     const centerUnit = smallRemaining > 0 ? '<span>轮</span>' : '';
@@ -435,7 +436,7 @@ window.WORLD_ENGINE_UI = (function() {
       { view: 'people', label: '人物', sub: '人物记忆 · 别名 · 时间', poem: '知人者智' },
       { view: 'entities', label: '实体', sub: '组织 · 物件 · 能力 · 地点', poem: '名者，实之宾也' },
       { view: 'minutes', label: '纪要', sub: '阶段小总结 · 楼层范围', poem: '纪事者必提其要' },
-      { view: 'overview', label: '总述', sub: '滚动大总结 · 全局脉络', poem: '壹引其纲，万目皆张' }
+      { view: 'overview', label: '总述', sub: '阶段总述 · 全局脉络', poem: '壹引其纲，万目皆张' }
     ];
     const nav = rows.map((row, index) => {
       const selected = _memorySelectedNavView === row.view ? ' we-nav-row--selected' : '';
@@ -550,14 +551,13 @@ window.WORLD_ENGINE_UI = (function() {
   }
 
   function renderMemoryOverview(state) {
-    const big = state.event_memory?.big_summary;
-    if (!big) return '<div class="we-empty">尚未生成总述。总述只能由大总结流程生成。</div>';
-    return `<div class="we-memory-record we-memory-overview-record">
-      <div class="we-memory-record-head"><div><div class="we-memory-record-title">全局总述</div><div class="we-memory-record-meta">楼层 ${h(String(big.startLayer))}–${h(String(big.endLayer))}</div></div>
-        <div class="we-memory-record-actions"><button class="we-icon-btn" id="we-memory-edit-big" type="button" title="修改"><i class="fa-solid fa-pen"></i></button></div>
+    const items = Array.isArray(state.event_memory?.big_summaries) ? state.event_memory.big_summaries : [];
+    return items.map((big, index) => `<div class="we-memory-record we-memory-overview-record" data-big-id="${h(big.id)}">
+      <div class="we-memory-record-head"><div><div class="we-memory-record-title">总述 ${index + 1}</div><div class="we-memory-record-meta">楼层 ${h(String(big.startLayer))}–${h(String(big.endLayer))} · ${h(big.id)}</div></div>
+        <div class="we-memory-record-actions"><button class="we-icon-btn we-memory-edit-big" type="button" title="修改"><i class="fa-solid fa-pen"></i></button></div>
       </div>
-      ${_memoryEditingBig ? `<div class="we-memory-editor"><div class="we-input-group"><label>总述内容</label><textarea id="we-memory-big-content" rows="10" maxlength="500">${h(big.content || '')}</textarea><div class="we-hint">最多 500 字；允许清空，不提供新增或删除操作。</div></div><div class="we-memory-editor-actions"><button class="we-btn we-memory-cancel-edit" type="button">取消</button><button class="we-btn we-btn-primary" id="we-memory-save-big" type="button">保存修改</button></div></div>` : `<div class="we-memory-summary-text">${h(big.content || '（内容为空）')}</div>`}
-    </div>`;
+      ${_memoryEditingBig === big.id ? `<div class="we-memory-editor"><div class="we-input-group"><label>总述内容</label><textarea class="we-memory-big-content" rows="10" maxlength="500">${h(big.content || '')}</textarea><div class="we-hint">API 生成时要求不超过 500 字；允许清空，不提供新增或删除操作。JSON 导入内容不会被截断。</div></div><div class="we-memory-editor-actions"><button class="we-btn we-memory-cancel-edit" type="button">取消</button><button class="we-btn we-btn-primary we-memory-save-big" type="button">保存修改</button></div></div>` : `<div class="we-memory-summary-text">${h(big.content || '（内容为空）')}</div>`}
+    </div>`).join('') || '<div class="we-empty">尚未生成总述。总述只能由总结流程生成。</div>';
   }
 
   function renderMemorySubView(view) {
@@ -574,7 +574,7 @@ window.WORLD_ENGINE_UI = (function() {
     _memoryEditingPerson = null;
     _memoryEditingEntity = null;
     _memoryEditingSmall = null;
-    _memoryEditingBig = false;
+    _memoryEditingBig = null;
   }
 
   function nextMemoryUiId(items, prefix) {
@@ -746,17 +746,21 @@ window.WORLD_ENGINE_UI = (function() {
         if (saveEditedMemoryState(state, '纪要已修改')) { clearMemoryEditing(); refresh(); }
       };
     });
-    const editBig = document.getElementById('we-memory-edit-big');
-    if (editBig) editBig.onclick = () => { clearMemoryEditing(); _memoryEditingBig = true; refresh(); };
-    const saveBig = document.getElementById('we-memory-save-big');
-    if (saveBig) saveBig.onclick = () => {
-      const content = String(document.getElementById('we-memory-big-content')?.value || '').trim();
-      if (Array.from(content).length > 500) { showToast('总述不能超过 500 字', true); return; }
-      const state = window.MEMORY_ENGINE_DATA?.loadState?.();
-      if (!state?.event_memory?.big_summary) return;
-      state.event_memory.big_summary.content = content;
-      if (saveEditedMemoryState(state, '总述已修改')) { clearMemoryEditing(); refresh(); }
-    };
+    document.querySelectorAll('.we-memory-edit-big').forEach(button => {
+      button.onclick = () => { clearMemoryEditing(); _memoryEditingBig = button.closest('[data-big-id]')?.dataset.bigId || null; refresh(); };
+    });
+    document.querySelectorAll('.we-memory-save-big').forEach(button => {
+      button.onclick = () => {
+        const card = button.closest('[data-big-id]'), id = card?.dataset.bigId;
+        const content = String(card?.querySelector('.we-memory-big-content')?.value || '').trim();
+        if (Array.from(content).length > 500) { showToast('总述不能超过 500 字', true); return; }
+        const state = window.MEMORY_ENGINE_DATA?.loadState?.();
+        const item = state?.event_memory?.big_summaries?.find(big => big.id === id);
+        if (!item) return;
+        item.content = content;
+        if (saveEditedMemoryState(state, '总述已修改')) { clearMemoryEditing(); refresh(); }
+      };
+    });
   }
 
   function bindMemoryEntryRemoveButtons(root) {
@@ -812,10 +816,14 @@ window.WORLD_ENGINE_UI = (function() {
       .reduce((sum, type) => sum + (Array.isArray(checkpoint?.entity_memory?.[type]) ? checkpoint.entity_memory[type].length : 0), 0);
     const smallSummaryCount = Array.isArray(checkpoint?.event_memory?.small_summaries)
       ? checkpoint.event_memory.small_summaries.length : 0;
-    const hasBigSummary = Boolean(checkpoint?.event_memory?.big_summary?.content);
-    const bigSummaryContent = hasBigSummary
-      ? '<pre class="we-prompt-seg-pre">' + h(checkpoint.event_memory.big_summary.content) + '</pre>'
-      : '<div class="we-empty">暂无大总结</div>';
+    const bigSummaries = Array.isArray(checkpoint?.event_memory?.big_summaries) ? checkpoint.event_memory.big_summaries : [];
+    const bigSummaryContent = bigSummaries.length
+      ? '<div class="we-chatcache-list">' + bigSummaries.map(item =>
+          '<div class="we-prompt-seg-card"><div class="we-prompt-seg-head"><span class="we-prompt-seg-label">楼层 '
+          + h(item.startLayer) + '-' + h(item.endLayer) + '</span></div><div class="we-prompt-seg-body" style="display:block;"><pre class="we-prompt-seg-pre">'
+          + h(item.content) + '</pre></div></div>'
+        ).join('') + '</div>'
+      : '<div class="we-empty">暂无总述</div>';
     const smallSummaryContent = smallSummaryCount
       ? '<div class="we-chatcache-list">' + checkpoint.event_memory.small_summaries.map(item =>
           '<div class="we-prompt-seg-card"><div class="we-prompt-seg-head"><span class="we-prompt-seg-label">楼层 '
@@ -824,8 +832,8 @@ window.WORLD_ENGINE_UI = (function() {
         ).join('') + '</div>'
       : '<div class="we-empty">暂无小总结</div>';
     const content = checkpoint
-      ? '<div class="we-hint">包含 ' + count + ' 个人物、' + entityCount + ' 个世界实体、' + smallSummaryCount + ' 条小总结' + (hasBigSummary ? '和 1 条大总结' : '') + '</div>'
-        + '<div class="we-section" style="margin-top:10px;"><div class="we-section-title">' + sectionHeader('大总结', 'memory-checkpoint-big-summary') + '</div>' + sectionBody('memory-checkpoint-big-summary', bigSummaryContent) + '</div>'
+      ? '<div class="we-hint">包含 ' + count + ' 个人物、' + entityCount + ' 个世界实体、' + smallSummaryCount + ' 条纪要和 ' + bigSummaries.length + ' 条总述</div>'
+        + '<div class="we-section" style="margin-top:10px;"><div class="we-section-title">' + sectionHeader('总述 · ' + bigSummaries.length + ' 条', 'memory-checkpoint-big-summary') + '</div>' + sectionBody('memory-checkpoint-big-summary', bigSummaryContent) + '</div>'
         + '<div class="we-section" style="margin-top:10px;"><div class="we-section-title">' + sectionHeader('小总结 · ' + smallSummaryCount + ' 条', 'memory-checkpoint-small-summaries') + '</div>' + sectionBody('memory-checkpoint-small-summaries', smallSummaryContent) + '</div>'
         + '<div class="we-section" style="margin-top:10px;"><div class="we-section-title">' + sectionHeader('完整 JSON', 'memory-checkpoint-json') + '</div>' + sectionBody('memory-checkpoint-json', '<pre class="we-prompt-seg-pre">' + h(JSON.stringify(checkpoint, null, 2)) + '</pre>') + '</div>'
       : '<div class="we-empty">暂无存档点</div>';
@@ -967,6 +975,7 @@ window.WORLD_ENGINE_UI = (function() {
     const manualReadRounds = Math.max(1, parseInt(settings.manualReadRounds) || 5);
     const smallSummaryEveryX = Math.max(1, parseInt(settings.smallSummaryEveryX) || 5);
     const bigSummaryEveryX = Math.max(1, parseInt(settings.bigSummaryEveryX) || 5);
+    const bigSummaryInjectLimit = Math.max(1, parseInt(settings.bigSummaryInjectLimit) || 3);
     const searchDepth = Math.max(1, parseInt(settings.searchDepth) || 5);
     const maxPerCharacter = Math.max(1, parseInt(settings.maxPerCharacter) || 20);
     const backfillBatch = Math.max(1, parseInt(settings.backfillBatchSize) || 5);
@@ -1055,7 +1064,7 @@ window.WORLD_ENGINE_UI = (function() {
       </div>`;
 
     const summaryBody = `
-      <div style="font-size:11px;color:var(--we-text3);margin-bottom:8px;">小总结按独立楼层游标每 X 个 AI 楼层生成一次，正文不超过 200 字；每新增 Y 条小总结，滚动更新一次不超过 500 字的大总结。</div>
+      <div style="font-size:11px;color:var(--we-text3);margin-bottom:8px;">纪要按独立楼层游标每 X 个 AI 楼层生成一次，正文不超过 200 字；每新增 Y 条尚未整理的纪要，独立生成一条不超过 500 字的总述，历史总述不会被覆盖。</div>
       <div class="we-input-group" style="display:flex;gap:6px;">
         <div style="flex:1;">
           <label>小总结间隔楼层（X）</label>
@@ -1078,7 +1087,7 @@ window.WORLD_ENGINE_UI = (function() {
           <input type="checkbox" id="we-memory-inject" ${settings.injectIntoPrompt !== false ? 'checked' : ''}>
           注入记忆信息
         </label>
-        <div style="font-size:11px;color:var(--we-text3);margin-top:3px;">注入当前大总结和尚未归并的小总结；同时扫描最近 N 层正文中的人物及实体名称，按需注入相关人物与实体记忆。</div>
+        <div style="font-size:11px;color:var(--we-text3);margin-top:3px;">注入最新 Y 条总述和尚未整理的纪要；同时扫描最近 N 层正文中的人物及实体名称，按需注入相关人物与实体记忆。</div>
       </div>
       <div class="we-input-group" style="display:flex;gap:6px;">
         <div style="flex:1;">
@@ -1089,6 +1098,11 @@ window.WORLD_ENGINE_UI = (function() {
           <label>每个条目最多注入</label>
           <input type="number" id="we-memory-max-per-character" min="1" step="1" value="${maxPerCharacter}" style="width:100%;">
         </div>
+      </div>
+      <div class="we-input-group">
+        <label>最多注入最新总述数（Y）</label>
+        <input type="number" id="we-memory-big-summary-inject-limit" min="1" step="1" value="${bigSummaryInjectLimit}" style="width:100%;">
+        <div style="font-size:11px;color:var(--we-text3);margin-top:3px;">只限制总述数量；尚未整理的纪要仍会全部注入。本地与 JSON 中的历史总述不会被删除或截断。</div>
       </div>`;
 
     const backfillBody = `
@@ -1666,6 +1680,7 @@ window.WORLD_ENGINE_UI = (function() {
   //   date    —— 可选，日期不确定的留月份/年份；
   //   items   —— 该版本改动条目（每条一行，渲染时走 h() 转义）。
   const CHANGELOG = [
+    { version: '2.5.5', date: '2026-07-14', items: ['总述改为追加式列表：每 Y 条尚未整理的纪要独立生成一条总述，不再滚动覆盖历史总述；记忆注入可设置最多读取最新几条总述，并继续附带全部未整理纪要。', '记忆 JSON 跨聊天导入时按世界引擎规则将人物/实体与纪要楼层游标重定位到当前聊天最后一层，保留纪要、总述及纪要整理游标，避免被旧聊天楼层卡住；兼容旧版单条总述存档。'] },
     { version: '2.5.4', date: '2026-07-14', items: ['记忆引擎任务接入顶部运行提示：人物/实体、纪要、总述在自动或手动执行时均显示开始、完成、失败或停止状态。'] },
     { version: '2.5.3', date: '2026-07-14', items: ['记忆引擎标题下方新增处理游标：人物/实体处理楼层、纪要处理楼层及总述已归并纪要条数；未处理时统一显示 0，不新增存储字段。'] },
     { version: '2.5.2', date: '2026-07-14', items: ['世界与记忆设置新增“首楼为 AI 开场白”，默认开启；开启时自动总结和批量重填忽略第 0 层，关闭时首楼按普通对话参与处理。', '记忆数据编辑器统一使用深色输入框与白色文字，提升各主题下的编辑可读性。'] },
@@ -2687,7 +2702,7 @@ window.WORLD_ENGINE_UI = (function() {
     const memoryLayer = Number.isFinite(Number(state.chatLayer)) ? Math.max(0, Number(state.chatLayer)) : 0;
     const summaryLayer = Number.isFinite(Number(eventMemory.small_summary_layer))
       ? Math.max(0, Number(eventMemory.small_summary_layer)) : 0;
-    const overviewCursor = Math.max(0, parseInt(eventMemory.big_summary_cursor) || 0);
+    const overviewCount = Array.isArray(eventMemory.big_summaries) ? eventMemory.big_summaries.length : 0;
     const roundEl = document.getElementById('we-header-round');
     if (roundEl) roundEl.textContent = '';
     const moodEl = document.getElementById('we-header-mood');
@@ -2699,7 +2714,7 @@ window.WORLD_ENGINE_UI = (function() {
       dot.style.boxShadow = '0 0 6px var(--we-accent)';
     }
     if (text) {
-      text.textContent = `人物/实体至第 ${memoryLayer} 层 · 纪要至第 ${summaryLayer} 层 · 总述至第 ${overviewCursor} 条`;
+      text.textContent = `人物/实体至第 ${memoryLayer} 层 · 纪要至第 ${summaryLayer} 层 · 总述至第 ${overviewCount} 条`;
       text.style.color = 'var(--we-text2)';
     }
   }
@@ -4580,6 +4595,7 @@ window.WORLD_ENGINE_UI = (function() {
           manualReadRounds: Math.max(1, parseInt(gv('we-memory-manual-readrounds')) || 5),
           smallSummaryEveryX: Math.max(1, parseInt(gv('we-memory-small-summary-every')) || 5),
           bigSummaryEveryX: Math.max(1, parseInt(gv('we-memory-big-summary-every')) || 5),
+          bigSummaryInjectLimit: Math.max(1, parseInt(gv('we-memory-big-summary-inject-limit')) || 3),
           injectIntoPrompt: document.getElementById('we-memory-inject')?.checked !== false,
           searchDepth: Math.max(1, parseInt(gv('we-memory-search-depth')) || 5),
           maxPerCharacter: Math.max(1, parseInt(gv('we-memory-max-per-character')) || 20),
@@ -4640,8 +4656,10 @@ window.WORLD_ENGINE_UI = (function() {
         const file = memoryImportDataFile.files?.[0];
         if (!file) return;
         try {
-          memoryData.importData(JSON.parse(await file.text()));
-          showToast('记忆数据已导入');
+          const imported = memoryData.importData(JSON.parse(await file.text()));
+          window.WORLD_ENGINE_CHATCACHE?.forScope?.('memory')?.afterEvolution?.();
+          window.MEMORY_ENGINE?.applyInjection?.();
+          showToast(`记忆数据已导入，进度已衔接当前第 ${Math.max(0, Number(imported?.chatLayer) || 0)} 层`);
           refresh();
         } catch (error) {
           showToast('导入记忆数据失败：' + (error?.message || error), true);

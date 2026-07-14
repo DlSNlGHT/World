@@ -9,6 +9,7 @@ const storeMap = new Map();
 const calls = [];
 const listeners = new Map();
 const runningLabels = [];
+let injectionContent = '';
 const settings = {
   engineEnabled: true,
   firstLayerIsAiOpening: true,
@@ -18,6 +19,7 @@ const settings = {
   manualReadRounds: 2,
   smallSummaryEveryX: 2,
   bigSummaryEveryX: 1,
+  bigSummaryInjectLimit: 3,
   injectIntoPrompt: true,
   searchDepth: 5,
   maxPerCharacter: 20,
@@ -42,7 +44,7 @@ const context = {
   chat,
   name1: '用户',
   name2: '角色',
-  setExtensionPrompt() {},
+  setExtensionPrompt(_name, content) { injectionContent = content; },
   eventSource: { on(name, handler) { listeners.set(name, handler); } },
   event_types: { GENERATION_ENDED: 'generation_ended' }
 };
@@ -61,6 +63,7 @@ const sandbox = {
   },
   WORLD_ENGINE_CORE: {
     getChatId() { return 'summary-test'; },
+    getChatLayer() { return chat.length - 1; },
     filterDialogue(value) { return value; }
   },
   WORLD_ENGINE_WORLDBOOK: { async buildPromptSection() { return ''; } },
@@ -102,6 +105,7 @@ for (const filename of [
   assert.ok(!calls[0].includes('事件记忆的大总结器'));
   assert.ok(!calls[0].includes('"personal_memory": []'), '未到人物实体任务时不应携带人物实体输出字段');
   assert.ok(calls[1].includes('事件记忆的大总结器'));
+  assert.ok(!calls[1].includes('既有故事总览'), '总述只能读取本批尚未整理的纪要');
   assert.ok(!calls[1].includes('事件记忆的小总结器'));
   assert.ok(!calls[1].includes('【最新对话片段】'), '大总结只能读取已落库的小总结与既有大总结');
   assert.deepStrictEqual(runningLabels.slice(0, 2), ['小总结', '大总结']);
@@ -110,6 +114,7 @@ for (const filename of [
   let state = sandbox.MEMORY_ENGINE_DATA.loadState();
   assert.strictEqual(state.event_memory.small_summaries.length, 1);
   assert.strictEqual(state.event_memory.big_summary_cursor, 1);
+  assert.strictEqual(state.event_memory.big_summaries.length, 1);
   const checkpointAfterCombined = sandbox.MEMORY_ENGINE_DATA.loadCheckpoint();
   assert.strictEqual(checkpointAfterCombined.event_memory.small_summaries.length, 0,
     '链式大总结不得覆盖小总结请求之前建立的 checkpoint');
@@ -130,6 +135,8 @@ for (const filename of [
   state = sandbox.MEMORY_ENGINE_DATA.loadState();
   assert.strictEqual(state.personal_memory[0].names[0], '保留人物', '大小总结回填不得清理人物实体');
   assert.ok(state.event_memory.small_summaries.length > 0);
+  assert.strictEqual(state.event_memory.big_summaries.length, state.event_memory.small_summaries.length,
+    '每批一条纪要时应逐条追加总述，不得滚动覆盖');
 
   const summaryBeforePersonBackfill = JSON.stringify(state.event_memory);
   calls.length = 0;
@@ -146,6 +153,46 @@ for (const filename of [
   assert.ok(calls[0].includes('事件记忆的大总结器'));
   assert.ok(!calls[0].includes('事件记忆的小总结器'), '手动大总结只应携带大总结 Prompt');
   assert.ok(!calls[0].includes('"personal_memory": []'));
+
+  const legacy = sandbox.MEMORY_ENGINE_DATA.defaultState();
+  delete legacy.event_memory.big_summaries;
+  legacy.event_memory.big_summary = { startLayer: 1, endLayer: 4, content: '旧版滚动总述' };
+  sandbox.MEMORY_ENGINE_DATA.saveState(legacy);
+  assert.strictEqual(sandbox.MEMORY_ENGINE_DATA.loadState().event_memory.big_summaries[0].content, '旧版滚动总述',
+    '旧版单条总述必须自动迁移为总述列表');
+
+  const portable = sandbox.MEMORY_ENGINE_DATA.defaultState();
+  portable.chatLayer = 99;
+  portable.event_memory.small_summary_layer = 88;
+  portable.event_memory.small_summaries = [
+    { id: 'small_000001', startLayer: 1, endLayer: 2, content: '旧纪要一' },
+    { id: 'small_000002', startLayer: 3, endLayer: 4, content: '旧纪要二' },
+    { id: 'small_000003', startLayer: 5, endLayer: 6, content: '尚未整理纪要' }
+  ];
+  const importedLongSummary = '用户手工合并：' + '长'.repeat(700);
+  portable.event_memory.big_summaries = [
+    { id: 'big_000001', startLayer: 1, endLayer: 2, content: '旧总述' },
+    { id: 'big_000002', startLayer: 3, endLayer: 4, content: importedLongSummary }
+  ];
+  portable.event_memory.big_summary_cursor = 2;
+  const imported = sandbox.MEMORY_ENGINE_DATA.importData({
+    __memoryEngineData: true,
+    chatId: 'another-chat',
+    state: portable,
+    checkpoint: portable
+  });
+  assert.strictEqual(imported.chatLayer, chat.length - 1, '跨聊天导入的人物实体进度必须衔接当前最后一层');
+  assert.strictEqual(imported.event_memory.small_summary_layer, chat.length - 1, '跨聊天导入的纪要进度必须衔接当前最后一层');
+  assert.strictEqual(imported.event_memory.big_summary_cursor, 2, '总述整理游标对应导入纪要，不能按聊天楼层重置');
+  assert.strictEqual(imported.event_memory.big_summaries[1].content, importedLongSummary, 'JSON 导入的超长总述不得截断');
+  assert.strictEqual(sandbox.MEMORY_ENGINE_DATA.loadCheckpoint().chatLayer, chat.length - 1, '导入存档点也必须重定位到当前聊天');
+
+  settings.bigSummaryInjectLimit = 1;
+  sandbox.MEMORY_ENGINE.applyInjection();
+  assert.ok(injectionContent.includes(importedLongSummary), '应完整注入最新总述');
+  assert.ok(!injectionContent.includes('旧总述'), '超过上限的旧总述不应注入');
+  assert.ok(injectionContent.includes('尚未整理纪要'), '未整理纪要不受总述条数上限影响');
+  settings.bigSummaryInjectLimit = 3;
 
   sandbox.MEMORY_ENGINE_DATA.saveState(sandbox.MEMORY_ENGINE_DATA.defaultState());
   calls.length = 0;

@@ -339,6 +339,10 @@ window.MEMORY_ENGINE = (function() {
   function ensureEventState(state) {
     if (!state.event_memory || typeof state.event_memory !== 'object' || Array.isArray(state.event_memory)) state.event_memory = {};
     if (!Array.isArray(state.event_memory.small_summaries)) state.event_memory.small_summaries = [];
+    if (!Array.isArray(state.event_memory.big_summaries)) {
+      state.event_memory.big_summaries = state.event_memory.big_summary?.content ? [state.event_memory.big_summary] : [];
+    }
+    delete state.event_memory.big_summary;
     if (!Number.isFinite(Number(state.event_memory.big_summary_cursor))) state.event_memory.big_summary_cursor = 0;
     state.event_memory.big_summary_cursor = Math.max(0, Math.min(
       state.event_memory.small_summaries.length, Number(state.event_memory.big_summary_cursor) || 0
@@ -352,6 +356,14 @@ window.MEMORY_ENGINE = (function() {
       return Math.max(number, match ? Number(match[1]) : 0);
     }, 0);
     return `small_${String(max + 1).padStart(6, '0')}`;
+  }
+
+  function nextBigSummaryId(eventMemory) {
+    const max = (eventMemory.big_summaries || []).reduce((number, item) => {
+      const match = /^big_(\d+)$/.exec(clean(item?.id));
+      return Math.max(number, match ? Number(match[1]) : 0);
+    }, 0);
+    return `big_${String(max + 1).padStart(6, '0')}`;
   }
 
   async function requestTasks(tasks, options) {
@@ -412,14 +424,16 @@ window.MEMORY_ENGINE = (function() {
         addedSmall = 1;
       }
       if (tasks.big && extracted.bigSummary) {
-        const first = eventMemory.small_summaries[0];
-        const last = eventMemory.small_summaries.at(-1);
-        eventMemory.big_summary = {
-          startLayer: Number(eventMemory.big_summary?.startLayer ?? first?.startLayer ?? tasks.big.startLayer) || 0,
-          endLayer: Number(last?.endLayer ?? tasks.big.endLayer) || 0,
+        eventMemory.big_summaries.push({
+          id: nextBigSummaryId(eventMemory),
+          startLayer: Number(tasks.big.startLayer) || 0,
+          endLayer: Number(tasks.big.endLayer) || 0,
           content: extracted.bigSummary
-        };
-        eventMemory.big_summary_cursor = eventMemory.small_summaries.length;
+        });
+        eventMemory.big_summary_cursor = Math.min(
+          eventMemory.small_summaries.length,
+          eventMemory.big_summary_cursor + Math.max(1, Number(tasks.big.consumeCount) || 1)
+        );
         updatedBig = 1;
       }
       const added = addedPersonal + entityChanges.entities + entityChanges.history + entityChanges.descriptions;
@@ -484,14 +498,15 @@ window.MEMORY_ENGINE = (function() {
 
   function buildBigTask(state, force, thresholdOverride) {
     const st = settings(), eventMemory = ensureEventState(state);
-    const pending = eventMemory.small_summaries.slice(eventMemory.big_summary_cursor);
+    const allPending = eventMemory.small_summaries.slice(eventMemory.big_summary_cursor);
     const threshold = Math.max(1, parseInt(thresholdOverride ?? st.bigSummaryEveryX) || 5);
-    if (!force && pending.length < threshold) return null;
-    if (force && !pending.length) return null;
+    if (!force && allPending.length < threshold) return null;
+    if (force && !allPending.length) return null;
+    const pending = force ? allPending : allPending.slice(0, threshold);
     return {
-      currentSummary: eventMemory.big_summary?.content || '',
       summaries: pending,
-      startLayer: Number(eventMemory.big_summary?.startLayer ?? pending[0]?.startLayer) || 0,
+      consumeCount: pending.length,
+      startLayer: Number(pending[0]?.startLayer) || 0,
       endLayer: Number(pending.at(-1)?.endLayer) || 0
     };
   }
@@ -541,11 +556,16 @@ window.MEMORY_ENGINE = (function() {
     const bigTask = buildBigTask(state, false);
     if (!tasks.memory && !tasks.small) {
       if (!bigTask) return;
-      return runTasks({ big: bigTask }, { baseState: state });
+      const result = await runTasks({ big: bigTask }, { baseState: state });
+      if (buildBigTask(data().loadState(), false)) {
+        clearTimeout(autoTimer);
+        autoTimer = setTimeout(() => autoExtract().catch(error => console.error('[记忆引擎] 自动总述补进度失败', error)), 0);
+      }
+      return result;
     }
     const result = await runTasksThenDueBig(tasks, { layer: currentLayer(), baseState: state });
     const after = data().loadState(), afterEvent = ensureEventState(after);
-    if (countAiSince(afterEvent.small_summary_layer) >= smallEvery) {
+    if (countAiSince(afterEvent.small_summary_layer) >= smallEvery || buildBigTask(after, false)) {
       clearTimeout(autoTimer);
       autoTimer = setTimeout(() => autoExtract().catch(error => console.error('[记忆引擎] 自动小总结补进度失败', error)), 0);
     }
@@ -617,7 +637,7 @@ window.MEMORY_ENGINE = (function() {
     const eventMemory = ensureEventState(state);
     const hasPeople = Boolean(state?.personal_memory?.length);
     const hasEntities = ENTITY_TYPES.some(type => state.entity_memory[type].length);
-    const hasEvents = Boolean(eventMemory.big_summary?.content || eventMemory.small_summaries.length);
+    const hasEvents = Boolean(eventMemory.big_summaries.length || eventMemory.small_summaries.length);
     if (!hasPeople && !hasEntities && !hasEvents) { clearInjection(); return ''; }
     if (!state.knowledge_index || !Object.keys(state.knowledge_index).length) rebuildKnowledgeIndex(state);
     const scan = chat().slice(-Math.max(1, parseInt(st.searchDepth) || 5)).map(message => clean(message?.mes)).join('\n');
@@ -630,8 +650,12 @@ window.MEMORY_ENGINE = (function() {
       .filter(entity => appearsInScan(entity.name))
       .map(entity => ({ type, entity })));
     const sections = [], globalSeen = new Set(), limit = Math.max(1, parseInt(st.maxPerCharacter) || 20);
-    if (eventMemory.big_summary?.content) {
-      sections.push(`【故事大总结】\n${eventMemory.big_summary.content}`);
+    const bigLimit = Math.max(1, parseInt(st.bigSummaryInjectLimit) || 3);
+    const recentBig = eventMemory.big_summaries.slice(-bigLimit);
+    if (recentBig.length) {
+      sections.push(`【故事总述】\n${recentBig.map(item =>
+        `- [楼层 ${item.startLayer}-${item.endLayer}] ${item.content}`
+      ).join('\n')}`);
     }
     const pendingSmall = eventMemory.small_summaries.slice(eventMemory.big_summary_cursor);
     if (pendingSmall.length) {
@@ -733,7 +757,7 @@ window.MEMORY_ENGINE = (function() {
     data().saveCheckpoint(original);
     data().saveState({
       ...original,
-      event_memory: { small_summaries: [], big_summary: null, small_summary_layer: null, big_summary_cursor: 0 }
+      event_memory: { small_summaries: [], big_summaries: [], small_summary_layer: null, big_summary_cursor: 0 }
     });
     try {
       for (let i = 0; i < batches.length && backfillRunning; i++) {
