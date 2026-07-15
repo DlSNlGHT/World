@@ -110,6 +110,23 @@ window.MEMORY_ENGINE = (function() {
     ) || conversation;
   }
 
+  function buildSmallHistoryContext(state, task) {
+    const eventMemory = ensureEventState(state);
+    const startLayer = Number.isFinite(Number(task?.startLayer)) ? Number(task.startLayer) : Infinity;
+    const currentChatId = clean(data()?.getChatId?.());
+    const valid = item => item?.status !== 'stale' && item?.status !== 'failed' && clean(item?.content);
+    const beforeTask = item => {
+      const originChatId = clean(item?.originChatId);
+      if (originChatId && currentChatId && originChatId !== currentChatId) return true;
+      return Number(item?.endLayer) < startLayer;
+    };
+    const eligibleBig = eventMemory.big_summaries.filter(item => valid(item) && beforeTask(item));
+    const historyBigSummaries = eligibleBig.slice(-1);
+    const historySmallSummaries = eventMemory.small_summaries
+      .filter(item => valid(item) && beforeTask(item)).slice(-4);
+    return { historyBigSummaries, historySmallSummaries };
+  }
+
   async function buildRequestPrompt(tasks, state, st) {
     const segments = [];
     if (tasks.memory) {
@@ -132,6 +149,7 @@ window.MEMORY_ENGINE = (function() {
     if (tasks.small) {
       segments.push(`【任务说明】\n${window.MEMORY_ENGINE_SMALL_SUMMARY_PROMPT.SYSTEM_PROMPT}\n\n${window.MEMORY_ENGINE_SMALL_SUMMARY_PROMPT.buildUserPrompt({
         ...tasks.small,
+        ...buildSmallHistoryContext(state, tasks.small),
         conversation: filterConversation(tasks.small.conversation, st)
       })}`);
     }
@@ -210,13 +228,11 @@ window.MEMORY_ENGINE = (function() {
     if (tasks.small) {
       if (Array.isArray(value) || typeof value?.small_summary !== 'string') throw new Error('small_summary 必须是字符串');
       smallSummary = clean(value.small_summary);
-      if (Array.from(smallSummary).length > 200) throw new Error('纪要超过 200 字');
     }
     let bigSummary = '';
     if (tasks.big) {
       if (Array.isArray(value) || typeof value?.big_summary !== 'string') throw new Error('big_summary 必须是字符串');
       bigSummary = clean(value.big_summary);
-      if (Array.from(bigSummary).length > 500) throw new Error('总述超过 500 字');
     }
     return { personal, entities, smallSummary, bigSummary };
   }
@@ -1715,6 +1731,6 @@ window.MEMORY_ENGINE = (function() {
     getSummaryBackfillStatus: () => clone(summaryBackfillStatus),
     getRunningLabel: () => runningLabel,
     isRunning: () => running || backfillRunning,
-    _test: { exponentialMemorySample, rollbackLinkedLayer, rewindSummaryCursorForDeletedLayers }
+    _test: { exponentialMemorySample, rollbackLinkedLayer, rewindSummaryCursorForDeletedLayers, buildSmallHistoryContext, parseResponse }
   };
 })();

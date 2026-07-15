@@ -111,6 +111,56 @@ for (const filename of [
     '删除两轮四层后纪要游标必须回退四层，使下一轮立即重新进入待总结范围');
 }
 
+{
+  const contextState = sandbox.MEMORY_ENGINE_DATA.defaultState();
+  contextState.event_memory.small_summaries = Array.from({ length: 17 }, (_, index) => ({
+    id: `small_${String(index + 1).padStart(6, '0')}`,
+    startLayer: index * 2 + 1,
+    endLayer: index * 2 + 2,
+    content: `纪要${index + 1}`,
+    originChatId: 'summary-test',
+    status: 'valid'
+  }));
+  contextState.event_memory.big_summaries = Array.from({ length: 3 }, (_, index) => ({
+    id: `big_${String(index + 1).padStart(6, '0')}`,
+    startLayer: index * 10 + 1,
+    endLayer: index * 10 + 10,
+    content: `总述${index + 1}`,
+    childIds: contextState.event_memory.small_summaries
+      .slice(index * 5, index * 5 + 5).map(item => item.id),
+    originChatId: 'summary-test',
+    status: 'valid'
+  }));
+  const history = sandbox.MEMORY_ENGINE._test.buildSmallHistoryContext(contextState, { startLayer: 11 });
+  assert.deepStrictEqual(history.historyBigSummaries.map(item => item.content), ['总述1']);
+  assert.deepStrictEqual(history.historySmallSummaries.map(item => item.content), ['纪要2', '纪要3', '纪要4', '纪要5'],
+    '生成第6条纪要时应读取最近一条总述及最近的第2、3、4、5条纪要，允许内容重叠');
+  const prompt = sandbox.MEMORY_ENGINE_SMALL_SUMMARY_PROMPT.buildUserPrompt({
+    startLayer: 11,
+    endLayer: 12,
+    conversation: '第6轮用户正文\n第6轮角色正文',
+    ...history
+  });
+  assert.ok(prompt.includes('总述1') && prompt.includes('纪要2') && prompt.includes('纪要5'));
+  assert.ok(prompt.includes('第6轮用户正文') && prompt.includes('第6轮角色正文'),
+    '历史参考之外必须同时携带当前这一轮的完整正文');
+}
+
+{
+  const longSmall = '纪'.repeat(201);
+  const longBig = '述'.repeat(2001);
+  assert.strictEqual(
+    sandbox.MEMORY_ENGINE._test.parseResponse(JSON.stringify({ small_summary: longSmall }), { small: {} }).smallSummary,
+    longSmall,
+    '纪要超过提示目标时必须完整接受，不得截断或拒绝'
+  );
+  assert.strictEqual(
+    sandbox.MEMORY_ENGINE._test.parseResponse(JSON.stringify({ big_summary: longBig }), { big: {} }).bigSummary,
+    longBig,
+    '总述超过提示目标时必须完整接受，不得截断或拒绝'
+  );
+}
+
 (async () => {
   const combined = await sandbox.MEMORY_ENGINE.manualSmallSummary();
   assert.strictEqual(calls.length, 2, '达到阈值时应先生成并保存小总结，再独立请求大总结');

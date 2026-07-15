@@ -546,7 +546,7 @@ window.WORLD_ENGINE_UI = (function() {
     const cursor = Math.max(0, Math.min(items.length, parseInt(eventMemory.big_summary_cursor) || 0));
     const editor = (item, isNew) => `<div class="we-memory-editor">
       <div class="we-memory-form-grid"><div class="we-input-group"><label>起始楼层</label><input class="we-memory-small-start" type="number" min="0" value="${h(String(item.startLayer ?? 0))}"></div><div class="we-input-group"><label>结束楼层</label><input class="we-memory-small-end" type="number" min="0" value="${h(String(item.endLayer ?? 0))}"></div></div>
-      <div class="we-input-group"><label>纪要内容</label><textarea class="we-memory-small-content" rows="6" maxlength="200">${h(item.content || '')}</textarea><div class="we-hint">最多 200 字；手动新增的纪要只会追加为未整理，不会改动已有总述。</div></div>
+      <div class="we-input-group"><label>纪要内容</label><textarea class="we-memory-small-content" rows="6">${h(item.content || '')}</textarea><div class="we-hint">API 以 50–200 字为目标，超出时仍完整保留；手动新增的纪要只会追加为未整理，不会改动已有总述。</div></div>
       <div class="we-memory-editor-actions"><button class="we-btn we-memory-cancel-edit" type="button">取消</button><button class="we-btn we-btn-primary we-memory-save-small" data-new="${isNew ? 'true' : 'false'}" type="button">保存</button></div>
     </div>`;
     const draft = _memoryEditingSmall === '__new__'
@@ -564,7 +564,7 @@ window.WORLD_ENGINE_UI = (function() {
     const items = Array.isArray(state.event_memory?.big_summaries) ? state.event_memory.big_summaries : [];
     const editor = (big, isNew) => `<div class="we-memory-editor">
       <div class="we-memory-form-grid"><div class="we-input-group"><label>起始楼层</label><input class="we-memory-big-start" type="number" min="0" value="${h(String(big.startLayer ?? 0))}"></div><div class="we-input-group"><label>结束楼层</label><input class="we-memory-big-end" type="number" min="0" value="${h(String(big.endLayer ?? 0))}"></div></div>
-      <div class="we-input-group"><label>总述内容</label><textarea class="we-memory-big-content" rows="10" maxlength="500">${h(big.content || '')}</textarea><div class="we-hint">API 生成时要求不超过 500 字；JSON 导入内容不会被截断。删除总述不会回退纪要整理游标。</div></div>
+      <div class="we-input-group"><label>总述内容</label><textarea class="we-memory-big-content" rows="10">${h(big.content || '')}</textarea><div class="we-hint">API 以 1000–2000 字为目标，超出时仍完整保留；删除总述不会回退纪要整理游标。</div></div>
       <div class="we-memory-editor-actions"><button class="we-btn we-memory-cancel-edit" type="button">取消</button><button class="we-btn we-btn-primary we-memory-save-big" data-new="${isNew ? 'true' : 'false'}" type="button">保存</button></div>
     </div>`;
     const draft = _memoryEditingBig === '__new__'
@@ -779,7 +779,6 @@ window.WORLD_ENGINE_UI = (function() {
         const startLayer = Math.max(0, parseInt(card?.querySelector('.we-memory-small-start')?.value) || 0);
         const endLayer = Math.max(startLayer, parseInt(card?.querySelector('.we-memory-small-end')?.value) || startLayer);
         if (!content) { showToast('纪要内容不能为空', true); return; }
-        if (Array.from(content).length > 200) { showToast('纪要不能超过 200 字', true); return; }
         const state = window.MEMORY_ENGINE_DATA?.loadState?.(), items = state?.event_memory?.small_summaries || [];
         if (button.dataset.new === 'true') {
           items.push({ id: nextMemoryUiId(items, 'small'), startLayer, endLayer, content });
@@ -814,7 +813,6 @@ window.WORLD_ENGINE_UI = (function() {
         const startLayer = Math.max(0, parseInt(card?.querySelector('.we-memory-big-start')?.value) || 0);
         const endLayer = Math.max(startLayer, parseInt(card?.querySelector('.we-memory-big-end')?.value) || startLayer);
         if (!content) { showToast('总述内容不能为空', true); return; }
-        if (Array.from(content).length > 500) { showToast('总述不能超过 500 字', true); return; }
         const state = window.MEMORY_ENGINE_DATA?.loadState?.();
         const items = state?.event_memory?.big_summaries || [];
         if (button.dataset.new === 'true') {
@@ -1113,7 +1111,7 @@ window.WORLD_ENGINE_UI = (function() {
       <div style="font-size:11px;color:var(--we-text3);margin-bottom:8px;">人物、实体和纪要固定以一轮为单位处理，并合并为一次 API 请求。重 Roll 不计入新轮次。</div>
       <div class="we-input-group">
         <label>总述整理</label>
-        <div style="font-size:11px;color:var(--we-text3);margin-top:3px;">每轮生成一条不超过 200 字的纪要；每累计 X 条尚未整理的纪要，独立生成一条不超过 500 字的总述，历史总述不会被覆盖。</div>
+        <div style="font-size:11px;color:var(--we-text3);margin-top:3px;">每轮生成一条 50–200 字的纪要；每累计 X 条尚未整理的纪要，独立生成一条 1000–2000 字的总述，历史总述不会被覆盖。</div>
       </div>
       <div class="we-input-group">
         <label>总述间隔轮数（X）</label>
