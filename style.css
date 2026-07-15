@@ -1049,31 +1049,6 @@
   color: var(--we-text2);
   white-space: nowrap;
 }
-.we-memory-ring-legend {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 16px;
-  margin-top: 0;
-  color: var(--we-text3);
-  font-size: 11px;
-}
-.we-memory-ring-legend span {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-}
-.we-memory-ring-legend i {
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  background: var(--we-accent);
-  box-shadow: 0 0 7px color-mix(in srgb, var(--we-accent) 48%, transparent);
-}
-.we-memory-ring-legend .we-memory-legend-big {
-  background: var(--we-gold);
-  box-shadow: 0 0 7px color-mix(in srgb, var(--we-gold) 45%, transparent);
-}
 .we-memory-summary-section {
   padding-bottom: 12px;
 }

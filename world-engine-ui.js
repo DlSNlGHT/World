@@ -372,19 +372,6 @@ window.WORLD_ENGINE_UI = (function() {
     return renderMemorySubView(_memoryView);
   }
 
-  function countMemoryAiSince(layer, memorySettings) {
-    const anchor = layer !== null && layer !== '' && Number.isFinite(Number(layer)) ? Number(layer) : -1;
-    try {
-      const chat = SillyTavern.getContext()?.chat || [];
-      const skipOpening = anchor < 0 && memorySettings?.firstLayerIsAiOpening !== false;
-      return chat.reduce((count, message, index) => count + (
-        index > anchor && !(skipOpening && index === 0) && message && !message.is_user && String(message.mes || '').trim() ? 1 : 0
-      ), 0);
-    } catch (_) {
-      return 0;
-    }
-  }
-
   function memoryProgressCircle(radius, progress, color, width, className) {
     const circumference = 2 * Math.PI * radius;
     const ratio = Math.max(0, Math.min(1, Number(progress) || 0));
@@ -399,13 +386,9 @@ window.WORLD_ENGINE_UI = (function() {
     const smallSummaries = Array.isArray(eventMemory.small_summaries) ? eventMemory.small_summaries : [];
     const bigSummaries = Array.isArray(eventMemory.big_summaries) ? eventMemory.big_summaries : [];
     const cursor = Math.max(0, Math.min(smallSummaries.length, parseInt(eventMemory.big_summary_cursor) || 0));
-    const smallTarget = Math.max(1, parseInt(settings.smallSummaryEveryX) || 5);
     const bigTarget = Math.max(1, parseInt(settings.bigSummaryEveryX) || 5);
-    const elapsedFloors = countMemoryAiSince(eventMemory.small_summary_layer, settings);
     const pendingSmall = Math.max(0, smallSummaries.length - cursor);
-    const smallProgress = Math.min(1, elapsedFloors / smallTarget);
     const bigProgress = Math.min(1, pendingSmall / bigTarget);
-    const smallRemaining = Math.max(0, smallTarget - elapsedFloors);
     const bigRemaining = Math.max(0, bigTarget - pendingSmall);
     const entityCount = ['organization', 'object', 'ability', 'location']
       .reduce((sum, type) => sum + (Array.isArray(state?.entity_memory?.[type]) ? state.entity_memory[type].length : 0), 0);
@@ -415,26 +398,22 @@ window.WORLD_ENGINE_UI = (function() {
       ['纪要', smallSummaries.length],
       ['总述', bigSummaries.length]
     ].map(([label, value]) => `<div class="we-core-stat"><div class="we-core-stat-k">${label}</div><div class="we-core-stat-v">${value}</div></div>`).join('');
-    const centerMain = smallRemaining > 0 ? smallRemaining : '待执行';
-    const centerUnit = smallRemaining > 0 ? '<span>轮</span>' : '';
+    const centerMain = bigRemaining > 0 ? bigRemaining : '待执行';
+    const centerUnit = bigRemaining > 0 ? '<span>轮</span>' : '';
 
     return `<div class="we-section we-core-section we-memory-core-section">
-      <div class="we-core" title="纪要 ${Math.min(elapsedFloors, smallTarget)}/${smallTarget} 轮 · 总述 ${Math.min(pendingSmall, bigTarget)}/${bigTarget} 轮">
+      <div class="we-core" title="${bigRemaining > 0 ? `距离下一次总述还有 ${bigRemaining} 轮` : '总述待执行'}">
         <div class="we-core-ring we-memory-core-ring">
           <svg viewBox="0 0 160 160" width="176" height="176" aria-hidden="true">
-            <circle cx="80" cy="80" r="64" fill="none" stroke="color-mix(in srgb, var(--we-accent) 18%, transparent)" stroke-width="6"/>
-            <circle cx="80" cy="80" r="52" fill="none" stroke="color-mix(in srgb, var(--we-gold) 24%, transparent)" stroke-width="5"/>
-            ${memoryProgressCircle(64, smallProgress, 'var(--we-accent)', 6, 'we-memory-small-progress')}
-            ${memoryProgressCircle(52, bigProgress, 'var(--we-gold)', 5, 'we-memory-big-progress')}
+            <circle cx="80" cy="80" r="64" fill="none" stroke="color-mix(in srgb, var(--we-gold) 24%, transparent)" stroke-width="6"/>
+            ${memoryProgressCircle(64, bigProgress, 'var(--we-gold)', 6, 'we-memory-big-progress')}
           </svg>
           <div class="we-core-center">
             <div class="we-core-title">记忆脉络</div>
-            <div class="we-core-sub">下一次纪要</div>
+            <div class="we-core-sub">下一次总述</div>
             <div class="we-core-pct we-memory-core-value">${centerMain}${centerUnit}</div>
-            <div class="we-core-tier">${bigRemaining > 0 ? `总述需 ${bigRemaining} 轮` : '总述待执行'}</div>
           </div>
         </div>
-        <div class="we-memory-ring-legend"><span><i class="we-memory-legend-small"></i>纪要 ${Math.min(elapsedFloors, smallTarget)}/${smallTarget} 轮</span><span><i class="we-memory-legend-big"></i>总述 ${Math.min(pendingSmall, bigTarget)}/${bigTarget} 轮</span></div>
         <div class="we-core-stats">${stats}</div>
       </div>
     </div>`;
