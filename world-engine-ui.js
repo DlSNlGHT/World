@@ -1203,6 +1203,13 @@ window.WORLD_ENGINE_UI = (function() {
         <div style="font-size:11px;color:var(--we-text3);margin-top:3px;">仅用于记忆提取，不修改世界推演的重试次数。</div>
       </div>`;
 
+    const blacklistBody = `
+      <div class="we-input-group">
+        <label>人物与实体名称黑名单</label>
+        <textarea id="we-memory-name-blacklist" rows="5" style="width:100%;resize:vertical;" placeholder="每行一个名称">${h(settings.nameBlacklist || '')}</textarea>
+        <div style="font-size:11px;color:var(--we-text3);margin-top:3px;">API 返回中，人物任一名称或实体名称命中黑名单时，只忽略该条人物或实体数据；同次返回的其他数据照常处理。匹配忽略大小写和首尾空格。</div>
+      </div>`;
+
     const filterBody = `
       <div class="we-input-group">
         <label>每行一条正则，匹配内容会在喂记忆后台前删除</label>
@@ -1296,6 +1303,7 @@ window.WORLD_ENGINE_UI = (function() {
         + sec('set-memory-inject', '记忆信息注入', injectBody),
       link: sec('set-memory-link', '向世界引擎联动', linkBody),
       advanced: sec('set-memory-retry', 'API 自动重试', retryBody)
+        + sec('set-memory-blacklist', '人物与实体黑名单', blacklistBody)
         + sec('set-memory-backfill', '批量重填记忆推演', backfillBody)
         + sec('set-memory-filter', '输入过滤器', filterBody)
         + sec('set-memory-display', '界面显示', displayBody)
@@ -4678,6 +4686,7 @@ window.WORLD_ENGINE_UI = (function() {
           searchDepth: Math.max(1, parseInt(gv('we-memory-search-depth')) || 5),
           maxPerCharacter: Math.max(1, parseInt(gv('we-memory-max-per-character')) || 20),
           apiAutoRetries: Math.max(0, parseInt(gv('we-memory-api-auto-retries')) || 0),
+          nameBlacklist: gv('we-memory-name-blacklist') || '',
           filterRegex: gv('we-memory-filter-regex') || '',
           tonePrompt: gv('we-memory-tone-prompt') || '',
           worldbookEnabled: document.getElementById('we-memory-worldbook-enabled')?.checked === true,

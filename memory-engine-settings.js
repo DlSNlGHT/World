@@ -26,6 +26,7 @@ window.MEMORY_ENGINE_SETTINGS = (function() {
     maxPerCharacter: 20,
     injectionDiceSides: 10000,
     apiAutoRetries: 0,
+    nameBlacklist: '',
     filterRegex: '',
     tonePrompt: '',
     worldbookEnabled: false,

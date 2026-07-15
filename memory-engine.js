@@ -30,6 +30,15 @@ window.MEMORY_ENGINE = (function() {
   const ignoreFirstLayer = st => st?.firstLayerIsAiOpening !== false;
   const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
 
+  function configuredNameBlacklist(st) {
+    return new Set(clean(st?.nameBlacklist).split(/\r?\n/).map(normalized).filter(Boolean));
+  }
+
+  function nameIsBlacklisted(value, blacklist) {
+    const names = Array.isArray(value) ? value : [value];
+    return names.some(name => blacklist.has(normalized(name)));
+  }
+
   function worldLinkEnabled() {
     return window.WORLD_ENGINE_API?.getSettings?.(true)?.memoryLinkEnabled === true;
   }
@@ -180,6 +189,7 @@ window.MEMORY_ENGINE = (function() {
       else if (arrayStart >= 0 && arrayEnd > arrayStart) value = JSON.parse(text.slice(arrayStart, arrayEnd + 1));
       else throw new Error('API 返回中没有合法 JSON 对象或数组');
     }
+    const nameBlacklist = configuredNameBlacklist(settings());
     // 兼容 0.1.x：旧 API 只返回人物记忆数组。
     const personalSource = tasks.memory ? (Array.isArray(value)
       ? value
@@ -188,6 +198,7 @@ window.MEMORY_ENGINE = (function() {
     const counts = new Map(), personal = [];
     for (const item of personalSource) {
       if (!item || typeof item !== 'object') continue;
+      if (nameIsBlacklisted(item.name, nameBlacklist)) continue;
       const names = unique(Array.isArray(item.name) ? item.name : []), memory = clean(item.memory);
       if (!names.length || !memory) continue;
       if (Array.from(memory).length > 50) throw new Error(`记忆超过 50 字：${memory}`);
@@ -214,6 +225,7 @@ window.MEMORY_ENGINE = (function() {
     for (const item of entitySource) {
       if (entityUpdateCount >= 8) break;
       if (!item || typeof item !== 'object') continue;
+      if (nameIsBlacklisted(item.name, nameBlacklist)) continue;
       if (!ENTITY_TYPES.includes(item.type) || typeof item.name !== 'string'
         || typeof item.description !== 'string' || typeof item.event !== 'string' || typeof item.time !== 'string') continue;
       const type = item.type, name = clean(item.name), description = clean(item.description), event = clean(item.event);
@@ -1787,7 +1799,7 @@ window.MEMORY_ENGINE = (function() {
     getLastDebug: () => clone(lastDebug), getBackfillStatus: () => clone(backfillStatus),
     getSummaryBackfillStatus: () => clone(summaryBackfillStatus),
     getRunningLabel: () => runningLabel,
-    isRunning: () => running || backfillRunning,
+    isRunning: () => running || backfillRunning || reconciling,
     _test: {
       exponentialMemorySample, rollbackLinkedLayer, rewindSummaryCursorForDeletedLayers,
       buildSmallHistoryContext, parseResponse, selectHiddenMessageIds, recentRawRoundMessageIds

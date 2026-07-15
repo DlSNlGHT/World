@@ -28,6 +28,7 @@ const settings = {
   maxPerCharacter: 20,
   maxTokens: 2000,
   temperature: 0.2,
+  nameBlacklist: '',
   apiAutoRetries: 0,
   backfillBatchSize: 2,
   summaryBackfillSmallEveryX: 2,
@@ -162,6 +163,25 @@ for (const filename of [
 }
 
 {
+  settings.nameBlacklist = '忽略人物\n禁用地点';
+  const parsed = sandbox.MEMORY_ENGINE._test.parseResponse(JSON.stringify({
+    personal_memory: [
+      { name: ['忽略人物', '别名'], known_by: [], memory: '不应入库。', time: '' },
+      { name: ['保留人物'], known_by: [], memory: '应当入库。', time: '' }
+    ],
+    entity_updates: [
+      { type: 'location', name: ' 禁用地点 ', description: '不应入库。', event: '', time: '' },
+      { type: 'object', name: '保留物件', description: '应当入库。', event: '', time: '' }
+    ]
+  }), { memory: {} });
+  assert.strictEqual(JSON.stringify(parsed.personal.map(item => item.name)), JSON.stringify([['保留人物']]),
+    '人物任一 name 命中黑名单时必须只忽略该条人物数据');
+  assert.strictEqual(parsed.entities.location.length, 0, '实体 name 命中黑名单时必须只忽略该条实体数据');
+  assert.strictEqual(JSON.stringify(parsed.entities.object.map(item => item.name)), JSON.stringify(['保留物件']));
+  settings.nameBlacklist = '';
+}
+
+{
   const messages = [
     { id: 'opening', is_user: false },
     { id: 'user-1', is_user: true }, { id: 'ai-1', is_user: false },
@@ -195,13 +215,17 @@ for (const filename of [
     let hiddenWanted = null;
     sandbox.MEMORY_ENGINE_TIMELINE = {
       auditRefs(refs) {
+        const changed = refs.some(ref => ref.hash !== 'edited');
+        const updated = refs.map(ref => ({ ...ref, hash: 'edited' }));
         return {
-          valid: false,
-          changed: [{ before: refs[0], after: { ...refs[0], hash: 'edited' } }],
+          valid: !changed,
+          changed: changed ? [{ before: refs[0], after: updated[0] }] : [],
           missing: [],
-          refs
+          refs: updated
         };
       },
+      refsToConversation() { return '【用户】修改后的提问\n【角色】修改后的回答'; },
+      digestRefs() { return 'edited-digest'; },
       unionRefs(groups) { return groups.flat(); },
       syncHidden(ids) { hiddenWanted = [...ids]; return Promise.resolve(); }
     };
@@ -222,6 +246,19 @@ for (const filename of [
       'stale'
     );
     assert.deepStrictEqual(hiddenWanted, [], '生成前必须恢复失效纪要覆盖的第3、4楼正文');
+    const animationStates = [];
+    const originalSetMemoryEvolvingUI = sandbox.WORLD_ENGINE_UI.setMemoryEvolvingUI;
+    sandbox.WORLD_ENGINE_UI.setMemoryEvolvingUI = (active, label) => {
+      animationStates.push({ active, label, running: sandbox.MEMORY_ENGINE.isRunning() });
+    };
+    await sandbox.MEMORY_ENGINE.reconcileHistory();
+    sandbox.WORLD_ENGINE_UI.setMemoryEvolvingUI = originalSetMemoryEvolvingUI;
+    assert.strictEqual(calls.length, 1, 'AI 回复后历史修复应调用一次纪要修复 API');
+    assert.deepStrictEqual(animationStates, [
+      { active: true, label: '历史记忆对账', running: true },
+      { active: false, label: '', running: false }
+    ], '历史修复期间 isRunning 必须保持为 true，让悬浮球持续显示运行动画');
+    calls.length = 0;
     sandbox.MEMORY_ENGINE_TIMELINE = undefined;
     sandbox.MEMORY_ENGINE_DATA.saveState(sandbox.MEMORY_ENGINE_DATA.defaultState());
   }
