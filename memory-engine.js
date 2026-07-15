@@ -3,6 +3,7 @@ window.MEMORY_ENGINE = (function() {
   const INJECTION_NAME = 'memory-engine-memory';
   const SENTINEL = '【记忆信息】';
   const DEFAULT_INJECTION_DICE_SIDES = 10000;
+  const RECENT_RAW_MESSAGE_COUNT = 3;
   const ENTITY_TYPES = ['organization', 'object', 'ability', 'location'];
   const ENTITY_LABELS = { organization: '组织', object: '物件', ability: '能力', location: '地点' };
   let initialized = false, running = false, backfillRunning = false, reconciling = false;
@@ -1367,6 +1368,14 @@ window.MEMORY_ENGINE = (function() {
     }
   }
 
+  function selectHiddenMessageIds(coveredRefs, currentChatId, recentMessageIds) {
+    const recent = recentMessageIds instanceof Set ? recentMessageIds : new Set(recentMessageIds || []);
+    return new Set((coveredRefs || [])
+      .filter(ref => clean(ref?.chatId) === clean(currentChatId))
+      .map(ref => clean(ref?.messageId))
+      .filter(messageId => messageId && !recent.has(messageId)));
+  }
+
   function applyInjection(options) {
     const st = settings();
     if (st.engineEnabled === false || st.injectIntoPrompt === false) {
@@ -1446,9 +1455,12 @@ window.MEMORY_ENGINE = (function() {
       ...recentBig.map(item => item.sourceRefs || []),
       ...pendingSmall.map(item => item.sourceRefs || [])
     ]) || [];
-    const coveredMessageIds = new Set(coveredRefs
-      .filter(ref => clean(ref.chatId) === clean(data()?.getChatId?.()))
-      .map(ref => clean(ref.messageId)).filter(Boolean));
+    const api = timelineApi();
+    const recentMessageIds = new Set(chat().slice(-RECENT_RAW_MESSAGE_COUNT)
+      .map(message => clean(api?.ensureMessageId?.(message))).filter(Boolean));
+    const coveredMessageIds = selectHiddenMessageIds(
+      coveredRefs, data()?.getChatId?.(), recentMessageIds
+    );
     timelineApi()?.syncHidden?.(coveredMessageIds)?.catch?.(error => console.warn('[记忆引擎] 同步正文覆盖失败', error));
     if (!sections.length) { clearInjection(); return ''; }
     const content = `${SENTINEL}\n事件总结记录对话中已经发生的剧情；人物条目是当前场景人物持有或明确知晓的主观记忆，允许彼此矛盾；实体条目记录相关组织、物件、能力与地点的当前描述和本地历史。\n\n${sections.join('\n\n')}`;
@@ -1731,6 +1743,9 @@ window.MEMORY_ENGINE = (function() {
     getSummaryBackfillStatus: () => clone(summaryBackfillStatus),
     getRunningLabel: () => runningLabel,
     isRunning: () => running || backfillRunning,
-    _test: { exponentialMemorySample, rollbackLinkedLayer, rewindSummaryCursorForDeletedLayers, buildSmallHistoryContext, parseResponse }
+    _test: {
+      exponentialMemorySample, rollbackLinkedLayer, rewindSummaryCursorForDeletedLayers,
+      buildSmallHistoryContext, parseResponse, selectHiddenMessageIds
+    }
   };
 })();

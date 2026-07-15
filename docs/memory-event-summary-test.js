@@ -161,6 +161,20 @@ for (const filename of [
   );
 }
 
+{
+  const covered = Array.from({ length: 5 }, (_, index) => ({
+    chatId: 'summary-test', messageId: `message-${index + 1}`
+  }));
+  covered.push({ chatId: 'other-chat', messageId: 'foreign-message' });
+  const hidden = sandbox.MEMORY_ENGINE._test.selectHiddenMessageIds(
+    covered,
+    'summary-test',
+    new Set(['message-3', 'message-4', 'message-5'])
+  );
+  assert.deepStrictEqual([...hidden], ['message-1', 'message-2'],
+    '有效摘要覆盖正文时只能隐藏最近三层之外的当前聊天消息');
+}
+
 (async () => {
   const combined = await sandbox.MEMORY_ENGINE.manualSmallSummary();
   assert.strictEqual(calls.length, 2, '达到阈值时应先生成并保存小总结，再独立请求大总结');
