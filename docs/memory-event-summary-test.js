@@ -176,6 +176,41 @@ for (const filename of [
 }
 
 (async () => {
+  {
+    let hiddenWanted = null;
+    sandbox.MEMORY_ENGINE_TIMELINE = {
+      auditRefs(refs) {
+        return {
+          valid: false,
+          changed: [{ before: refs[0], after: { ...refs[0], hash: 'edited' } }],
+          missing: [],
+          refs
+        };
+      },
+      unionRefs(groups) { return groups.flat(); },
+      syncHidden(ids) { hiddenWanted = [...ids]; return Promise.resolve(); }
+    };
+    const editedState = sandbox.MEMORY_ENGINE_DATA.defaultState();
+    editedState.event_memory.small_summaries = [{
+      id: 'small_000001', startLayer: 3, endLayer: 4, content: '修改前纪要', status: 'valid',
+      sourceRefs: [
+        { chatId: 'summary-test', messageId: 'floor-3', layer: 3, hash: 'old-3' },
+        { chatId: 'summary-test', messageId: 'floor-4', layer: 4, hash: 'old-4' }
+      ]
+    }];
+    sandbox.MEMORY_ENGINE_DATA.saveState(editedState);
+    calls.length = 0;
+    await sandbox.MEMORY_ENGINE.prepareHistoryForGeneration();
+    assert.strictEqual(calls.length, 0, '生成前只能撤下失效摘要，不得调用后台 API');
+    assert.strictEqual(
+      sandbox.MEMORY_ENGINE_DATA.loadState().event_memory.small_summaries[0].status,
+      'stale'
+    );
+    assert.deepStrictEqual(hiddenWanted, [], '生成前必须恢复失效纪要覆盖的第3、4楼正文');
+    sandbox.MEMORY_ENGINE_TIMELINE = undefined;
+    sandbox.MEMORY_ENGINE_DATA.saveState(sandbox.MEMORY_ENGINE_DATA.defaultState());
+  }
+
   const combined = await sandbox.MEMORY_ENGINE.manualSmallSummary();
   assert.strictEqual(calls.length, 2, '达到阈值时应先生成并保存小总结，再独立请求大总结');
   assert.ok(calls[0].includes('事件记忆的纪要整理器'));

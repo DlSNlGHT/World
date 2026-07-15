@@ -3,14 +3,14 @@
   if (window.__WORLD_ENGINE_LOADED__) return;
   window.__WORLD_ENGINE_LOADED__ = true;
 
-  // ST 会在正式组装 prompt 前 await 此函数；先修复重 Roll/删楼导致的旧纪要失效，再放行生成。
+  // ST 会在正式组装 prompt 前 await 此函数；这里只撤下失效摘要并恢复原文，绝不调用 API。
+  // 历史记忆的 API 修复统一留到本轮 AI 回复完成后执行。
   window.worldEngineMemoryGenerateInterceptor = async function(_chat, _contextSize, _abort, _type) {
     try {
-      await window.MEMORY_ENGINE?.reconcileHistory?.();
-      window.MEMORY_ENGINE?.applyInjection?.();
+      await window.MEMORY_ENGINE?.prepareHistoryForGeneration?.();
     } catch (error) {
-      // 修复失败时 applyInjection 会撤下失效摘要并恢复对应正文；增强失败不阻断正常聊天。
-      console.error('[记忆引擎] 生成前历史对账失败，已降级使用原始正文', error);
+      // 本地撤旧失败不阻断正常聊天；这里没有后台 API 请求。
+      console.error('[记忆引擎] 生成前撤下失效摘要失败', error);
     }
   };
 

@@ -9,6 +9,7 @@ window.MEMORY_ENGINE = (function() {
   let initialized = false, running = false, backfillRunning = false, reconciling = false;
   let runningLabel = '';
   let abortController = null, autoTimer = null, lastEventKey = '';
+  let hiddenSyncPromise = Promise.resolve();
   let lastDebug = { prompt: '', rawResult: '', parsed: null, error: '' };
   let backfillStatus = { running: false, current: 0, total: 0, message: '' };
   let summaryBackfillStatus = { running: false, current: 0, total: 0, message: '' };
@@ -875,8 +876,10 @@ window.MEMORY_ENGINE = (function() {
 
   async function autoExtract() {
     const st = settings();
-    if (st.engineEnabled === false || st.evolveMode !== 'auto' || running || backfillRunning || reconciling) return;
+    if (st.engineEnabled === false || running || backfillRunning || reconciling) return;
+    // 历史正文修复必须等本轮 AI 回复完成后才请求 API；手动提取模式也照常修复历史。
     await reconcileHistory();
+    if (st.evolveMode !== 'auto') return;
     const state = data().loadState();
     const anchor = state.chatLayer !== null && state.chatLayer !== '' && Number.isFinite(Number(state.chatLayer))
       ? Number(state.chatLayer) : -1;
@@ -1368,6 +1371,22 @@ window.MEMORY_ENGINE = (function() {
     }
   }
 
+  async function prepareHistoryForGeneration() {
+    if (settings().engineEnabled === false) return { invalidated: false };
+    const auditReport = newHistoryAuditReport();
+    let state = data().loadState();
+    const sourcesChanged = auditStoredSources(state, auditReport);
+    const summaryCursorChanged = rewindSummaryCursorForDeletedLayers(state, auditReport);
+    if (sourcesChanged || summaryCursorChanged) {
+      state = replayTimeline(state);
+      data().saveState(state);
+    }
+    // stale 纪要/总述不会再注入；其来源正文（例如第 3、4 楼）会从隐藏集合移除。
+    applyInjection();
+    await hiddenSyncPromise;
+    return { invalidated: sourcesChanged || summaryCursorChanged };
+  }
+
   function selectHiddenMessageIds(coveredRefs, currentChatId, recentMessageIds) {
     const recent = recentMessageIds instanceof Set ? recentMessageIds : new Set(recentMessageIds || []);
     return new Set((coveredRefs || [])
@@ -1376,11 +1395,22 @@ window.MEMORY_ENGINE = (function() {
       .filter(messageId => messageId && !recent.has(messageId)));
   }
 
+  function syncHiddenMessages(messageIds, label) {
+    try {
+      hiddenSyncPromise = Promise.resolve(timelineApi()?.syncHidden?.(messageIds))
+        .catch(error => console.warn(`[记忆引擎] ${label}`, error));
+    } catch (error) {
+      console.warn(`[记忆引擎] ${label}`, error);
+      hiddenSyncPromise = Promise.resolve();
+    }
+    return hiddenSyncPromise;
+  }
+
   function applyInjection(options) {
     const st = settings();
     if (st.engineEnabled === false || st.injectIntoPrompt === false) {
       clearInjection();
-      timelineApi()?.syncHidden?.(new Set())?.catch?.(error => console.warn('[记忆引擎] 恢复正文失败', error));
+      syncHiddenMessages(new Set(), '恢复正文失败');
       return '';
     }
     const state = (options?.isReroll && data().loadCheckpoint()) || data().loadState();
@@ -1391,7 +1421,7 @@ window.MEMORY_ENGINE = (function() {
     const hasEvents = Boolean(eventMemory.big_summaries.length || eventMemory.small_summaries.length);
     if (!hasPeople && !hasEntities && !hasEvents) {
       clearInjection();
-      timelineApi()?.syncHidden?.(new Set())?.catch?.(error => console.warn('[记忆引擎] 恢复正文失败', error));
+      syncHiddenMessages(new Set(), '恢复正文失败');
       return '';
     }
     if (!state.knowledge_index || !Object.keys(state.knowledge_index).length) rebuildKnowledgeIndex(state);
@@ -1461,7 +1491,7 @@ window.MEMORY_ENGINE = (function() {
     const coveredMessageIds = selectHiddenMessageIds(
       coveredRefs, data()?.getChatId?.(), recentMessageIds
     );
-    timelineApi()?.syncHidden?.(coveredMessageIds)?.catch?.(error => console.warn('[记忆引擎] 同步正文覆盖失败', error));
+    syncHiddenMessages(coveredMessageIds, '同步正文覆盖失败');
     if (!sections.length) { clearInjection(); return ''; }
     const content = `${SENTINEL}\n事件总结记录对话中已经发生的剧情；人物条目是当前场景人物持有或明确知晓的主观记忆，允许彼此矛盾；实体条目记录相关组织、物件、能力与地点的当前描述和本地历史。\n\n${sections.join('\n\n')}`;
     registerInjection(content);
@@ -1677,9 +1707,10 @@ window.MEMORY_ENGINE = (function() {
     autoTimer = setTimeout(() => autoExtract().catch(error => console.error('[记忆引擎] 自动提取失败', error)), 1500);
   }
 
-  function scheduleReconcile(delayMs = 50) {
+  function schedulePreparation(delayMs = 50) {
     clearTimeout(autoTimer);
-    autoTimer = setTimeout(() => reconcileHistory().catch(error => console.error('[记忆引擎] 历史对账失败', error)), delayMs);
+    autoTimer = setTimeout(() => prepareHistoryForGeneration()
+      .catch(error => console.error('[记忆引擎] 历史摘要撤旧失败', error)), delayMs);
   }
 
   function guardEvent(label, handler) {
@@ -1710,20 +1741,19 @@ window.MEMORY_ENGINE = (function() {
         abortController?.abort();
         lastEventKey = '';
         initializeSummaryBaseline();
-        applyInjection();
-        scheduleReconcile(100);
+        schedulePreparation(100);
       }));
       ctx.eventSource.on(types.MESSAGE_SWIPED || 'message_swiped', guardEvent('滑动重生成', () => {
         clearTimeout(autoTimer);
         abortController?.abort();
         if (!rollbackLinkedLayer(currentLayer())) applyInjection({ isReroll: true });
-        scheduleReconcile(50);
+        schedulePreparation(50);
       }));
       ctx.eventSource.on(types.MESSAGE_DELETED || 'message_deleted', guardEvent('删除消息', () => {
         clearTimeout(autoTimer);
         abortController?.abort();
         lastEventKey = '';
-        scheduleReconcile(50);
+        schedulePreparation(50);
       }));
       ctx.eventSource.on(types.GENERATION_STARTED || 'generation_started', guardEvent('生成开始', (type, _opts, dryRun) => {
         if (!dryRun) applyInjection({ isReroll: type === 'swipe' || type === 'regenerate' });
@@ -1735,7 +1765,7 @@ window.MEMORY_ENGINE = (function() {
 
   return {
     init, applyInjection, buildWorldEngineContext, ingestWorldEvolution, manualExtract, manualReextract, extractNow: manualExtract,
-    reconcileHistory, replayTimeline, commitManualState,
+    reconcileHistory, prepareHistoryForGeneration, replayTimeline, commitManualState,
     manualSmallSummary, manualBigSummary,
     backfill, backfillSummaries, stopBackfill, abort,
     repairStateIndexes, replaceKnownByRecords,
