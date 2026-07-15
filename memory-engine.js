@@ -674,11 +674,17 @@ window.MEMORY_ENGINE = (function() {
       const extracted = await requestTasks(tasks, { ...options, baseState: before });
       if (options?.saveCheckpoint !== false) data().saveCheckpoint(before);
       const next = clone(before);
-      const addedPersonal = tasks.memory ? mergeMemories(next, extracted.personal) : 0;
-      const entityChanges = tasks.memory
+      const memorySourceDigest = tasks.memory && Array.isArray(tasks.memory.sourceRefs) && tasks.memory.sourceRefs.length
+        ? timelineApi()?.digestRefs?.(tasks.memory.sourceRefs) || '' : '';
+      const memoryAlreadyStored = memorySourceDigest && ensureTimelineState(next).nodes.some(node =>
+        node.kind === 'memory' && node.status === 'valid' && clean(node.sourceDigest) === memorySourceDigest
+      );
+      const applyMemory = Boolean(tasks.memory && !memoryAlreadyStored);
+      const addedPersonal = applyMemory ? mergeMemories(next, extracted.personal) : 0;
+      const entityChanges = applyMemory
         ? mergeEntityMemories(next, extracted.entities)
         : { entities: 0, history: 0, descriptions: 0 };
-      if (tasks.memory) appendTimelineNode(next, extracted, tasks.memory, options);
+      if (applyMemory) appendTimelineNode(next, extracted, tasks.memory, options);
       const eventMemory = ensureEventState(next);
       let addedSmall = 0, updatedBig = 0;
       if (tasks.small && extracted.smallSummary) {
@@ -736,7 +742,7 @@ window.MEMORY_ENGINE = (function() {
       }
       const added = addedPersonal + entityChanges.entities + entityChanges.history + entityChanges.descriptions;
       if (tasks.memory) {
-        next.round = Math.max(0, Number(next.round) || 0) + 1;
+        if (applyMemory) next.round = Math.max(0, Number(next.round) || 0) + 1;
         next.chatLayer = Number.isFinite(Number(options?.layer)) ? Number(options.layer) : currentLayer();
       }
       data().saveState(next);
@@ -889,12 +895,37 @@ window.MEMORY_ENGINE = (function() {
     const st = settings();
     if (st.engineEnabled === false) throw new Error('记忆引擎已关闭');
     const state = data().loadState();
-    const batch = recentConversationBatch(1);
-    const digest = timelineApi()?.digestRefs?.(batch.sourceRefs || []) || '';
-    const alreadyExtracted = digest && ensureTimelineState(state).nodes.some(node =>
-      node.kind === 'memory' && node.status === 'valid' && clean(node.sourceDigest) === digest
+    const timeline = ensureTimelineState(state), eventMemory = ensureEventState(state);
+    const memoryLayer = state.chatLayer !== null && state.chatLayer !== '' && Number.isFinite(Number(state.chatLayer))
+      ? Number(state.chatLayer) : null;
+    const summaryLayer = eventMemory.small_summary_layer !== null && eventMemory.small_summary_layer !== ''
+      && Number.isFinite(Number(eventMemory.small_summary_layer)) ? Number(eventMemory.small_summary_layer) : null;
+    const hasTrackedSummaries = eventMemory.small_summaries.some(summary =>
+      Array.isArray(summary.sourceRefs) && summary.sourceRefs.length
     );
-    if (alreadyExtracted) throw new Error('最新一轮正文已经提取，请使用重新推演');
+    // 新聊天首次建立纪要基线时，人物游标尚为空；此时沿用纪要基线，避免误把整段旧聊天当成待处理。
+    // 若已经存在带正文来源的纪要，则从头寻找尚缺人物实体的最早一轮，补齐两条链。
+    let anchor = memoryLayer === null ? (hasTrackedSummaries ? -1 : (summaryLayer ?? -1))
+      : (summaryLayer === null ? memoryLayer : Math.min(memoryLayer, summaryLayer));
+    let batch = null;
+    while (true) {
+      const candidate = getAiBatchAfter(anchor, 1);
+      if (!candidate) break;
+      const digest = timelineApi()?.digestRefs?.(candidate.sourceRefs || []) || '';
+      const hasNode = digest && timeline.nodes.some(node =>
+        node.kind === 'memory' && node.status === 'valid' && clean(node.sourceDigest) === digest
+      );
+      const hasSummary = digest && eventMemory.small_summaries.some(summary =>
+        summary.status !== 'stale' && clean(summary.sourceDigest) === digest
+      );
+      if (hasNode && hasSummary) {
+        anchor = candidate.endLayer;
+        continue;
+      }
+      batch = candidate;
+      break;
+    }
+    if (!batch) throw new Error('当前没有尚未提取的新一轮正文');
     return runTasksThenDueBig({ memory: batch, small: batch }, {
       ...batch, layer: batch.endLayer, baseState: state
     });
