@@ -1129,7 +1129,7 @@ window.WORLD_ENGINE_UI = (function() {
           <input type="checkbox" id="we-memory-inject" ${settings.injectIntoPrompt !== false ? 'checked' : ''}>
           注入记忆信息
         </label>
-        <div style="font-size:11px;color:var(--we-text3);margin-top:3px;">注入最新 Y 条总述和尚未整理的纪要；被摘要覆盖的旧正文自动隐藏，但始终保留聊天末尾 3 层原文；同时扫描最近 N 层正文中的人物及实体名称，按需注入相关人物与实体记忆。</div>
+        <div style="font-size:11px;color:var(--we-text3);margin-top:3px;">注入最新 Y 条总述和尚未整理的纪要；被摘要覆盖的旧正文自动隐藏，但始终保留最近 3 轮完整对话原文；同时扫描最近 N 层正文中的人物及实体名称，按需注入相关人物与实体记忆。</div>
       </div>
       <div class="we-input-group" style="display:flex;gap:6px;">
         <div style="flex:1;">

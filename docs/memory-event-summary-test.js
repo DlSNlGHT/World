@@ -162,17 +162,32 @@ for (const filename of [
 }
 
 {
-  const covered = Array.from({ length: 5 }, (_, index) => ({
-    chatId: 'summary-test', messageId: `message-${index + 1}`
+  const messages = [
+    { id: 'opening', is_user: false },
+    { id: 'user-1', is_user: true }, { id: 'ai-1', is_user: false },
+    { id: 'user-2', is_user: true }, { id: 'ai-2', is_user: false },
+    { id: 'user-3', is_user: true }, { id: 'ai-3', is_user: false },
+    { id: 'user-4', is_user: true }, { id: 'ai-4', is_user: false }
+  ];
+  const recent = sandbox.MEMORY_ENGINE._test.recentRawRoundMessageIds(
+    messages,
+    3,
+    { firstLayerIsAiOpening: true },
+    { ensureMessageId: message => message.id }
+  );
+  assert.deepStrictEqual([...recent], ['user-2', 'ai-2', 'user-3', 'ai-3', 'user-4', 'ai-4'],
+    '最近三轮必须保留每轮的用户输入和 AI 回复，而不是只保留三个消息楼层');
+  const covered = messages.slice(1).map(message => ({
+    chatId: 'summary-test', messageId: message.id
   }));
   covered.push({ chatId: 'other-chat', messageId: 'foreign-message' });
   const hidden = sandbox.MEMORY_ENGINE._test.selectHiddenMessageIds(
     covered,
     'summary-test',
-    new Set(['message-3', 'message-4', 'message-5'])
+    recent
   );
-  assert.deepStrictEqual([...hidden], ['message-1', 'message-2'],
-    '有效摘要覆盖正文时只能隐藏最近三层之外的当前聊天消息');
+  assert.deepStrictEqual([...hidden], ['user-1', 'ai-1'],
+    '有效摘要覆盖正文时只能隐藏最近三轮之外的当前聊天消息');
 }
 
 (async () => {

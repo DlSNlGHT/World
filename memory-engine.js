@@ -3,7 +3,7 @@ window.MEMORY_ENGINE = (function() {
   const INJECTION_NAME = 'memory-engine-memory';
   const SENTINEL = '【记忆信息】';
   const DEFAULT_INJECTION_DICE_SIDES = 10000;
-  const RECENT_RAW_MESSAGE_COUNT = 3;
+  const RECENT_RAW_ROUND_COUNT = 3;
   const ENTITY_TYPES = ['organization', 'object', 'ability', 'location'];
   const ENTITY_LABELS = { organization: '组织', object: '物件', ability: '能力', location: '地点' };
   let initialized = false, running = false, backfillRunning = false, reconciling = false;
@@ -1395,6 +1395,20 @@ window.MEMORY_ENGINE = (function() {
       .filter(messageId => messageId && !recent.has(messageId)));
   }
 
+  function recentRawRoundMessageIds(messages, roundCount, st, api) {
+    const source = Array.isArray(messages) ? messages : [];
+    const take = Math.max(0, parseInt(roundCount) || 0);
+    if (!source.length || !take) return new Set();
+    const opening = ignoreFirstLayer(st);
+    const aiLayers = source.map((message, index) => (
+      !message?.is_user && !(opening && index === 0) ? index : -1
+    )).filter(index => index >= 0);
+    const start = aiLayers.length > take ? aiLayers[aiLayers.length - take - 1] + 1 : 0;
+    return new Set(source.slice(start)
+      .map(message => clean(api?.ensureMessageId?.(message)))
+      .filter(Boolean));
+  }
+
   function syncHiddenMessages(messageIds, label) {
     try {
       hiddenSyncPromise = Promise.resolve(timelineApi()?.syncHidden?.(messageIds))
@@ -1486,8 +1500,9 @@ window.MEMORY_ENGINE = (function() {
       ...pendingSmall.map(item => item.sourceRefs || [])
     ]) || [];
     const api = timelineApi();
-    const recentMessageIds = new Set(chat().slice(-RECENT_RAW_MESSAGE_COUNT)
-      .map(message => clean(api?.ensureMessageId?.(message))).filter(Boolean));
+    const recentMessageIds = recentRawRoundMessageIds(
+      chat(), RECENT_RAW_ROUND_COUNT, st, api
+    );
     const coveredMessageIds = selectHiddenMessageIds(
       coveredRefs, data()?.getChatId?.(), recentMessageIds
     );
@@ -1775,7 +1790,7 @@ window.MEMORY_ENGINE = (function() {
     isRunning: () => running || backfillRunning,
     _test: {
       exponentialMemorySample, rollbackLinkedLayer, rewindSummaryCursorForDeletedLayers,
-      buildSmallHistoryContext, parseResponse, selectHiddenMessageIds
+      buildSmallHistoryContext, parseResponse, selectHiddenMessageIds, recentRawRoundMessageIds
     }
   };
 })();
