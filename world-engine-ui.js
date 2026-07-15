@@ -404,9 +404,9 @@ window.WORLD_ENGINE_UI = (function() {
     return `<div class="we-section we-core-section we-memory-core-section">
       <div class="we-core" title="${bigRemaining > 0 ? `距离下一次总述还有 ${bigRemaining} 轮` : '总述待执行'}">
         <div class="we-core-ring we-memory-core-ring">
-          <svg viewBox="0 0 160 160" width="176" height="176" aria-hidden="true">
-            <circle cx="80" cy="80" r="64" fill="none" stroke="color-mix(in srgb, var(--we-gold) 24%, transparent)" stroke-width="6"/>
-            ${memoryProgressCircle(64, bigProgress, 'var(--we-gold)', 6, 'we-memory-big-progress')}
+          <svg viewBox="0 0 160 160" width="160" height="160" aria-hidden="true">
+            <circle cx="80" cy="80" r="64" fill="none" stroke="color-mix(in srgb, var(--we-accent) 18%, transparent)" stroke-width="6"/>
+            ${memoryProgressCircle(64, bigProgress, 'var(--we-accent)', 6, 'we-memory-big-progress')}
           </svg>
           <div class="we-core-center">
             <div class="we-core-title">记忆脉络</div>
