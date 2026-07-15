@@ -999,7 +999,7 @@
   font-variant-numeric: tabular-nums;
 }
 
-/* ===== 记忆首页：大小总结客观进度，不计算虚构的“记忆质量” ===== */
+/* ===== 记忆首页：纪要与总述的客观进度，不计算虚构的“记忆质量” ===== */
 .we-memory-home {
   display: flex;
   flex-direction: column;

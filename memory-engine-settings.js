@@ -41,7 +41,7 @@ window.MEMORY_ENGINE_SETTINGS = (function() {
 
   let cached = null;
 
-  // 日常记忆以一轮为最小可重放单元：人物/实体与小总结同轮联合提取。
+  // 日常记忆以一轮为最小可重放单元：人物/实体与纪要同轮联合提取。
   // 这里同时覆盖旧存档和 UI 传入值，避免历史设置中的 X 继续生效。
   function normalizeSettings(value) {
     return {

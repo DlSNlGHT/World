@@ -210,13 +210,13 @@ window.MEMORY_ENGINE = (function() {
     if (tasks.small) {
       if (Array.isArray(value) || typeof value?.small_summary !== 'string') throw new Error('small_summary 必须是字符串');
       smallSummary = clean(value.small_summary);
-      if (Array.from(smallSummary).length > 200) throw new Error('小总结超过 200 字');
+      if (Array.from(smallSummary).length > 200) throw new Error('纪要超过 200 字');
     }
     let bigSummary = '';
     if (tasks.big) {
       if (Array.isArray(value) || typeof value?.big_summary !== 'string') throw new Error('big_summary 必须是字符串');
       bigSummary = clean(value.big_summary);
-      if (Array.from(bigSummary).length > 500) throw new Error('大总结超过 500 字');
+      if (Array.from(bigSummary).length > 500) throw new Error('总述超过 500 字');
     }
     return { personal, entities, smallSummary, bigSummary };
   }
@@ -657,13 +657,13 @@ window.MEMORY_ENGINE = (function() {
   async function runTasks(tasks, options) {
     if (running && !options?.allowWhileBackfill) return { skipped: true, reason: 'running' };
     if (!tasks?.memory && !tasks?.small && !tasks?.big) return { skipped: true, reason: 'no_tasks' };
-    if (tasks.small && tasks.big) throw new Error('大总结必须在小总结落库后独立运行');
+    if (tasks.small && tasks.big) throw new Error('总述必须在纪要落库后独立运行');
     if (tasks.memory && Number.isFinite(Number(options?.layer))) {
       ensureLinkCheckpoint(Number(options.layer), options?.baseState);
     }
     running = true;
-    runningLabel = tasks.memory && tasks.small ? '人物/实体与小总结'
-      : (tasks.memory ? '人物/实体总结' : (tasks.small ? '小总结' : '大总结'));
+    runningLabel = tasks.memory && tasks.small ? '人物、实体与纪要'
+      : (tasks.memory ? '人物与实体提取' : (tasks.small ? '纪要' : '总述'));
     const taskLabel = runningLabel;
     abortController = new AbortController();
     setExternalStatus(`正在进行${taskLabel}…`);
@@ -880,7 +880,7 @@ window.MEMORY_ENGINE = (function() {
     const after = data().loadState(), afterEvent = ensureEventState(after);
     if (countAiSince(afterEvent.small_summary_layer) >= smallEvery || buildBigTask(after, false)) {
       clearTimeout(autoTimer);
-      autoTimer = setTimeout(() => autoExtract().catch(error => console.error('[记忆引擎] 自动小总结补进度失败', error)), 0);
+      autoTimer = setTimeout(() => autoExtract().catch(error => console.error('[记忆引擎] 自动纪要补进度失败', error)), 0);
     }
     return result;
   }
@@ -946,7 +946,7 @@ window.MEMORY_ENGINE = (function() {
     const st = settings();
     if (st.engineEnabled === false) throw new Error('记忆引擎已关闭');
     const state = data().loadState(), bigTask = buildBigTask(state, true);
-    if (!bigTask) throw new Error('当前没有尚未并入大总结的小总结');
+    if (!bigTask) throw new Error('当前没有尚未并入总述的纪要');
     return runTasks({ big: bigTask }, { baseState: state });
   }
 
@@ -1061,7 +1061,7 @@ window.MEMORY_ENGINE = (function() {
     return true;
   }
 
-  // 日常提取固定为一轮后，同轮人物/实体节点与小总结拥有相同来源。
+  // 日常提取固定为一轮后，同轮人物/实体节点与纪要拥有相同来源。
   // 历史变化时也联合请求，保持新增与修复使用同一个最小事务单元。
   async function repairMemoryAndSmall(nodeId, summaryId) {
     let state = data().loadState(), timeline = ensureTimelineState(state), eventMemory = ensureEventState(state);
@@ -1348,7 +1348,7 @@ window.MEMORY_ENGINE = (function() {
       return index >= eventMemory.big_summary_cursor;
     });
     if (pendingSmall.length) {
-      sections.push(`【近期事件小总结】\n${pendingSmall.map(item =>
+      sections.push(`【近期事件纪要】\n${pendingSmall.map(item =>
         `- [楼层 ${item.startLayer}-${item.endLayer}] ${item.content}`
       ).join('\n')}`);
     }
@@ -1555,7 +1555,7 @@ window.MEMORY_ENGINE = (function() {
     for (let i = 0; i < aiLayers.length; i += size) batches.push(aiLayers.slice(i, i + size));
     if (!batches.length) { setSummaryBackfillStatus(0, 0, '没有可重填的 AI 楼层'); return; }
     backfillRunning = true;
-    window.WORLD_ENGINE_CHATCACHE?.forScope?.('memory')?.createSnapshot?.('大小总结重填前自动备份');
+    window.WORLD_ENGINE_CHATCACHE?.forScope?.('memory')?.createSnapshot?.('纪要与总述重填前自动备份');
     const original = data().loadState();
     data().saveCheckpoint(original);
     data().saveState({
@@ -1573,14 +1573,14 @@ window.MEMORY_ENGINE = (function() {
           sourceRefs: timelineApi()?.captureRange?.(start, finish) || []
         };
         const state = data().loadState();
-        setSummaryBackfillStatus(i, batches.length, `正在重填大小总结 ${i + 1} / ${batches.length}`);
+        setSummaryBackfillStatus(i, batches.length, `正在重填纪要与总述 ${i + 1} / ${batches.length}`);
         await runTasksThenDueBig({ small: smallTask }, {
           baseState: state, retries: st.backfillRetries, saveCheckpoint: true, allowWhileBackfill: true
         }, st.summaryBackfillBigEveryX);
       }
-      setSummaryBackfillStatus(batches.length, batches.length, backfillRunning ? '大小总结重填完成' : '大小总结重填已停止');
+      setSummaryBackfillStatus(batches.length, batches.length, backfillRunning ? '纪要与总述重填完成' : '纪要与总述重填已停止');
     } catch (error) {
-      setSummaryBackfillStatus(summaryBackfillStatus.current, batches.length, `大小总结重填失败：${error?.message || error}`);
+      setSummaryBackfillStatus(summaryBackfillStatus.current, batches.length, `纪要与总述重填失败：${error?.message || error}`);
       throw error;
     } finally { backfillRunning = false; summaryBackfillStatus.running = false; applyInjection(); }
   }
