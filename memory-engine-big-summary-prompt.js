@@ -7,7 +7,7 @@ window.MEMORY_ENGINE_BIG_SUMMARY_PROMPT = (function() {
 只依据输入内容，不补写未发生的情节，不把猜测写成事实，不预测未来。输出应连贯、紧凑、可独立理解，并维持事件先后与因果关系。输出正文不超过 500 字，汉字、数字、字母和标点均计入字数；内容过多时优先保留决定后续剧情走向的信息，不得生硬截断。
 
 【本任务输出字段】
-返回 big_summary 字符串字段。输入确实没有可总结内容时返回空字符串。`;
+返回 big_summary 字符串字段。`;
 
   const clean = value => String(value == null ? '' : value).trim();
 
