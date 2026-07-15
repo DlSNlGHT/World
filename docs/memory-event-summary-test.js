@@ -100,19 +100,30 @@ for (const filename of [
   vm.runInNewContext(fs.readFileSync(path.join(root, filename), 'utf8'), sandbox, { filename });
 }
 
+{
+  const deletedTailState = sandbox.MEMORY_ENGINE_DATA.defaultState();
+  deletedTailState.event_memory.small_summary_layer = 10;
+  const changed = sandbox.MEMORY_ENGINE._test.rewindSummaryCursorForDeletedLayers(deletedTailState, {
+    deletedLayers: new Set([7, 8, 9, 10])
+  });
+  assert.strictEqual(changed, true);
+  assert.strictEqual(deletedTailState.event_memory.small_summary_layer, 6,
+    '删除两轮四层后纪要游标必须回退四层，使下一轮立即重新进入待总结范围');
+}
+
 (async () => {
   const combined = await sandbox.MEMORY_ENGINE.manualSmallSummary();
   assert.strictEqual(calls.length, 2, '达到阈值时应先生成并保存小总结，再独立请求大总结');
-  assert.ok(calls[0].includes('事件记忆的小总结器'));
+  assert.ok(calls[0].includes('事件记忆的纪要整理器'));
   assert.ok(!calls[0].includes('这是角色卡的开场白'), '初始化纪要必须忽略第 0 层 AI 开场白');
   assert.ok(calls[0].includes('守卫说明北方发生叛乱'), '忽略开场白后仍应读取窗口内最新的 AI 回复');
-  assert.ok(!calls[0].includes('事件记忆的大总结器'));
+  assert.ok(!calls[0].includes('事件记忆的总述整理器'));
   assert.ok(!calls[0].includes('"personal_memory": []'), '未到人物实体任务时不应携带人物实体输出字段');
-  assert.ok(calls[1].includes('事件记忆的大总结器'));
+  assert.ok(calls[1].includes('事件记忆的总述整理器'));
   assert.ok(!calls[1].includes('既有故事总览'), '总述只能读取本批尚未整理的纪要');
-  assert.ok(!calls[1].includes('事件记忆的小总结器'));
+  assert.ok(!calls[1].includes('事件记忆的纪要整理器'));
   assert.ok(!calls[1].includes('【最新对话片段】'), '大总结只能读取已落库的小总结与既有大总结');
-  assert.deepStrictEqual(runningLabels.slice(0, 2), ['小总结', '大总结']);
+  assert.deepStrictEqual(runningLabels.slice(0, 2), ['纪要', '总述']);
   assert.deepStrictEqual(startSignals.slice(0, 4), ['status', 'ui', 'status', 'ui'],
     '顶部提示必须先于记忆球运行态刷新，否则会清除自动动画类');
   assert.strictEqual(combined.addedSmall, 1);
@@ -156,8 +167,8 @@ for (const filename of [
   calls.length = 0;
   await sandbox.MEMORY_ENGINE.manualBigSummary();
   assert.strictEqual(calls.length, 1);
-  assert.ok(calls[0].includes('事件记忆的大总结器'));
-  assert.ok(!calls[0].includes('事件记忆的小总结器'), '手动大总结只应携带大总结 Prompt');
+  assert.ok(calls[0].includes('事件记忆的总述整理器'));
+  assert.ok(!calls[0].includes('事件记忆的纪要整理器'), '手动大总结只应携带大总结 Prompt');
   assert.ok(!calls[0].includes('"personal_memory": []'));
 
   const legacy = sandbox.MEMORY_ENGINE_DATA.defaultState();
@@ -281,10 +292,10 @@ for (const filename of [
   assert.strictEqual(calls.length, 2, '从进入聊天的基线起新增满 X 轮后，才生成纪要并独立生成总述');
   assert.ok(calls[0].includes('"small_summary": ""'));
   assert.ok(!calls[0].includes('"personal_memory": []'));
-  assert.ok(!calls[0].includes('事件记忆的大总结器'));
+  assert.ok(!calls[0].includes('事件记忆的总述整理器'));
   assert.ok(calls[1].includes('"big_summary": ""'));
   assert.ok(!calls[1].includes('"personal_memory": []'));
-  assert.deepStrictEqual(runningLabels, ['小总结', '大总结']);
+  assert.deepStrictEqual(runningLabels, ['纪要', '总述']);
 
   console.log('✓ 事件记忆大小总结测试通过');
 })().catch(error => {

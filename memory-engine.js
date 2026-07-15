@@ -997,6 +997,22 @@ window.MEMORY_ENGINE = (function() {
     }
   }
 
+  // 楼层数字会在删楼后整体前移。来源引用可以用稳定消息 ID 判断哪些旧楼
+  // 消失了，但纪要进度仍是数字游标，必须同步减去游标之前被删的楼层数。
+  // 否则新对话要先“追平”删除前的楼层号，期间不会再生成纪要。
+  function rewindSummaryCursorForDeletedLayers(state, report) {
+    const deleted = [...(report?.deletedLayers || [])].filter(Number.isFinite);
+    if (!deleted.length) return false;
+    const eventMemory = ensureEventState(state);
+    if (eventMemory.small_summary_layer === null || eventMemory.small_summary_layer === ''
+      || !Number.isFinite(Number(eventMemory.small_summary_layer))) return false;
+    const anchor = Number(eventMemory.small_summary_layer);
+    const removedBeforeCursor = deleted.filter(layer => layer <= anchor).length;
+    if (!removedBeforeCursor) return false;
+    eventMemory.small_summary_layer = Math.max(-1, anchor - removedBeforeCursor);
+    return true;
+  }
+
   function formatHistoryLayers(layers) {
     const values = [...(layers || [])].filter(Number.isFinite).sort((a, b) => a - b);
     return values.length ? `第 ${values.join('、')} 楼` : '';
@@ -1242,7 +1258,9 @@ window.MEMORY_ENGINE = (function() {
       let state = data().loadState();
       // 一旦来源失效，立即从 Root 重放并排除 stale 节点；即使后续 API
       // 修复失败，旧人物/实体贡献也不会继续进入注入。
-      if (auditStoredSources(state, auditReport)) {
+      const sourcesChanged = auditStoredSources(state, auditReport);
+      const summaryCursorChanged = rewindSummaryCursorForDeletedLayers(state, auditReport);
+      if (sourcesChanged || summaryCursorChanged) {
         state = replayTimeline(state);
         data().saveState(state);
       }
@@ -1673,6 +1691,12 @@ window.MEMORY_ENGINE = (function() {
         if (!rollbackLinkedLayer(currentLayer())) applyInjection({ isReroll: true });
         scheduleReconcile(50);
       }));
+      ctx.eventSource.on(types.MESSAGE_DELETED || 'message_deleted', guardEvent('删除消息', () => {
+        clearTimeout(autoTimer);
+        abortController?.abort();
+        lastEventKey = '';
+        scheduleReconcile(50);
+      }));
       ctx.eventSource.on(types.GENERATION_STARTED || 'generation_started', guardEvent('生成开始', (type, _opts, dryRun) => {
         if (!dryRun) applyInjection({ isReroll: type === 'swipe' || type === 'regenerate' });
       }));
@@ -1691,6 +1715,6 @@ window.MEMORY_ENGINE = (function() {
     getSummaryBackfillStatus: () => clone(summaryBackfillStatus),
     getRunningLabel: () => runningLabel,
     isRunning: () => running || backfillRunning,
-    _test: { exponentialMemorySample, rollbackLinkedLayer }
+    _test: { exponentialMemorySample, rollbackLinkedLayer, rewindSummaryCursorForDeletedLayers }
   };
 })();
