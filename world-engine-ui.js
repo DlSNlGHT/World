@@ -633,6 +633,7 @@ window.WORLD_ENGINE_UI = (function() {
     const previousState = window.MEMORY_ENGINE_DATA?.loadState?.();
     window.MEMORY_ENGINE?.repairStateIndexes?.(state, previousState);
     if (typeof afterRepair === 'function') afterRepair(state);
+    window.MEMORY_ENGINE?.commitManualState?.(state, previousState);
     window.MEMORY_ENGINE_DATA?.saveState?.(state);
     window.WORLD_ENGINE_CHATCACHE?.forScope?.('memory')?.afterEvolution?.();
     window.MEMORY_ENGINE?.applyInjection?.();
@@ -1058,10 +1059,6 @@ window.WORLD_ENGINE_UI = (function() {
       '<div class="we-section"><div class="we-section-title">' + sectionHeader(title, id) + '</div>'
       + sectionBody(id, body) + '</div>';
     const mode = settings.evolveMode === 'manual' ? 'manual' : 'auto';
-    const everyX = Math.max(1, parseInt(settings.evolveEveryX) || 5);
-    const readRounds = Math.min(everyX, Math.max(1, parseInt(settings.evolveReadRounds) || everyX));
-    const manualReadRounds = Math.max(1, parseInt(settings.manualReadRounds) || 5);
-    const smallSummaryEveryX = Math.max(1, parseInt(settings.smallSummaryEveryX) || 5);
     const bigSummaryEveryX = Math.max(1, parseInt(settings.bigSummaryEveryX) || 5);
     const bigSummaryInjectLimit = Math.max(1, parseInt(settings.bigSummaryInjectLimit) || 3);
     const worldEngineMemoryLimit = Math.max(1, parseInt(settings.worldEngineMemoryLimit) || 5);
@@ -1130,39 +1127,20 @@ window.WORLD_ENGINE_UI = (function() {
       <div class="we-input-group">
         <label>记忆推演模式</label>
         <select id="we-memory-evolve-mode" style="width:100%;">
-          <option value="auto" ${mode === 'auto' ? 'selected' : ''}>自动 · 按轮（每 X 轮提取一次）</option>
+          <option value="auto" ${mode === 'auto' ? 'selected' : ''}>自动 · 每轮提取</option>
           <option value="manual" ${mode === 'manual' ? 'selected' : ''}>手动（仅手动触发记忆推演）</option>
         </select>
       </div>
-      <div class="we-input-group" id="we-memory-everyx-group" style="${mode === 'auto' ? '' : 'display:none;'}">
-        <label>每几轮提取一次（X）</label>
-        <input type="number" id="we-memory-everyx" min="1" step="1" value="${everyX}" style="width:100%;">
-        <div style="font-size:11px;color:var(--we-text3);margin-top:3px;">重 roll 不计入新轮次；到达 X 轮时只调用一次 LLM，同时提取人物主观记忆与世界实体记忆。</div>
-      </div>
-      <div class="we-input-group" id="we-memory-readrounds-group" style="${mode === 'auto' ? '' : 'display:none;'}">
-        <label>每次提取读取最近几轮对话</label>
-        <input type="number" id="we-memory-readrounds" min="1" max="${everyX}" step="1" value="${readRounds}" style="width:100%;">
-      </div>
-      <div class="we-input-group" id="we-memory-manual-readrounds-group">
-        <label>手动提取最多读取最近 X 轮对话</label>
-        <input type="number" id="we-memory-manual-readrounds" min="1" step="1" value="${manualReadRounds}" style="width:100%;">
-        <div style="font-size:11px;color:var(--we-text3);margin-top:3px;">实际读取 min（X，自上次记忆状态以来经过的轮数）；重新推演则从存档点计算差值。</div>
-      </div>
+      <div style="font-size:11px;color:var(--we-text3);margin-bottom:8px;">人物、实体和小总结固定以一轮为单位处理；同轮到期时合并为一次 API 请求。重 Roll 不计入新轮次。</div>
       <div class="we-input-group">
         <button class="we-btn we-btn-primary" id="we-memory-run-now" type="button">手动提取记忆（向前）</button>
       </div>`;
 
     const summaryBody = `
-      <div style="font-size:11px;color:var(--we-text3);margin-bottom:8px;">纪要按独立楼层游标每 X 个 AI 楼层生成一次，正文不超过 200 字；每新增 Y 条尚未整理的纪要，独立生成一条不超过 500 字的总述，历史总述不会被覆盖。</div>
-      <div class="we-input-group" style="display:flex;gap:6px;">
-        <div style="flex:1;">
-          <label>小总结间隔楼层（X）</label>
-          <input type="number" id="we-memory-small-summary-every" min="1" step="1" value="${smallSummaryEveryX}" style="width:100%;">
-        </div>
-        <div style="flex:1;">
-          <label>大总结合并小总结数（Y）</label>
-          <input type="number" id="we-memory-big-summary-every" min="1" step="1" value="${bigSummaryEveryX}" style="width:100%;">
-        </div>
+      <div style="font-size:11px;color:var(--we-text3);margin-bottom:8px;">每轮生成一条不超过 200 字的小总结；每累计 X 条尚未整理的小总结，独立生成一条不超过 500 字的总述，历史总述不会被覆盖。</div>
+      <div class="we-input-group">
+        <label>大总结间隔轮数（X）</label>
+        <input type="number" id="we-memory-big-summary-every" min="1" step="1" value="${bigSummaryEveryX}" style="width:100%;">
       </div>
       <div style="display:flex;gap:6px;flex-wrap:wrap;">
         <button class="we-btn" id="we-memory-small-summary-now" type="button"><i class="fa-solid fa-align-left"></i> 手动小总结</button>
@@ -4702,7 +4680,6 @@ window.WORLD_ENGINE_UI = (function() {
         const memoryCurrent = window.MEMORY_ENGINE_SETTINGS?.getSettings(true) || {};
         const temperatureRaw = parseFloat(gv('we-temperature'));
         const timeoutSecRaw = parseFloat(gv('we-api-timeout-sec'));
-        const everyX = Math.max(1, parseInt(gv('we-memory-everyx')) || 5);
         const memorySettings = {
           ...memoryCurrent,
           engineEnabled: document.getElementById('we-memory-engine-enabled')?.checked !== false,
@@ -4715,10 +4692,10 @@ window.WORLD_ENGINE_UI = (function() {
           apiTimeoutMs: Number.isFinite(timeoutSecRaw) ? Math.max(0, Math.round(timeoutSecRaw * 1000)) : 120000,
           connectionMode: document.getElementById('we-connection-mode')?.value === 'proxy' ? 'proxy' : 'direct',
           evolveMode: gv('we-memory-evolve-mode') === 'manual' ? 'manual' : 'auto',
-          evolveEveryX: everyX,
-          evolveReadRounds: Math.min(everyX, Math.max(1, parseInt(gv('we-memory-readrounds')) || everyX)),
-          manualReadRounds: Math.max(1, parseInt(gv('we-memory-manual-readrounds')) || 5),
-          smallSummaryEveryX: Math.max(1, parseInt(gv('we-memory-small-summary-every')) || 5),
+          evolveEveryX: 1,
+          evolveReadRounds: 1,
+          manualReadRounds: 1,
+          smallSummaryEveryX: 1,
           bigSummaryEveryX: Math.max(1, parseInt(gv('we-memory-big-summary-every')) || 5),
           bigSummaryInjectLimit: Math.max(1, parseInt(gv('we-memory-big-summary-inject-limit')) || 3),
           injectIntoPrompt: document.getElementById('we-memory-inject')?.checked !== false,
@@ -4742,28 +4719,6 @@ window.WORLD_ENGINE_UI = (function() {
         window.MEMORY_ENGINE_SETTINGS?.saveSettings(memorySettings);
         window.MEMORY_ENGINE?.applyInjection?.();
         showToast('设置已保存');
-      };
-    }
-
-    const memoryModeSelect = document.getElementById('we-memory-evolve-mode');
-    if (memoryModeSelect) {
-      memoryModeSelect.onchange = () => {
-        const automatic = memoryModeSelect.value !== 'manual';
-        const everyXGroup = document.getElementById('we-memory-everyx-group');
-        const readRoundsGroup = document.getElementById('we-memory-readrounds-group');
-        if (everyXGroup) everyXGroup.style.display = automatic ? '' : 'none';
-        if (readRoundsGroup) readRoundsGroup.style.display = automatic ? '' : 'none';
-      };
-    }
-
-    const memoryEveryX = document.getElementById('we-memory-everyx');
-    if (memoryEveryX) {
-      memoryEveryX.oninput = () => {
-        const max = Math.max(1, parseInt(memoryEveryX.value) || 1);
-        const read = document.getElementById('we-memory-readrounds');
-        if (!read) return;
-        read.max = String(max);
-        if ((parseInt(read.value) || 1) > max) read.value = String(max);
       };
     }
 

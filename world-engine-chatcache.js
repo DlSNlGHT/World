@@ -593,6 +593,14 @@ window.WORLD_ENGINE_CHATCACHE = (function() {
       const ns = ensure(), snap = ns.snapshots.find(s => s.id === id); if (!snap) return false;
       if (hasLocal(ctx.chatId)) add(ns, { name: '恢复前自动备份', auto: true, data: mpack(ctx.chatId) }, ctx.chatId);
       minstall(snap.data, ctx.chatId, true);
+      // 从其它聊天导入/恢复的记忆链不能继续沿用旧楼层游标；折叠为当前聊天 Root 后再向前累计。
+      try {
+        const memoryData = window.MEMORY_ENGINE_DATA;
+        const restored = memoryData?.loadState?.();
+        if (restored?.timeline?.originChatId && restored.timeline.originChatId !== ctx.chatId) {
+          memoryData.saveState(memoryData.rebaseToCurrentChat(restored));
+        }
+      } catch (e) { console.warn('[记忆引擎] 跨聊天存档重定位失败', e); }
       const rev = syncOn() ? pushLiveNow(ns, true) : null;
       if (!write(ns)) return false; if (rev != null) setMrev(ctx.chatId, rev); return true;
     }

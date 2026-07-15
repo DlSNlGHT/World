@@ -13,10 +13,10 @@ window.MEMORY_ENGINE_SETTINGS = (function() {
     engineEnabled: true,
     firstLayerIsAiOpening: true,
     evolveMode: 'auto',
-    evolveEveryX: 5,
-    evolveReadRounds: 5,
-    manualReadRounds: 5,
-    smallSummaryEveryX: 5,
+    evolveEveryX: 1,
+    evolveReadRounds: 1,
+    manualReadRounds: 1,
+    smallSummaryEveryX: 1,
     bigSummaryEveryX: 5,
     bigSummaryInjectLimit: 3,
     injectIntoPrompt: true,
@@ -40,6 +40,19 @@ window.MEMORY_ENGINE_SETTINGS = (function() {
   });
 
   let cached = null;
+
+  // 日常记忆以一轮为最小可重放单元：人物/实体与小总结同轮联合提取。
+  // 这里同时覆盖旧存档和 UI 传入值，避免历史设置中的 X 继续生效。
+  function normalizeSettings(value) {
+    return {
+      ...DEFAULTS,
+      ...(value || {}),
+      evolveEveryX: 1,
+      evolveReadRounds: 1,
+      manualReadRounds: 1,
+      smallSummaryEveryX: 1
+    };
+  }
 
   function readStored() {
     try {
@@ -74,12 +87,12 @@ window.MEMORY_ENGINE_SETTINGS = (function() {
 
   function getSettings(forceRefresh) {
     if (forceRefresh) cached = null;
-    if (!cached) cached = { ...DEFAULTS, ...readStored() };
+    if (!cached) cached = normalizeSettings(readStored());
     return { ...cached };
   }
 
   function saveSettings(next) {
-    cached = { ...DEFAULTS, ...(next || {}) };
+    cached = normalizeSettings(next);
     window.WORLD_ENGINE_STORE?.setItem(STORAGE_KEY, JSON.stringify(cached));
     return { ...cached };
   }

@@ -6,5 +6,6 @@
   "license": "MIT",
   "type": "extension",
   "js": "world-engine.js",
+  "generate_interceptor": "worldEngineMemoryGenerateInterceptor",
   "css": "style.css"
 }

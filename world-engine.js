@@ -3,6 +3,17 @@
   if (window.__WORLD_ENGINE_LOADED__) return;
   window.__WORLD_ENGINE_LOADED__ = true;
 
+  // ST 会在正式组装 prompt 前 await 此函数；先修复重 Roll/删楼导致的旧纪要失效，再放行生成。
+  window.worldEngineMemoryGenerateInterceptor = async function(_chat, _contextSize, _abort, _type) {
+    try {
+      await window.MEMORY_ENGINE?.reconcileHistory?.();
+      window.MEMORY_ENGINE?.applyInjection?.();
+    } catch (error) {
+      // 修复失败时 applyInjection 会撤下失效摘要并恢复对应正文；增强失败不阻断正常聊天。
+      console.error('[记忆引擎] 生成前历史对账失败，已降级使用原始正文', error);
+    }
+  };
+
   // 所有引擎共用同一事件故障边界：同步异常与异步 rejection 都只记到所属引擎。
   window.WORLD_ENGINE_GUARD_EVENT = function(engineLabel, eventLabel, handler) {
     return function(...args) {
@@ -59,6 +70,7 @@
       id: 'memory', label: '记忆引擎', modules: [
         'memory-engine-settings.js',
         'memory-engine-data.js',
+        'memory-engine-timeline.js',
         'memory-engine-prompt.js',
         'memory-engine-small-summary-prompt.js',
         'memory-engine-big-summary-prompt.js',
@@ -67,6 +79,7 @@
       contracts: {
         MEMORY_ENGINE_SETTINGS: ['getSettings', 'patchSettings'],
         MEMORY_ENGINE_DATA: ['loadState', 'saveState'],
+        MEMORY_ENGINE_TIMELINE: ['captureRange', 'auditRefs', 'syncHidden'],
         MEMORY_ENGINE_PROMPT: ['buildUserPrompt'],
         MEMORY_ENGINE_SMALL_SUMMARY_PROMPT: ['buildUserPrompt'],
         MEMORY_ENGINE_BIG_SUMMARY_PROMPT: ['buildUserPrompt'],
