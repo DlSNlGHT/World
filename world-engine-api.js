@@ -31,6 +31,8 @@ window.WORLD_ENGINE_API = (function() {
       injectMaxChars: 5000,
       // 正文注入等级筛选：false=仅注入高等级信息（兼容旧行为），true=事件链与风声不按等级过滤
       injectAllLevels: false,
+      // 世界 API 成功后，把本轮世界信息联动到记忆引擎。
+      memoryLinkEnabled: false,
       evolveMode: 'auto',
       // 酒馆缓存：把按聊天隔离的存档镜像进 chat_metadata，实现跨设备同步与防丢失存档（默认关闭）
       syncToChat: false,   // 实时同步：工作区状态持续镜像进聊天，换设备打开同一聊天即可续上

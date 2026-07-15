@@ -2,6 +2,7 @@
 window.MEMORY_ENGINE_DATA = (function() {
   const STATE_PREFIX = 'memory_engine_state_';
   const CHECKPOINT_PREFIX = 'memory_engine_checkpoint_';
+  const LINK_CHECKPOINT_PREFIX = 'memory_engine_link_checkpoint_';
   const VERSION = '1.0.0';
   const ENTITY_TYPES = ['organization', 'object', 'ability', 'location'];
 
@@ -61,12 +62,18 @@ window.MEMORY_ENGINE_DATA = (function() {
     if (!next.entity_index || typeof next.entity_index !== 'object' || Array.isArray(next.entity_index)) next.entity_index = {};
     if (!next.event_memory || typeof next.event_memory !== 'object' || Array.isArray(next.event_memory)) next.event_memory = {};
     if (!Array.isArray(next.event_memory.small_summaries)) next.event_memory.small_summaries = [];
-    next.event_memory.small_summaries = next.event_memory.small_summaries.map((item, index) => ({
-      id: String(item?.id || `small_${String(index + 1).padStart(6, '0')}`),
-      startLayer: Number.isFinite(Number(item?.startLayer)) ? Number(item.startLayer) : 0,
-      endLayer: Number.isFinite(Number(item?.endLayer)) ? Number(item.endLayer) : 0,
-      content: String(item?.content || '').trim()
-    })).filter(item => item.content);
+    next.event_memory.small_summaries = next.event_memory.small_summaries.map((item, index) => {
+      const normalizedItem = {
+        id: String(item?.id || `small_${String(index + 1).padStart(6, '0')}`),
+        startLayer: Number.isFinite(Number(item?.startLayer)) ? Number(item.startLayer) : 0,
+        endLayer: Number.isFinite(Number(item?.endLayer)) ? Number(item.endLayer) : 0,
+        content: String(item?.content || '').trim()
+      };
+      // 联动来源只用于同楼层重 roll 识别；普通纪要不携带这些字段。
+      if (item?.source === 'world_engine') normalizedItem.source = 'world_engine';
+      if (item?.sourceKey) normalizedItem.sourceKey = String(item.sourceKey);
+      return normalizedItem;
+    }).filter(item => item.content);
     // 0.4.x 只有一条滚动 big_summary；升级后迁移成可追加的 big_summaries。
     const legacyBig = next.event_memory.big_summary;
     const bigSource = Array.isArray(next.event_memory.big_summaries)
@@ -110,6 +117,28 @@ window.MEMORY_ENGINE_DATA = (function() {
     return clone(next);
   }
   function clearCheckpoint() { window.WORLD_ENGINE_STORE?.removeItem(key(CHECKPOINT_PREFIX)); }
+
+  // 与普通“重新提取”checkpoint 分离：这里只保存当前世界联动楼层第一次写入前的记忆基底。
+  function loadLinkCheckpoint() {
+    const value = parse(window.WORLD_ENGINE_STORE?.getItem(key(LINK_CHECKPOINT_PREFIX)), null);
+    if (!value || typeof value !== 'object' || !value.baseState) return null;
+    return {
+      layer: Number.isFinite(Number(value.layer)) ? Number(value.layer) : null,
+      rolledBack: value.rolledBack === true,
+      baseState: normalizeState(value.baseState)
+    };
+  }
+  function saveLinkCheckpoint(value) {
+    if (!value || !value.baseState) return null;
+    const next = {
+      layer: Number(value.layer),
+      rolledBack: value.rolledBack === true,
+      baseState: normalizeState(value.baseState)
+    };
+    window.WORLD_ENGINE_STORE?.setItem(key(LINK_CHECKPOINT_PREFIX), JSON.stringify(next));
+    return clone(next);
+  }
+  function clearLinkCheckpoint() { window.WORLD_ENGINE_STORE?.removeItem(key(LINK_CHECKPOINT_PREFIX)); }
 
   function recordMatches(record, ownerId, time, memory) {
     return record?.ownerId === ownerId && clean(record?.time) === clean(time) && clean(record?.memory) === clean(memory);
@@ -251,6 +280,7 @@ window.MEMORY_ENGINE_DATA = (function() {
   return {
     VERSION, getChatId, defaultState, hasState, loadState, saveState,
     loadCheckpoint, saveCheckpoint, clearCheckpoint,
+    loadLinkCheckpoint, saveLinkCheckpoint, clearLinkCheckpoint,
     exportData, importData
   };
 })();

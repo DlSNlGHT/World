@@ -247,8 +247,10 @@ for (const filename of [
     world_digest: '青石盟正在搜寻丙。'
   });
   assert.ok(worldMemory.includes('甲掌握秘密。'), '世界状态命中的人物必须注入其知晓的记忆');
-  assert.ok(worldMemory.includes('青石盟开始盘查行人。'), '世界状态命中的实体必须注入最近历史');
-  assert.ok(!worldMemory.includes('青石盟封锁北门。'), '世界引擎每个匹配条目的注入上限必须生效');
+  const injectedNewHistory = worldMemory.includes('青石盟开始盘查行人。');
+  const injectedOldHistory = worldMemory.includes('青石盟封锁北门。');
+  assert.ok(injectedNewHistory || injectedOldHistory, '世界状态命中的实体必须按指数概率注入一条历史');
+  assert.notStrictEqual(injectedNewHistory, injectedOldHistory, '世界引擎每个匹配条目的概率注入上限必须生效');
   assert.ok(!worldMemory.includes('纪要1') && !worldMemory.includes('总述一'), '注入世界引擎时不得携带纪要或总述');
   settings.injectIntoWorldEngine = false;
   assert.strictEqual(sandbox.MEMORY_ENGINE.buildWorldEngineContext({ factions: [{ name: '青石盟' }] }), '', '关闭跨引擎注入后必须返回空内容');

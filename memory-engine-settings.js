@@ -24,6 +24,7 @@ window.MEMORY_ENGINE_SETTINGS = (function() {
     worldEngineMemoryLimit: 5,
     searchDepth: 5,
     maxPerCharacter: 20,
+    injectionDiceSides: 10000,
     apiAutoRetries: 0,
     filterRegex: '',
     tonePrompt: '',

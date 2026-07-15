@@ -2,6 +2,7 @@
 window.MEMORY_ENGINE = (function() {
   const INJECTION_NAME = 'memory-engine-memory';
   const SENTINEL = '【记忆信息】';
+  const DEFAULT_INJECTION_DICE_SIDES = 10000;
   const ENTITY_TYPES = ['organization', 'object', 'ability', 'location'];
   const ENTITY_LABELS = { organization: '组织', object: '物件', ability: '能力', location: '地点' };
   let initialized = false, running = false, backfillRunning = false;
@@ -24,6 +25,54 @@ window.MEMORY_ENGINE = (function() {
   const chat = () => context()?.chat || [];
   const currentLayer = () => Math.max(0, chat().length - 1);
   const ignoreFirstLayer = st => st?.firstLayerIsAiOpening !== false;
+  const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
+
+  function worldLinkEnabled() {
+    return window.WORLD_ENGINE_API?.getSettings?.(true)?.memoryLinkEnabled === true;
+  }
+
+  function ensureLinkCheckpoint(layer, baseState) {
+    if (!worldLinkEnabled() || !Number.isFinite(Number(layer)) || !data()?.saveLinkCheckpoint) return null;
+    const numericLayer = Number(layer);
+    const existing = data().loadLinkCheckpoint?.();
+    if (existing?.layer === numericLayer) return existing;
+    return data().saveLinkCheckpoint({
+      layer: numericLayer,
+      rolledBack: false,
+      baseState: clone(baseState || data().loadState())
+    });
+  }
+
+  function rollbackLinkedLayer(layer) {
+    if (!worldLinkEnabled()) return false;
+    const checkpoint = data()?.loadLinkCheckpoint?.();
+    if (!checkpoint || checkpoint.layer !== Number(layer)) return false;
+    data().saveState(checkpoint.baseState);
+    data().saveLinkCheckpoint({ ...checkpoint, rolledBack: true });
+    applyInjection();
+    return true;
+  }
+
+  // 每条候选记录各掷一次离散骰子，再按指数衰减权重计算优先级。
+  // 最新记录权重最高；最旧记录的权重至少为 1 / 骰子面数，因此始终保留非零机会。
+  function exponentialMemorySample(items, limit, randomFn = Math.random, diceSides = DEFAULT_INJECTION_DICE_SIDES) {
+    const source = Array.isArray(items) ? items : [];
+    const take = Math.max(0, Math.min(source.length, parseInt(limit) || 0));
+    if (!take || !source.length) return [];
+    if (source.length <= take) return source.slice();
+    const sides = Math.max(1000, Math.min(10000, parseInt(diceSides) || DEFAULT_INJECTION_DICE_SIDES));
+    const scale = Math.max(1, take);
+    return source.map((item, index) => {
+      const age = source.length - 1 - index;
+      const weight = Math.max(1 / sides, Math.exp(-age / scale));
+      const roll = Math.max(1, Math.min(sides, Math.floor(Number(randomFn()) * sides) + 1));
+      const unit = roll / (sides + 1);
+      return { item, index, priority: -Math.log(unit) / weight };
+    }).sort((a, b) => a.priority - b.priority)
+      .slice(0, take)
+      .sort((a, b) => a.index - b.index)
+      .map(entry => entry.item);
+  }
 
   function formatMessages(messages, startLayer) {
     const ctx = context();
@@ -435,6 +484,9 @@ window.MEMORY_ENGINE = (function() {
     if (running && !options?.allowWhileBackfill) return { skipped: true, reason: 'running' };
     if (!tasks?.memory && !tasks?.small && !tasks?.big) return { skipped: true, reason: 'no_tasks' };
     if (tasks.small && tasks.big) throw new Error('大总结必须在小总结落库后独立运行');
+    if (tasks.memory && Number.isFinite(Number(options?.layer))) {
+      ensureLinkCheckpoint(Number(options.layer), options?.baseState);
+    }
     running = true;
     runningLabel = tasks.memory && tasks.small ? '人物/实体与小总结'
       : (tasks.memory ? '人物/实体总结' : (tasks.small ? '小总结' : '大总结'));
@@ -463,6 +515,18 @@ window.MEMORY_ENGINE = (function() {
         });
         eventMemory.small_summary_layer = Number(tasks.small.endLayer) || 0;
         addedSmall = 1;
+      }
+      if (options?.worldDigestMinute?.content) {
+        const linked = options.worldDigestMinute;
+        eventMemory.small_summaries.push({
+          id: nextSmallSummaryId(eventMemory),
+          startLayer: Number(linked.layer) || 0,
+          endLayer: Number(linked.layer) || 0,
+          content: Array.from(clean(linked.content)).slice(0, 200).join(''),
+          source: 'world_engine',
+          sourceKey: clean(linked.sourceKey)
+        });
+        addedSmall += 1;
       }
       if (tasks.big && extracted.bigSummary) {
         eventMemory.big_summaries.push({
@@ -561,7 +625,9 @@ window.MEMORY_ENGINE = (function() {
     const bigResult = await runTasks({ big: bigTask }, {
       ...options,
       baseState: after,
-      saveCheckpoint: false
+      saveCheckpoint: false,
+      // 世界摘要纪要只在 primary 落库一次；这里仅消费待整理纪要生成总述。
+      worldDigestMinute: null
     });
     return {
       ...primary,
@@ -707,18 +773,23 @@ window.MEMORY_ENGINE = (function() {
     for (const character of matched) {
       const records = [];
       for (const name of character.names || []) records.push(...(state.knowledge_index[normalized(name)] || []));
-      const selected = records.filter(record => {
+      const candidates = records.filter(record => {
         const key = `${record.ownerId}\u0000${record.time}\u0000${record.memory}`;
-        if (globalSeen.has(key)) return false;
-        globalSeen.add(key); return true;
-      }).slice(-limit);
+        return !globalSeen.has(key);
+      }).filter((record, index, list) => list.findIndex(other =>
+        other.ownerId === record.ownerId && other.time === record.time && other.memory === record.memory
+      ) === index);
+      const selected = exponentialMemorySample(candidates, limit, Math.random, st.injectionDiceSides);
+      selected.forEach(record => globalSeen.add(`${record.ownerId}\u0000${record.time}\u0000${record.memory}`));
       if (selected.length) sections.push(`【${character.names?.[0] || character.id}】\n` +
         selected.map(record => `- [${record.time || '时间未明'}] ${record.memory}`).join('\n'));
     }
     if (matchedEntities.length) {
       const entitySections = matchedEntities.map(({ type, entity }) => {
         const lines = [`【${ENTITY_LABELS[type]}：${entity.name}】`, entity.description];
-        const history = (Array.isArray(entity.history) ? entity.history : []).slice(-limit);
+        const history = exponentialMemorySample(
+          Array.isArray(entity.history) ? entity.history : [], limit, Math.random, st.injectionDiceSides
+        );
         if (history.length) lines.push(...history.map(entry => `- [${entry.time || '时间未明'}] ${entry.event}`));
         return lines.filter(Boolean).join('\n');
       });
@@ -744,12 +815,15 @@ window.MEMORY_ENGINE = (function() {
       if (!(character.names || []).some(appears)) continue;
       const records = [];
       for (const name of character.names || []) records.push(...(state.knowledge_index[normalized(name)] || []));
-      const selected = records.filter(record => {
+      const candidates = records.filter(record => {
         const key = `${record.ownerId}\u0000${record.time}\u0000${record.memory}`;
         if (seenRecords.has(key)) return false;
-        seenRecords.add(key);
         return true;
-      }).slice(-limit);
+      }).filter((record, index, list) => list.findIndex(other =>
+        other.ownerId === record.ownerId && other.time === record.time && other.memory === record.memory
+      ) === index);
+      const selected = exponentialMemorySample(candidates, limit, Math.random, st.injectionDiceSides);
+      selected.forEach(record => seenRecords.add(`${record.ownerId}\u0000${record.time}\u0000${record.memory}`));
       if (selected.length) sections.push(`【人物：${character.names?.[0] || character.id}】\n` +
         selected.map(record => `- [${record.time || '时间未明'}] ${record.memory}`).join('\n'));
     }
@@ -758,13 +832,66 @@ window.MEMORY_ENGINE = (function() {
         if (!appears(entity.name)) continue;
         const lines = [`【${ENTITY_LABELS[type]}：${entity.name}】`];
         if (entity.description) lines.push(entity.description);
-        lines.push(...(Array.isArray(entity.history) ? entity.history : []).slice(-limit)
+        lines.push(...exponentialMemorySample(
+          Array.isArray(entity.history) ? entity.history : [], limit, Math.random, st.injectionDiceSides
+        )
           .map(entry => `- [${entry.time || '时间未明'}] ${entry.event}`));
         sections.push(lines.join('\n'));
       }
     }
     if (!sections.length) return '';
     return `【记忆引擎提供的相关人物与实体信息】\n以下信息只用于辅助世界推演；不包含纪要或总述。\n\n${sections.join('\n\n')}`;
+  }
+
+  async function ingestWorldEvolution(payload) {
+    const worldSettings = window.WORLD_ENGINE_API?.getSettings?.(true) || {};
+    if (worldSettings.memoryLinkEnabled !== true) return { skipped: true, reason: 'disabled' };
+    const st = settings();
+    if (st.engineEnabled === false) throw new Error('记忆引擎已关闭，无法执行世界联动');
+    if (backfillRunning) throw new Error('记忆引擎正在批量重填，暂不能执行世界联动');
+    const layer = Number.isFinite(Number(payload?.layer)) ? Number(payload.layer) : currentLayer();
+    // 普通记忆提取先开始时，等待它完整落库；不得并发读取同一基底后互相覆盖。
+    const deadline = Date.now() + Math.max(10000, Number(st.apiTimeoutMs) || 120000);
+    while (running && Date.now() < deadline) await delay(100);
+    if (running) throw new Error('等待当前记忆任务结束超时');
+    let checkpoint = ensureLinkCheckpoint(layer, data().loadState());
+    if (payload?.replace === true && checkpoint && checkpoint.rolledBack !== true) {
+      data().saveState(checkpoint.baseState);
+      data().saveLinkCheckpoint({ ...checkpoint, rolledBack: true });
+      checkpoint = data().loadLinkCheckpoint();
+    }
+
+    const digest = clean(payload?.worldDigest);
+    if (!digest) return { skipped: true, reason: 'empty_digest' };
+    const sourceKey = `${data().getChatId()}:${layer}`;
+    const worldInfo = payload?.worldUpdate && typeof payload.worldUpdate === 'object'
+      ? JSON.stringify(payload.worldUpdate, null, 2)
+      : digest;
+    const attemptBase = data().loadState();
+    try {
+      const result = await runTasksThenDueBig({
+        memory: {
+          conversation: `【世界引擎本轮返回】\n${worldInfo}\n\n以上是客观世界信息。只更新其中明确支持的人物认知与世界实体，不得猜测任何人物知晓未公开信息。`
+        }
+      }, {
+        layer,
+        baseState: attemptBase,
+        saveCheckpoint: false,
+        worldDigestMinute: { layer, sourceKey, content: digest }
+      });
+      checkpoint = data().loadLinkCheckpoint?.();
+      if (checkpoint?.layer === layer) data().saveLinkCheckpoint({ ...checkpoint, rolledBack: false });
+      return result;
+    } catch (error) {
+      checkpoint = data().loadLinkCheckpoint?.();
+      if (checkpoint?.layer === layer) {
+        // 联动失败只撤销本次联动尝试；同楼层已完成的普通记忆提取仍应保留。
+        data().saveState(attemptBase);
+        data().saveLinkCheckpoint({ ...checkpoint, rolledBack: true });
+        applyInjection();
+      }
+      throw error;
+    }
   }
 
   function setBackfillStatus(current, total, message) {
@@ -904,7 +1031,11 @@ window.MEMORY_ENGINE = (function() {
         initializeSummaryBaseline();
         applyInjection();
       }));
-      ctx.eventSource.on(types.MESSAGE_SWIPED || 'message_swiped', guardEvent('滑动重生成', () => { clearTimeout(autoTimer); abortController?.abort(); applyInjection({ isReroll: true }); }));
+      ctx.eventSource.on(types.MESSAGE_SWIPED || 'message_swiped', guardEvent('滑动重生成', () => {
+        clearTimeout(autoTimer);
+        abortController?.abort();
+        if (!rollbackLinkedLayer(currentLayer())) applyInjection({ isReroll: true });
+      }));
       ctx.eventSource.on(types.GENERATION_STARTED || 'generation_started', guardEvent('生成开始', (type, _opts, dryRun) => {
         if (!dryRun) applyInjection({ isReroll: type === 'swipe' || type === 'regenerate' });
       }));
@@ -914,13 +1045,14 @@ window.MEMORY_ENGINE = (function() {
   }
 
   return {
-    init, applyInjection, buildWorldEngineContext, manualExtract, manualReextract, extractNow: manualExtract,
+    init, applyInjection, buildWorldEngineContext, ingestWorldEvolution, manualExtract, manualReextract, extractNow: manualExtract,
     manualSmallSummary, manualBigSummary,
     backfill, backfillSummaries, stopBackfill, abort,
     repairStateIndexes, replaceKnownByRecords,
     getLastDebug: () => clone(lastDebug), getBackfillStatus: () => clone(backfillStatus),
     getSummaryBackfillStatus: () => clone(summaryBackfillStatus),
     getRunningLabel: () => runningLabel,
-    isRunning: () => running || backfillRunning
+    isRunning: () => running || backfillRunning,
+    _test: { exponentialMemorySample, rollbackLinkedLayer }
   };
 })();

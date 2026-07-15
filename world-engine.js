@@ -545,6 +545,20 @@
           if (success) {
             ledger.recordChanges(state);
             if (storyDay != null) { state.time = Number(storyDay); core.saveState(state); }
+            if (settings.memoryLinkEnabled === true) {
+              try {
+                await window.MEMORY_ENGINE?.ingestWorldEvolution?.({
+                  layer: core.getChatLayer(),
+                  worldRound: state.round,
+                  worldDigest: state.worldDigest,
+                  worldUpdate: state.lastEvolveResult,
+                  replace: !isNewRound
+                });
+              } catch (linkError) {
+                console.error('[世界引擎] 世界→记忆联动失败（世界推演结果已保留）', linkError);
+                setStatus('世界推演完成，但记忆联动失败：' + (linkError?.message || linkError), true);
+              }
+            }
             // 重 roll 时正文已按楼层注入存档点，推演完成后不覆盖
             if (isNewRound || opts.forceApplyInjection) applyInjection();
             console.log('[世界引擎] ✅ 推演完成，当前第', state.round, '轮');

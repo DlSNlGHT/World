@@ -858,6 +858,7 @@ window.WORLD_ENGINE_UI = (function() {
 
   const MEMORY_SETTINGS_TABS = [
     { key: 'common', label: '常用' },
+    { key: 'link', label: '联动' },
     { key: 'advanced', label: '高级' },
     { key: 'archive', label: '存档' },
     { key: 'worldbook', label: '世界书' },
@@ -1192,6 +1193,9 @@ window.WORLD_ENGINE_UI = (function() {
         <input type="number" id="we-memory-big-summary-inject-limit" min="1" step="1" value="${bigSummaryInjectLimit}" style="width:100%;">
         <div style="font-size:11px;color:var(--we-text3);margin-top:3px;">只限制总述数量；尚未整理的纪要仍会全部注入。本地与 JSON 中的历史总述不会被删除或截断。</div>
       </div>
+      <div style="font-size:11px;color:var(--we-text3);">人物和实体历史使用 1d10000 指数权重抽取：越新的记录越容易入选，最旧记录也保留非零机会。</div>`;
+
+    const linkBody = `
       <div class="we-input-group">
         <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
           <input type="checkbox" id="we-memory-inject-world-engine" ${settings.injectIntoWorldEngine === true ? 'checked' : ''}>
@@ -1338,6 +1342,7 @@ window.WORLD_ENGINE_UI = (function() {
         + sec('set-memory-evolve', '记忆提取模式', modeBody)
         + sec('set-memory-event-summary', '事件记忆 · 大小总结', summaryBody)
         + sec('set-memory-inject', '记忆信息注入', injectBody),
+      link: sec('set-memory-link', '向世界引擎联动', linkBody),
       advanced: sec('set-memory-retry', 'API 自动重试', retryBody)
         + sec('set-memory-backfill', '批量重填记忆推演', backfillBody)
         + sec('set-memory-filter', '输入过滤器', filterBody)
@@ -1822,6 +1827,7 @@ window.WORLD_ENGINE_UI = (function() {
   // [FIX] 选项卡定义：label + 包含哪些片段。仅归类现有 section，不新增/不删功能。
   const SETTINGS_TABS = [
     { key: 'common',    label: '常用' },
+    { key: 'link',      label: '联动' },
     { key: 'advanced',  label: '高级' },
     { key: 'mechanics', label: '本地机制' },
     { key: 'archive',   label: '存档' },
@@ -1861,6 +1867,7 @@ window.WORLD_ENGINE_UI = (function() {
     // 各选项卡承载的片段（每个 section 恰好出现一次，零重复）
     const panelContent = {
       common:    form.api + form.evolve + form.inject,
+      link:      form.link,
       advanced:  form.retry + form.backfill + form.filter + form.display + extra.tone,
       mechanics: form.mechanics,
       archive:   form.chatcache + extra.data + checkpointSection,
@@ -3487,6 +3494,15 @@ window.WORLD_ENGINE_UI = (function() {
         <div style="font-size:11px;color:var(--we-text3);margin-top:3px;">勾选后，事件链和风声的 Lv1–Lv4 全部注入正文；不勾选时，风声仅注入 Lv3/4，事件链注入 Lv3/4 以及 Lv1/2 中已爆发或已完成的事件。</div>
       </div>`;
 
+    const linkBody = `
+      <div class="we-input-group">
+        <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
+          <input type="checkbox" id="we-memory-link-enabled" ${settings.memoryLinkEnabled === true ? 'checked' : ''}>
+          世界推演完成后联动记忆引擎
+        </label>
+        <div style="font-size:11px;color:var(--we-text3);margin-top:3px;">开启后，世界 API 的本轮返回会交给记忆 API 更新人物与实体，并把世界摘要新增为一条纪要。同楼层重 roll 使用独立联动 checkpoint 整体撤销旧结果后重做，不覆盖世界或记忆引擎原有 checkpoint。</div>
+      </div>`;
+
     const displayMode = settings.displayMode === 'expand' ? 'expand' : 'mask';
     const currentTheme = getStoredTheme();
     const themeOptions = WE_THEMES.map(theme =>
@@ -3709,7 +3725,8 @@ window.WORLD_ENGINE_UI = (function() {
       filter: sec('set-filter', '输入输出过滤器', filterBody),
       display: sec('set-display', '界面显示', displayBody),
       chatcache: sec('set-chatcache', '酒馆缓存与存档', chatcacheBody),
-      inject: sec('set-inject', '正文注入', injectBody)
+      inject: sec('set-inject', '正文注入', injectBody),
+      link: sec('set-world-memory-link', '世界 → 记忆', linkBody)
     };
   }
 
@@ -4933,6 +4950,7 @@ window.WORLD_ENGINE_UI = (function() {
           injectIntoPrompt: document.getElementById('we-inject-into-prompt')?.checked !== false,
           injectMaxChars: Math.max(0, parseInt(gv('we-inject-max-chars')) || 0),
           injectAllLevels: document.getElementById('we-inject-all-levels')?.checked === true,
+          memoryLinkEnabled: document.getElementById('we-memory-link-enabled')?.checked === true,
           syncToChat: document.getElementById('we-sync-to-chat')?.checked === true,
           autoBackup: document.getElementById('we-auto-backup')?.checked === true,
           evolveMode: (_modeRaw === 'manual' || _modeRaw === 'time') ? _modeRaw : 'auto',
