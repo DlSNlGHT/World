@@ -682,21 +682,26 @@ window.MEMORY_ENGINE = (function() {
       const eventMemory = ensureEventState(next);
       let addedSmall = 0, updatedBig = 0;
       if (tasks.small && extracted.smallSummary) {
-        eventMemory.small_summaries.push({
-          id: nextSmallSummaryId(eventMemory),
-          startLayer: Number(tasks.small.startLayer) || 0,
-          endLayer: Number(tasks.small.endLayer) || 0,
-          content: extracted.smallSummary,
-          sourceRefs: clone(tasks.small.sourceRefs || timelineApi()?.captureRange?.(tasks.small.startLayer, tasks.small.endLayer) || []),
-          sourceDigest: '',
-          originChatId: data()?.getChatId?.() || 'default',
-          status: 'valid',
-          revision: 1
-        });
-        const addedSummary = eventMemory.small_summaries.at(-1);
-        addedSummary.sourceDigest = timelineApi()?.digestRefs?.(addedSummary.sourceRefs) || '';
+        const sourceRefs = clone(tasks.small.sourceRefs || timelineApi()?.captureRange?.(tasks.small.startLayer, tasks.small.endLayer) || []);
+        const sourceDigest = timelineApi()?.digestRefs?.(sourceRefs) || '';
+        const existingSummary = sourceDigest ? eventMemory.small_summaries.find(item =>
+          item.status !== 'stale' && clean(item.sourceDigest) === sourceDigest
+        ) : null;
+        if (!existingSummary) {
+          eventMemory.small_summaries.push({
+            id: nextSmallSummaryId(eventMemory),
+            startLayer: Number(tasks.small.startLayer) || 0,
+            endLayer: Number(tasks.small.endLayer) || 0,
+            content: extracted.smallSummary,
+            sourceRefs,
+            sourceDigest,
+            originChatId: data()?.getChatId?.() || 'default',
+            status: 'valid',
+            revision: 1
+          });
+          addedSmall = 1;
+        }
         eventMemory.small_summary_layer = Number(tasks.small.endLayer) || 0;
-        addedSmall = 1;
       }
       if (options?.worldDigestMinute?.content) {
         const linked = options.worldDigestMinute;
@@ -884,9 +889,15 @@ window.MEMORY_ENGINE = (function() {
     const st = settings();
     if (st.engineEnabled === false) throw new Error('记忆引擎已关闭');
     const state = data().loadState();
-    const readRounds = getElapsedReadRounds(state, st.manualReadRounds);
-    const batch = recentConversationBatch(readRounds);
-    return extractConversation(batch.conversation, { ...batch, layer: currentLayer(), baseState: state });
+    const batch = recentConversationBatch(1);
+    const digest = timelineApi()?.digestRefs?.(batch.sourceRefs || []) || '';
+    const alreadyExtracted = digest && ensureTimelineState(state).nodes.some(node =>
+      node.kind === 'memory' && node.status === 'valid' && clean(node.sourceDigest) === digest
+    );
+    if (alreadyExtracted) throw new Error('最新一轮正文已经提取，请使用重新推演');
+    return runTasksThenDueBig({ memory: batch, small: batch }, {
+      ...batch, layer: batch.endLayer, baseState: state
+    });
   }
 
   async function manualReextract() {
@@ -896,21 +907,29 @@ window.MEMORY_ENGINE = (function() {
     const timeline = ensureTimelineState(current);
     const latestNode = timeline.nodes.slice().reverse().find(node => node.kind === 'memory' && node.status === 'valid');
     if (latestNode) {
+      const eventMemory = ensureEventState(current);
+      const sourceDigest = clean(latestNode.sourceDigest)
+        || timelineApi()?.digestRefs?.(latestNode.sourceRefs || []) || '';
+      const pairedSummary = sourceDigest ? eventMemory.small_summaries.find(summary => {
+        const digest = clean(summary.sourceDigest)
+          || timelineApi()?.digestRefs?.(summary.sourceRefs || []) || '';
+        return summary.status === 'valid' && digest === sourceDigest;
+      }) : null;
       latestNode.status = 'stale';
+      if (pairedSummary) pairedSummary.status = 'stale';
       data().saveState(current);
-      await repairMemoryNode(latestNode.id);
-      applyInjection();
-      return { replacedNodeId: latestNode.id, state: data().loadState() };
+      const repaired = await repairMemoryAndSmall(latestNode.id, pairedSummary?.id);
+      if (!repaired) throw new Error('最新一轮人物、实体与纪要未能重新提取');
+      await reconcileHistory();
+      return { replacedNodeId: latestNode.id, replacedSummaryId: pairedSummary?.id || null, state: data().loadState() };
     }
     // 旧数据尚未产生时间链节点时，保留一次兼容回退；新节点产生后不再依赖 checkpoint。
     const checkpoint = data().loadCheckpoint();
     if (!checkpoint) throw new Error('没有可用于重新推演的记忆存档点');
     const readRounds = getElapsedReadRounds(checkpoint, st.manualReadRounds);
     const batch = recentConversationBatch(readRounds);
-    return extractConversation(batch.conversation, {
-      ...batch,
-      layer: currentLayer(),
-      baseState: checkpoint
+    return runTasksThenDueBig({ memory: batch, small: batch }, {
+      ...batch, layer: currentLayer(), baseState: checkpoint
     });
   }
 
@@ -1047,12 +1066,12 @@ window.MEMORY_ENGINE = (function() {
   async function repairMemoryAndSmall(nodeId, summaryId) {
     let state = data().loadState(), timeline = ensureTimelineState(state), eventMemory = ensureEventState(state);
     let node = timeline.nodes.find(item => item.id === nodeId);
-    let summary = eventMemory.small_summaries.find(item => item.id === summaryId);
-    if (!node || node.status !== 'stale' || !summary || summary.status !== 'stale') return false;
+    let summary = summaryId ? eventMemory.small_summaries.find(item => item.id === summaryId) : null;
+    if (!node || node.status !== 'stale' || (summaryId && (!summary || summary.status !== 'stale'))) return false;
 
     const api = timelineApi();
     const nodeAudit = api?.auditRefs?.(node.sourceRefs);
-    const summaryAudit = api?.auditRefs?.(summary.sourceRefs);
+    const summaryAudit = summary ? api?.auditRefs?.(summary.sourceRefs) : nodeAudit;
     if (!nodeAudit?.refs?.length || !summaryAudit?.refs?.length) return false;
     const nodeDigest = api?.digestRefs?.(nodeAudit.refs) || '';
     const summaryDigest = api?.digestRefs?.(summaryAudit.refs) || '';
@@ -1075,8 +1094,8 @@ window.MEMORY_ENGINE = (function() {
     timeline = ensureTimelineState(state);
     eventMemory = ensureEventState(state);
     node = timeline.nodes.find(item => item.id === nodeId);
-    summary = eventMemory.small_summaries.find(item => item.id === summaryId);
-    if (!node || !summary) return false;
+    summary = summaryId ? eventMemory.small_summaries.find(item => item.id === summaryId) : null;
+    if (!node || (summaryId && !summary)) return false;
 
     node.sourceRefs = clone(nodeAudit.refs);
     node.sourceDigest = nodeDigest;
@@ -1088,13 +1107,29 @@ window.MEMORY_ENGINE = (function() {
     node.revision = Math.max(1, Number(node.revision) || 1) + 1;
     node.updatedAt = Date.now();
 
-    summary.startLayer = bounds.startLayer;
-    summary.endLayer = bounds.endLayer;
-    summary.sourceRefs = clone(summaryAudit.refs);
-    summary.sourceDigest = summaryDigest;
-    summary.content = extracted.smallSummary;
-    summary.status = 'valid';
-    summary.revision = Math.max(1, Number(summary.revision) || 1) + 1;
+    if (!summary) {
+      summary = {
+        id: nextSmallSummaryId(eventMemory),
+        startLayer: bounds.startLayer,
+        endLayer: bounds.endLayer,
+        sourceRefs: clone(summaryAudit.refs),
+        sourceDigest: summaryDigest,
+        content: extracted.smallSummary,
+        originChatId: data()?.getChatId?.() || 'default',
+        status: 'valid',
+        revision: 1
+      };
+      eventMemory.small_summaries.push(summary);
+      eventMemory.small_summary_layer = Math.max(Number(eventMemory.small_summary_layer) || 0, bounds.endLayer);
+    } else {
+      summary.startLayer = bounds.startLayer;
+      summary.endLayer = bounds.endLayer;
+      summary.sourceRefs = clone(summaryAudit.refs);
+      summary.sourceDigest = summaryDigest;
+      summary.content = extracted.smallSummary;
+      summary.status = 'valid';
+      summary.revision = Math.max(1, Number(summary.revision) || 1) + 1;
+    }
     data().saveState(replayTimeline(state));
     return true;
   }
