@@ -1361,10 +1361,19 @@ window.WORLD_ENGINE_UI = (function() {
     const memoryAboutBody = `
       <div class="we-about-current"><span class="we-changelog-cur">记忆引擎 v${h(memoryVersion)}</span></div>
       <div class="we-section" style="margin-top:10px;">
-        <div class="we-section-title">记忆引擎 1.0</div>
+        <div class="we-section-title">记忆引擎 1.1</div>
         <div style="font-size:12px;color:var(--we-text2);line-height:1.7;">
           面向长篇对话的独立记忆系统。人物记忆保留知情人边界，实体记忆维护组织、物件、能力与地点的当前状态和历史；纪要按新增轮次记录阶段事件，总述再将多条纪要压缩为长期脉络。
         </div>
+      </div>
+      <div class="we-section" style="margin-top:10px;">
+        <div class="we-section-title">v1.1.0 · 上下文与正文管理</div>
+        <ul class="we-changelog-items">
+          <li>日常提取仍只整理最新一轮，可分别追加近期正文、较早纪要和总述作为只读参考；默认参考 1 轮正文、5 条纪要和 1 条总述。</li>
+          <li>新增“隐藏正文”总开关；关闭后保留全部正文，开启后才按“保留最近正文轮数”和有效摘要覆盖范围隐藏旧正文。</li>
+          <li>纪要与总述完整保留 API 返回内容，不再本地截断；API 默认最大输出调整为 65000，并自动迁移旧的 4096 设置。</li>
+          <li>人物、实体、纪要和总述均可折叠；API 返回解析落库后自动刷新面板。</li>
+        </ul>
       </div>
       <div class="we-section" style="margin-top:10px;">
         <div class="we-section-title">v1.0.0 · 正式版本</div>
@@ -1842,6 +1851,7 @@ window.WORLD_ENGINE_UI = (function() {
   //   date    —— 可选，日期不确定的留月份/年份；
   //   items   —— 该版本改动条目（每条一行，渲染时走 h() 转义）。
   const CHANGELOG = [
+    { version: '3.0.1', date: '2026-07-16', items: ['修复云白、早樱浅色主题下事件链标题与 Lv.2 等级文字接近背景色、难以阅读的问题。', '事件等级、类型、阶段、推演结果、终局印章与倒计时改为浅色主题自适应对比度；深色主题保持原有配色。'] },
     { version: '3.0.0', date: '2026-07-14', items: ['世界引擎进入 3.0 正式版本：继续以独立世界状态推演、分层注入、本地事件机制、可编辑面板与聊天级存档为核心。', '记忆引擎 1.0 正式接入：人物、实体、纪要与总述保持独立数据和故障边界，并可按需向世界推演提供命中的最新人物与实体记忆。', '自动纪要从首次进入聊天时的当前层开始统计新增轮次；历史对话整理仅由纪要与总述批量重填执行。'] },
     { version: '2.5.4', date: '2026-07-14', items: ['记忆引擎任务接入顶部运行提示：人物/实体、纪要、总述在自动或手动执行时均显示开始、完成、失败或停止状态。'] },
     { version: '2.5.3', date: '2026-07-14', items: ['记忆引擎标题下方新增处理游标：人物/实体处理楼层、纪要处理楼层及总述已归并纪要条数；未处理时统一显示 0，不新增存储字段。'] },
