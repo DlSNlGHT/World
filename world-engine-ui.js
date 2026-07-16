@@ -6186,10 +6186,16 @@ window.WORLD_ENGINE_UI = (function() {
     if (engineSwitch) {
       const targetId = face.id === 'memory' ? 'world' : 'memory';
       const target = getEngineFace(targetId);
+      const targetActive = Boolean(callEngineFace(target, 'isRunning', false));
+      const targetRunningLabel = String(callEngineFace(target, 'getRunningLabel', '') || '');
       engineSwitch.dataset.targetEngine = target.id;
+      engineSwitch.dataset.engineRunning = targetActive ? 'true' : 'false';
       engineSwitch.classList.toggle('we-sat-target-world', target.id === 'world');
       engineSwitch.classList.toggle('we-sat-target-memory', target.id === 'memory');
-      engineSwitch.title = `切换到${target.label}`;
+      engineSwitch.classList.toggle('we-sat-engine-running', targetActive);
+      engineSwitch.title = targetActive
+        ? `${target.label}正在${targetRunningLabel || '推演'} · 点击切换查看`
+        : `切换到${target.label}`;
       engineSwitch.setAttribute('aria-label', engineSwitch.title);
     }
     ball.classList.toggle('we-ball-evolving', active);

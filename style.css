@@ -413,6 +413,39 @@
   -webkit-mask: url("worldmap.svg") 0 center / 200% 100% repeat-x;
           mask: url("worldmap.svg") 0 center / 200% 100% repeat-x;
 }
+
+/* 另一引擎在后台运行时，右下角入口也持续显示对应动效。 */
+#we-input-btn.we-ball > .we-sat-engine-switch.we-sat-engine-running {
+  border-color: var(--we-ball-glow);
+  animation: we-engine-switch-running-glow 1.6s ease-in-out infinite;
+}
+#we-input-btn.we-ball > .we-sat-engine-switch.we-sat-target-memory.we-sat-engine-running::before {
+  animation: we-engine-switch-memory-pulse 1.25s ease-in-out infinite;
+}
+#we-input-btn.we-ball > .we-sat-engine-switch.we-sat-target-world.we-sat-engine-running::after {
+  animation: we-engine-switch-world-spin 2.4s linear infinite;
+}
+@keyframes we-engine-switch-running-glow {
+  0%, 100% { box-shadow: 0 0 4px color-mix(in srgb, var(--we-ball-glow) 42%, transparent); }
+  50%      { box-shadow: 0 0 11px var(--we-ball-glow); }
+}
+@keyframes we-engine-switch-memory-pulse {
+  0%, 100% { transform: scale(0.88); opacity: 0.62; }
+  50%      { transform: scale(1.12); opacity: 1; }
+}
+@keyframes we-engine-switch-world-spin {
+  to {
+    -webkit-mask-position: 200% center;
+            mask-position: 200% center;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  #we-input-btn.we-ball > .we-sat-engine-switch.we-sat-engine-running,
+  #we-input-btn.we-ball > .we-sat-engine-switch.we-sat-engine-running::before,
+  #we-input-btn.we-ball > .we-sat-engine-switch.we-sat-engine-running::after {
+    animation: none;
+  }
+}
 /* 「插头」钮(球左侧第四卫星)关闭态:转红边+暗底,区别于默认,提示当前"已关推演与注入" */
 #we-input-btn.we-ball > .we-sat-left.on {
   color: var(--we-danger, #d66f68);
