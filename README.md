@@ -25,7 +25,7 @@
 |---|---|---|
 | 设置键 | `world_engine_settings` | `memory_engine_settings` |
 | 本地状态 | `world_engine_<chatId>` | `memory_engine_state_<chatId>` |
-| 本地检查点 | `world_engine_<chatId>_checkpoint` | `memory_engine_checkpoint_<chatId>` |
+| 本地检查点 | `world_engine_<chatId>_checkpoint` | 新式节点链可重放；`memory_engine_checkpoint_<chatId>` 仅兼容旧存档 |
 | 世界书选择 | `world_engine_worldbook_selection_<chatId>` | `memory_engine_worldbook_selection_<chatId>` |
 | `chat_metadata` 命名空间 | `world_engine` | `memory_engine` |
 | 注入名称 | `world-engine-world` | `memory-engine-memory` |
@@ -346,7 +346,7 @@ WORLD_ENGINE_UI.registerEngineFace({
 
 ### 1. 它是什么
 
-记忆引擎同时保存三类内容：人物主观认知、实体记忆和事件记忆。实体分为组织、物件、能力、地点；事件记忆由阶段性小总结与滚动大总结组成。
+记忆引擎同时保存三类内容：人物主观认知、实体记忆和事件记忆。实体分为组织、物件、能力、地点；事件记忆由阶段性纪要与总述组成。人物/实体更新另外进入一条从 Root 向前追加的可重放时间链。
 
 人物实体、小总结和大总结分别拥有独立 Prompt 与触发游标。人物实体与小总结同轮到期时可合并为一次 LLM 请求；小总结返回并落库后，再判断未合并数量，大总结始终使用独立的第二次请求且只发送大总结 Prompt。没有 embedding 或向量数据库。
 
@@ -358,10 +358,11 @@ WORLD_ENGINE_UI.registerEngineFace({
 - 已知人物及别名；
 - 已知的组织、物件、能力、地点名称与当前描述；
 - 可选世界书背景；
-- 过滤后的最近对话；
+- 过滤后的本轮对话；
+- “本地机制”中配置的只读辅助参考：依次向前选取总述、纪要与近期正文，三段楼层范围不重叠；
 - 用户设置的附加要求。
 
-`memory-engine-small-summary-prompt.js` 每 `smallSummaryEveryX` 个 AI 楼层生成一条不超过 200 字的小总结。小总结保存后，`memory-engine-big-summary-prompt.js` 在未合并数量达到 `bigSummaryEveryX` 条时，使用旧大总结与新增小总结滚动生成不超过 500 字的新大总结。批量总结回填另用 `summaryBackfillSmallEveryX` 与 `summaryBackfillBigEveryX`，不改变日常自动周期。
+`memory-engine-small-summary-prompt.js` 每个 AI 回合生成一条 50–200 字的小总结，并与同轮人物/实体提取合并为一次请求。参考正文、纪要和总述只用于理解人物、指代与前因，不会扩大本轮提取范围。小总结保存后，`memory-engine-big-summary-prompt.js` 在未合并数量达到用户设置的 `bigSummaryEveryX` 条时，使用新增小总结生成大总结。批量总结回填另用 `summaryBackfillSmallEveryX` 与 `summaryBackfillBigEveryX`，不改变日常每轮处理规则。API 返回的纪要和总述正文由本地完整保存，不按提示目标字数二次截断。
 
 API 必须返回一个 JSON 对象。`entity_updates` 是扁平更新数组，不返回本地 ID、索引或 `history`：
 
@@ -449,11 +450,19 @@ API 必须返回一个 JSON 对象。`entity_updates` 是扁平更新数组，�
   },
   event_memory: {
     small_summaries: [
-      { id: 'small_000001', startLayer: 0, endLayer: 9, content: '……' }
+      { id: 'small_000001', startLayer: 0, endLayer: 9, content: '……', sourceRefs: [], sourceDigest: '……', revision: 1 }
     ],
-    big_summary: { startLayer: 0, endLayer: 9, content: '……' },
+    big_summaries: [
+      { id: 'big_000001', childIds: ['small_000001'], childDigest: '……', content: '……', revision: 1 }
+    ],
     small_summary_layer: 9,
     big_summary_cursor: 1
+  },
+  timeline: {
+    root: { base: { personal_memory: [], entity_memory: {}, round: 0 } },
+    nodes: [
+      { id: 'memory_000001', sourceRefs: [], sourceDigest: '……', personal: [], entities: {}, revision: 1 }
+    ]
   },
   round: 1,
   chatLayer: 42
@@ -464,22 +473,24 @@ API 必须返回一个 JSON 对象。`entity_updates` 是扁平更新数组，�
 
 `entity_memory` 是四类实体的权威本地数据；`entity_index` 是“类型 + 规范化名称 → 稳定 ID”索引。API 不生成 ID 或历史数组。本地按同类型同名归并：非空 `description` 覆盖当前描述，空描述保持不变；非空 `{time,event}` 去重追加进 `history`。
 
+`timeline.root.base` 保存迁移/导入时的记忆基底；后续每次人物实体提取把原始 `personal_memory` 与 `entity_updates` 保存成节点。当前人物实体状态是 Root 顺序应用有效节点后的派生结果。每条聊天消息拥有插件稳定 ID；节点和纪要使用“聊天 ID + 消息 ID + swipe + 正文 hash”识别来源，不依赖会因删楼而移动的数字楼层。
+
 没有时间的记忆使用空字符串键 `""`，注入时显示为“时间未明”。相互矛盾的记忆不会互相覆盖；完全相同的字符串会去重。
 
 ### 4. 运行与合并
 
-1. 每 X 轮自动运行，或由设置按钮/记忆悬浮球的向前按钮手动触发。
-2. 自动提取读取最近 `evolveReadRounds` 轮；手动向前提取读取 `min(manualReadRounds, 自当前记忆状态以来经过的轮数)`，其中 `manualReadRounds` 是上下文上限。
+1. 自动模式下每轮运行一次，或由设置按钮/记忆悬浮球的向前按钮手动触发。
+2. 日常人物/实体提取与小总结固定只处理最新一轮，并在同轮合并为一次 API 请求；“本地机制”默认保留最近 1 轮正文不隐藏，并额外读取 1 轮正文、5 条更早纪要与 1 条更早总述作为只读参考，四项均可独立调整。
 3. 复用正则过滤、可选世界书和 API 请求。
 4. 校验顶层对象、字段类型、人物 50 字限制、实体描述 200 字限制、批次上限和相对时间。
 5. 按名称或别名匹配已有角色；找不到时生成 `char_000001` 形式的 ID。
 6. 把人物记忆追加到对应绝对时间键并更新 `knowledge_index`；实体由本地生成稳定 ID、更新描述、去重追加历史并更新 `entity_index`。
-7. 保存提取前 checkpoint、更新 `round` 与 `chatLayer`。
+7. 把本批更新与正文来源写入时间链节点，更新派生状态、`round` 与 `chatLayer`；旧 checkpoint 只保留作兼容回退。
 8. 独立触发记忆同步/备份与注入刷新。
 
 小总结使用独立的 `small_summary_layer` 判断新增 AI 楼层；大总结使用 `small_summaries.length - big_summary_cursor` 判断尚未合并的数量。三类任务互不推进对方的游标。
 
-手动向前提取以当前记忆状态为基底；重新推演以最近 checkpoint 为基底，并读取 `min(manualReadRounds, checkpoint 至今经过的轮数)`，因此两者分别对应世界引擎的 forward 与 redo 语义。
+手动向前提取以当前记忆状态为基底；重新推演优先替换时间链中的最近记忆节点，并从 Root 重放。只有尚未产生新式节点的旧存档才回退使用最近 checkpoint。
 
 ### 5. 记忆注入
 
@@ -492,20 +503,25 @@ API 必须返回一个 JSON 对象。`entity_updates` 是扁平更新数组，�
 
 每个人最多注入 `maxPerCharacter` 条，最终内容以 `【记忆信息】` 开头。其中人物条目只是人物认知，不代表客观真相。
 
-事件记忆始终注入当前大总结，以及尚未并入大总结的小总结；已经合并的小总结仍保存在本地，但不重复注入。
+事件记忆注入最近有效总述，以及没有被这些总述覆盖的有效纪要。总述失效时自动降级到仍然有效的子纪要，不继续注入旧总述。
+
+被当前有效纪要/总述的 `sourceRefs` 明确覆盖、且不在“保留最近正文轮数”范围内的原始消息，才会通过 ST 原生 `/hide` 隐藏。没有有效摘要来源覆盖的正文不会隐藏。重 Roll、正文编辑或删楼导致来源 hash 不一致时，生成拦截器先重做命中的纪要/记忆节点及祖先总述；修复失败则撤下失效摘要并恢复对应正文，避免摘要和正文同时缺失。
 
 命中的实体会注入其分类、名称、当前描述，以及最多 `maxPerCharacter` 条最近历史；未在最近正文出现的实体不注入。
+
+人物、实体、纪要与总述卡片均可通过标题栏箭头展开或收起；每次记忆 API 返回并完成本地解析落库后，当前打开的记忆面板会自动刷新，设置页或正在编辑的表单仍受防重绘保护。
 
 关闭记忆总开关或“注入人物与实体记忆”后，只清理 `memory-engine-memory`，不会影响世界注入。
 
 ### 6. 重新推演、停止与重填
 
 - **立即提取**：以当前记忆状态为基底，新增本批记忆。
-- **重新推演记忆**：恢复上一 checkpoint，再对当前对话重新提取，因此旧结果不会与新结果叠加。
+- **重新推演记忆**：替换最近的时间链节点并从 Root 重放；旧存档才使用 checkpoint 兼容回退。
 - **停止**：中止当前 `AbortController`，也可停止批量重填。
 - **人物与实体重填**：只清空并重建人物、实体数据，保留大小总结。
 - **大小总结重填**：只清空并从头重建事件记忆，保留人物、实体数据。
-- **重 roll 注入**：`swipe` / `regenerate` 时注入记忆 checkpoint，正常生成注入当前记忆状态。
+- **重 Roll/删楼对账**：按稳定消息 ID 与正文 hash 定位受影响轮次，立即从派生状态撤下该轮人物/实体贡献，并联合重做该轮人物/实体与小总结，再单独重做祖先总述；后续未变节点继续重放。
+- **跨聊天继承**：导入或跨聊天恢复时把旧链的最终状态折叠为新聊天 Root，并把新聊天当前楼层设为新基线，避免重复提取旧聊天。
 
 记忆首页以双层圆环展示客观总结进度：外圈是下一次小总结的 AI 楼层进度，内圈是下一次大总结所需的小总结数量进度。首页包含人物、实体、纪要与总述四个分页；人物和实体支持新增、修改、删除及明细编辑，纪要与总述只允许修改已有内容（可清空），不提供手动新增或删除入口。
 
@@ -517,6 +533,7 @@ API 必须返回一个 JSON 对象。`entity_updates` 是扁平更新数组，�
 |---|---|
 | `memory-engine-settings.js` | 独立设置与旧字段迁移 |
 | `memory-engine-data.js` | 独立状态、检查点、导入导出 |
+| `memory-engine-timeline.js` | 稳定消息身份、正文 hash、来源核对与正文隐藏 |
 | `memory-engine-prompt.js` | 固定人物与世界实体记忆提取 Prompt、请求正文 |
 | `memory-engine-small-summary-prompt.js` | 固定小总结 Prompt |
 | `memory-engine-big-summary-prompt.js` | 固定滚动大总结 Prompt |

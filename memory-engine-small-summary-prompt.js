@@ -21,6 +21,7 @@ window.MEMORY_ENGINE_SMALL_SUMMARY_PROMPT = (function() {
     const input = options || {};
     const startLayer = Number.isFinite(Number(input.startLayer)) ? Number(input.startLayer) : 0;
     const endLayer = Number.isFinite(Number(input.endLayer)) ? Number(input.endLayer) : startLayer;
+    const referenceContext = clean(input.referenceContext);
     const big = Array.isArray(input.historyBigSummaries) ? input.historyBigSummaries : [];
     const small = Array.isArray(input.historySmallSummaries) ? input.historySmallSummaries : [];
     const history = [
@@ -31,7 +32,8 @@ window.MEMORY_ENGINE_SMALL_SUMMARY_PROMPT = (function() {
         `${index + 1}. [楼层 ${Number(item?.startLayer) || 0}-${Number(item?.endLayer) || 0}] ${clean(item?.content)}`
       ).join('\n')}` : ''
     ].filter(Boolean).join('\n\n');
-    return `${history ? `【只读历史参考】\n${history}\n\n` : ''}【总结范围】\n楼层 ${startLayer} 至 ${endLayer}\n\n【待总结对话】\n${clean(input.conversation) || '（空）'}`;
+    const reference = referenceContext || history;
+    return `${reference ? `【只读历史参考】\n${reference}\n\n` : ''}【总结范围】\n楼层 ${startLayer} 至 ${endLayer}\n\n【待总结对话】\n${clean(input.conversation) || '（空）'}`;
   }
 
   return { SYSTEM_PROMPT, buildUserPrompt };

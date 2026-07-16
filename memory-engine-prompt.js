@@ -107,6 +107,7 @@ entity_updates 的每一项只能包含 type、name、description、event、time
         }).filter(Boolean)
       : [];
     const worldbook = clean(input.worldbook);
+    const referenceContext = clean(input.referenceContext);
     const conversation = clean(input.conversation);
 
     const sections = [
@@ -117,6 +118,10 @@ entity_updates 的每一项只能包含 type、name、description、event、time
 
     if (worldbook) {
       sections.push(`【可选世界书背景】\n${worldbook}\n\n世界书只用于辨认人物、实体、称呼和背景，不得把其中内容直接当作本批新形成的人物记忆或实体更新。`);
+    }
+
+    if (referenceContext) {
+      sections.push(`【只读辅助参考】\n${referenceContext}\n\n以上内容只用于识别人物、指代、前因和既有状态；不得把参考内容重新提取为本轮新增记忆或实体更新。`);
     }
 
     sections.push(`【待提取对话】\n${conversation || '（空）'}`);

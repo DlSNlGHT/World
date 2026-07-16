@@ -16,6 +16,7 @@ window.WORLD_ENGINE_UI = (function() {
   let _memoryEditingEntity = null;
   let _memoryEditingSmall = null;
   let _memoryEditingBig = null;
+  const _memoryCollapsedRecords = new Set();
   let _memoryRunningLabel = '';
   let _panelFlipping = false;
   let isEvolving = false;
@@ -471,6 +472,19 @@ window.WORLD_ENGINE_UI = (function() {
     )).map(knower => knower.names?.[0] || knower.id);
   }
 
+  function memoryRecordToggle(key) {
+    const collapsed = _memoryCollapsedRecords.has(key);
+    return `<button class="we-icon-btn we-memory-toggle-record" type="button" data-memory-collapse-key="${h(key)}" title="${collapsed ? '展开' : '收起'}" aria-expanded="${collapsed ? 'false' : 'true'}"><i class="fa-solid fa-chevron-${collapsed ? 'right' : 'down'}"></i></button>`;
+  }
+
+  function memoryRecordClass(key, extra) {
+    return `we-memory-record${extra ? ` ${extra}` : ''}${_memoryCollapsedRecords.has(key) ? ' is-collapsed' : ''}`;
+  }
+
+  function memoryRecordBody(key, content) {
+    return `<div class="we-memory-record-body"${_memoryCollapsedRecords.has(key) ? ' hidden' : ''}>${content}</div>`;
+  }
+
   function renderMemoryPersonEditor(person, isNew, state) {
     const entries = Object.entries(person?.memory || {}).flatMap(([time, memories]) =>
       (Array.isArray(memories) ? memories : []).map(memory => renderMemoryEntryRow(time, memory, 'memory', memoryKnownBy(state, person, time, memory)))
@@ -490,17 +504,18 @@ window.WORLD_ENGINE_UI = (function() {
       ? `<div class="we-memory-record we-memory-record-new">${renderMemoryPersonEditor({ id: '', names: [], memory: {} }, true, state)}</div>` : '';
     const cards = people.map(person => {
       const editing = _memoryEditingPerson === person.id;
+      const collapseKey = `person:${person.id}`;
       const entries = Object.entries(person.memory || {}).flatMap(([time, memories]) =>
         (Array.isArray(memories) ? memories : []).map(memory => {
           const knownBy = memoryKnownBy(state, person, time, memory);
           return `<div class="we-memory-line"><span class="we-memory-line-time">${h(time || '时间未明')}</span><div class="we-memory-line-main"><div class="we-memory-line-content">${h(memory)}</div><div class="we-memory-line-known">知情人：${h(knownBy.length ? knownBy.join(' · ') : '仅本人')}</div></div></div>`;
         })
       ).join('');
-      return `<div class="we-memory-record" data-person-id="${h(person.id)}">
+      return `<div class="${memoryRecordClass(collapseKey)}" data-person-id="${h(person.id)}">
         <div class="we-memory-record-head"><div><div class="we-memory-record-title">${h(person.names?.[0] || '未命名人物')}</div><div class="we-memory-record-meta">${h((person.names || []).slice(1).join(' · ') || person.id)}</div></div>
-          <div class="we-memory-record-actions"><button class="we-icon-btn we-memory-edit-person" type="button" title="编辑"><i class="fa-solid fa-pen"></i></button><button class="we-icon-btn we-memory-delete-person" type="button" title="删除"><i class="fa-solid fa-trash"></i></button></div>
+          <div class="we-memory-record-actions">${memoryRecordToggle(collapseKey)}<button class="we-icon-btn we-memory-edit-person" type="button" title="编辑"><i class="fa-solid fa-pen"></i></button><button class="we-icon-btn we-memory-delete-person" type="button" title="删除"><i class="fa-solid fa-trash"></i></button></div>
         </div>
-        ${editing ? renderMemoryPersonEditor(person, false, state) : (entries || '<div class="we-empty">暂无人物记忆</div>')}
+        ${memoryRecordBody(collapseKey, editing ? renderMemoryPersonEditor(person, false, state) : (entries || '<div class="we-empty">暂无人物记忆</div>'))}
       </div>`;
     }).join('');
     return `<div class="we-memory-page-actions"><button class="we-btn we-btn-primary" id="we-memory-add-person" type="button"><i class="fa-solid fa-plus"></i> 新增人物</button></div>${draft}${cards || '<div class="we-empty">暂无人物，点击“新增人物”手动建立。</div>'}`;
@@ -526,14 +541,15 @@ window.WORLD_ENGINE_UI = (function() {
     const cards = Object.entries(MEMORY_ENTITY_LABELS).flatMap(([type, label]) =>
       (Array.isArray(state.entity_memory?.[type]) ? state.entity_memory[type] : []).map(entity => {
         const key = `${type}:${entity.id}`;
+        const collapseKey = `entity:${key}`;
         const history = (Array.isArray(entity.history) ? entity.history : []).map(entry =>
           `<div class="we-memory-line"><span class="we-memory-line-time">${h(entry.time || '时间未明')}</span><div class="we-memory-line-main"><div class="we-memory-line-content">${h(entry.event)}</div></div></div>`
         ).join('');
-        return `<div class="we-memory-record" data-entity-id="${h(entity.id)}" data-entity-type="${type}">
+        return `<div class="${memoryRecordClass(collapseKey)}" data-entity-id="${h(entity.id)}" data-entity-type="${type}">
           <div class="we-memory-record-head"><div><div class="we-memory-record-title"><span class="we-memory-type-badge">${label}</span>${h(entity.name || '未命名实体')}</div><div class="we-memory-record-meta">${h(entity.id)}</div></div>
-            <div class="we-memory-record-actions"><button class="we-icon-btn we-memory-edit-entity" type="button" title="编辑"><i class="fa-solid fa-pen"></i></button><button class="we-icon-btn we-memory-delete-entity" type="button" title="删除"><i class="fa-solid fa-trash"></i></button></div>
+            <div class="we-memory-record-actions">${memoryRecordToggle(collapseKey)}<button class="we-icon-btn we-memory-edit-entity" type="button" title="编辑"><i class="fa-solid fa-pen"></i></button><button class="we-icon-btn we-memory-delete-entity" type="button" title="删除"><i class="fa-solid fa-trash"></i></button></div>
           </div>
-          ${_memoryEditingEntity === key ? renderMemoryEntityEditor(entity, type, false) : `<div class="we-memory-description">${h(entity.description || '暂无描述')}</div>${history}`}
+          ${memoryRecordBody(collapseKey, _memoryEditingEntity === key ? renderMemoryEntityEditor(entity, type, false) : `<div class="we-memory-description">${h(entity.description || '暂无描述')}</div>${history}`)}
         </div>`;
       })
     ).join('');
@@ -551,12 +567,15 @@ window.WORLD_ENGINE_UI = (function() {
     </div>`;
     const draft = _memoryEditingSmall === '__new__'
       ? `<div class="we-memory-record we-memory-record-new" data-small-id="__new__">${editor({ startLayer: eventMemory.small_summary_layer ?? 0, endLayer: eventMemory.small_summary_layer ?? 0, content: '' }, true)}</div>` : '';
-    const cards = items.map((item, index) => `<div class="we-memory-record" data-small-id="${h(item.id)}">
+    const cards = items.map((item, index) => {
+      const collapseKey = `small:${item.id}`;
+      return `<div class="${memoryRecordClass(collapseKey)}" data-small-id="${h(item.id)}">
       <div class="we-memory-record-head"><div><div class="we-memory-record-title">楼层 ${h(String(item.startLayer))}–${h(String(item.endLayer))}</div><div class="we-memory-record-meta">${index < cursor ? '已归入总述' : '等待归档'} · ${h(item.id)}</div></div>
-        <div class="we-memory-record-actions"><button class="we-icon-btn we-memory-edit-small" type="button" title="修改"><i class="fa-solid fa-pen"></i></button><button class="we-icon-btn we-memory-delete-small" type="button" title="删除"><i class="fa-solid fa-trash"></i></button></div>
+        <div class="we-memory-record-actions">${memoryRecordToggle(collapseKey)}<button class="we-icon-btn we-memory-edit-small" type="button" title="修改"><i class="fa-solid fa-pen"></i></button><button class="we-icon-btn we-memory-delete-small" type="button" title="删除"><i class="fa-solid fa-trash"></i></button></div>
       </div>
-      ${_memoryEditingSmall === item.id ? editor(item, false) : `<div class="we-memory-summary-text">${h(item.content || '（内容为空）')}</div>`}
-    </div>`).join('');
+      ${memoryRecordBody(collapseKey, _memoryEditingSmall === item.id ? editor(item, false) : `<div class="we-memory-summary-text">${h(item.content || '（内容为空）')}</div>`)}
+    </div>`;
+    }).join('');
     return `<div class="we-memory-page-actions"><button class="we-btn we-btn-primary" id="we-memory-add-small" type="button"><i class="fa-solid fa-plus"></i> 新增纪要</button></div>${draft}${cards || '<div class="we-empty">尚未生成纪要，可手动新增。</div>'}`;
   }
 
@@ -569,12 +588,15 @@ window.WORLD_ENGINE_UI = (function() {
     </div>`;
     const draft = _memoryEditingBig === '__new__'
       ? `<div class="we-memory-record we-memory-record-new" data-big-id="__new__">${editor({ startLayer: 0, endLayer: 0, content: '' }, true)}</div>` : '';
-    const cards = items.map((big, index) => `<div class="we-memory-record we-memory-overview-record" data-big-id="${h(big.id)}">
+    const cards = items.map((big, index) => {
+      const collapseKey = `big:${big.id}`;
+      return `<div class="${memoryRecordClass(collapseKey, 'we-memory-overview-record')}" data-big-id="${h(big.id)}">
       <div class="we-memory-record-head"><div><div class="we-memory-record-title">总述 ${index + 1}</div><div class="we-memory-record-meta">楼层 ${h(String(big.startLayer))}–${h(String(big.endLayer))} · ${h(big.id)}</div></div>
-        <div class="we-memory-record-actions"><button class="we-icon-btn we-memory-edit-big" type="button" title="修改"><i class="fa-solid fa-pen"></i></button><button class="we-icon-btn we-memory-delete-big" type="button" title="删除"><i class="fa-solid fa-trash"></i></button></div>
+        <div class="we-memory-record-actions">${memoryRecordToggle(collapseKey)}<button class="we-icon-btn we-memory-edit-big" type="button" title="修改"><i class="fa-solid fa-pen"></i></button><button class="we-icon-btn we-memory-delete-big" type="button" title="删除"><i class="fa-solid fa-trash"></i></button></div>
       </div>
-      ${_memoryEditingBig === big.id ? editor(big, false) : `<div class="we-memory-summary-text">${h(big.content || '（内容为空）')}</div>`}
-    </div>`).join('');
+      ${memoryRecordBody(collapseKey, _memoryEditingBig === big.id ? editor(big, false) : `<div class="we-memory-summary-text">${h(big.content || '（内容为空）')}</div>`)}
+    </div>`;
+    }).join('');
     return `<div class="we-memory-page-actions"><button class="we-btn we-btn-primary" id="we-memory-add-big" type="button"><i class="fa-solid fa-plus"></i> 新增总述</button></div>${draft}${cards || '<div class="we-empty">尚未生成总述，可手动新增。</div>'}`;
   }
 
@@ -648,10 +670,31 @@ window.WORLD_ENGINE_UI = (function() {
       };
     });
 
+    document.querySelectorAll('.we-memory-toggle-record').forEach(button => {
+      button.onclick = () => {
+        const key = button.dataset.memoryCollapseKey;
+        if (!key) return;
+        const card = button.closest('.we-memory-record');
+        const body = card?.querySelector(':scope > .we-memory-record-body');
+        const collapse = !_memoryCollapsedRecords.has(key);
+        if (collapse) _memoryCollapsedRecords.add(key); else _memoryCollapsedRecords.delete(key);
+        card?.classList.toggle('is-collapsed', collapse);
+        if (body) body.hidden = collapse;
+        button.title = collapse ? '展开' : '收起';
+        button.setAttribute('aria-expanded', collapse ? 'false' : 'true');
+        const icon = button.querySelector('i');
+        if (icon) icon.className = `fa-solid fa-chevron-${collapse ? 'right' : 'down'}`;
+      };
+    });
+
     const addPerson = document.getElementById('we-memory-add-person');
     if (addPerson) addPerson.onclick = () => { clearMemoryEditing(); _memoryEditingPerson = '__new__'; refresh(); };
     document.querySelectorAll('.we-memory-edit-person').forEach(button => {
-      button.onclick = () => { clearMemoryEditing(); _memoryEditingPerson = button.closest('[data-person-id]')?.dataset.personId || null; refresh(); };
+      button.onclick = () => {
+        const id = button.closest('[data-person-id]')?.dataset.personId || null;
+        if (id) _memoryCollapsedRecords.delete(`person:${id}`);
+        clearMemoryEditing(); _memoryEditingPerson = id; refresh();
+      };
     });
     document.querySelectorAll('.we-memory-delete-person').forEach(button => {
       button.onclick = () => {
@@ -700,8 +743,10 @@ window.WORLD_ENGINE_UI = (function() {
     document.querySelectorAll('.we-memory-edit-entity').forEach(button => {
       button.onclick = () => {
         const card = button.closest('[data-entity-id]');
+        const key = card ? `${card.dataset.entityType}:${card.dataset.entityId}` : null;
+        if (key) _memoryCollapsedRecords.delete(`entity:${key}`);
         clearMemoryEditing();
-        _memoryEditingEntity = card ? `${card.dataset.entityType}:${card.dataset.entityId}` : null;
+        _memoryEditingEntity = key;
         refresh();
       };
     });
@@ -759,7 +804,11 @@ window.WORLD_ENGINE_UI = (function() {
     const addSmall = document.getElementById('we-memory-add-small');
     if (addSmall) addSmall.onclick = () => { clearMemoryEditing(); _memoryEditingSmall = '__new__'; refresh(); };
     document.querySelectorAll('.we-memory-edit-small').forEach(button => {
-      button.onclick = () => { clearMemoryEditing(); _memoryEditingSmall = button.closest('[data-small-id]')?.dataset.smallId || null; refresh(); };
+      button.onclick = () => {
+        const id = button.closest('[data-small-id]')?.dataset.smallId || null;
+        if (id) _memoryCollapsedRecords.delete(`small:${id}`);
+        clearMemoryEditing(); _memoryEditingSmall = id; refresh();
+      };
     });
     document.querySelectorAll('.we-memory-delete-small').forEach(button => {
       button.onclick = () => {
@@ -794,7 +843,11 @@ window.WORLD_ENGINE_UI = (function() {
     const addBig = document.getElementById('we-memory-add-big');
     if (addBig) addBig.onclick = () => { clearMemoryEditing(); _memoryEditingBig = '__new__'; refresh(); };
     document.querySelectorAll('.we-memory-edit-big').forEach(button => {
-      button.onclick = () => { clearMemoryEditing(); _memoryEditingBig = button.closest('[data-big-id]')?.dataset.bigId || null; refresh(); };
+      button.onclick = () => {
+        const id = button.closest('[data-big-id]')?.dataset.bigId || null;
+        if (id) _memoryCollapsedRecords.delete(`big:${id}`);
+        clearMemoryEditing(); _memoryEditingBig = id; refresh();
+      };
     });
     document.querySelectorAll('.we-memory-delete-big').forEach(button => {
       button.onclick = () => {
@@ -836,6 +889,7 @@ window.WORLD_ENGINE_UI = (function() {
 
   const MEMORY_SETTINGS_TABS = [
     { key: 'common', label: '常用' },
+    { key: 'mechanics', label: '本地机制' },
     { key: 'link', label: '联动' },
     { key: 'advanced', label: '高级' },
     { key: 'archive', label: '存档' },
@@ -1038,6 +1092,10 @@ window.WORLD_ENGINE_UI = (function() {
     const mode = settings.evolveMode === 'manual' ? 'manual' : 'auto';
     const bigSummaryEveryX = Math.max(1, parseInt(settings.bigSummaryEveryX) || 5);
     const bigSummaryInjectLimit = Math.max(1, parseInt(settings.bigSummaryInjectLimit) || 3);
+    const recentRawRounds = Math.max(0, parseInt(settings.recentRawRounds) || 0);
+    const referenceRawRounds = Math.max(0, parseInt(settings.referenceRawRounds) || 0);
+    const referenceSmallSummaryCount = Math.max(0, parseInt(settings.referenceSmallSummaryCount) || 0);
+    const referenceBigSummaryCount = Math.max(0, parseInt(settings.referenceBigSummaryCount) || 0);
     const worldEngineMemoryLimit = Math.max(1, parseInt(settings.worldEngineMemoryLimit) || 5);
     const searchDepth = Math.max(1, parseInt(settings.searchDepth) || 5);
     const maxPerCharacter = Math.max(1, parseInt(settings.maxPerCharacter) || 20);
@@ -1129,7 +1187,7 @@ window.WORLD_ENGINE_UI = (function() {
           <input type="checkbox" id="we-memory-inject" ${settings.injectIntoPrompt !== false ? 'checked' : ''}>
           注入记忆信息
         </label>
-        <div style="font-size:11px;color:var(--we-text3);margin-top:3px;">注入最新 Y 条总述和尚未整理的纪要；被摘要覆盖的旧正文自动隐藏，但始终保留最近 3 轮完整对话原文；同时扫描最近 N 层正文中的人物及实体名称，按需注入相关人物与实体记忆。</div>
+        <div style="font-size:11px;color:var(--we-text3);margin-top:3px;">注入最新 Y 条总述和尚未整理的纪要；被有效纪要或总述覆盖的旧正文自动隐藏，但“本地机制”中设置的近期轮数始终保留原文；同时扫描最近 N 层正文中的人物及实体名称，按需注入相关人物与实体记忆。</div>
       </div>
       <div class="we-input-group" style="display:flex;gap:6px;">
         <div style="flex:1;">
@@ -1147,6 +1205,28 @@ window.WORLD_ENGINE_UI = (function() {
         <div style="font-size:11px;color:var(--we-text3);margin-top:3px;">只限制总述数量；尚未整理的纪要仍会全部注入。本地与 JSON 中的历史总述不会被删除或截断。</div>
       </div>
       <div style="font-size:11px;color:var(--we-text3);">人物和实体历史使用 1d10000 指数权重抽取：越新的记录越容易入选，最旧记录也保留非零机会。</div>`;
+
+    const mechanicsBody = `
+      <div class="we-input-group">
+        <label>保留最近正文轮数</label>
+        <input type="number" id="we-memory-recent-raw-rounds" min="0" step="1" value="${recentRawRounds}" style="width:100%;">
+        <div style="font-size:11px;color:var(--we-text3);margin-top:3px;">最近多少个 AI 回合的用户与 AI 正文始终不隐藏；0 表示不额外保留。更早正文只有在有效纪要或总述的来源范围明确覆盖时才会隐藏。</div>
+      </div>
+      <div class="we-input-group">
+        <label>推演辅助 · 追加近期正文轮数</label>
+        <input type="number" id="we-memory-reference-raw-rounds" min="0" step="1" value="${referenceRawRounds}" style="width:100%;">
+        <div style="font-size:11px;color:var(--we-text3);margin-top:3px;">人物、实体和纪要仍只提取最新一轮；这里的旧正文仅作人物、指代、前因与既有状态参考，不会重复入库。</div>
+      </div>
+      <div class="we-input-group">
+        <label>推演辅助 · 正文之前追加纪要数</label>
+        <input type="number" id="we-memory-reference-small-count" min="0" step="1" value="${referenceSmallSummaryCount}" style="width:100%;">
+        <div style="font-size:11px;color:var(--we-text3);margin-top:3px;">从辅助正文起点继续向前取不重叠的纪要；0 表示不追加纪要。</div>
+      </div>
+      <div class="we-input-group">
+        <label>推演辅助 · 纪要之前追加总述数</label>
+        <input type="number" id="we-memory-reference-big-count" min="0" step="1" value="${referenceBigSummaryCount}" style="width:100%;">
+        <div style="font-size:11px;color:var(--we-text3);margin-top:3px;">从所选纪要之前继续向前取不重叠的总述；0 表示不追加总述。参考顺序固定为“总述 → 纪要 → 正文 → 本轮”。</div>
+      </div>`;
 
     const linkBody = `
       <div class="we-input-group">
@@ -1301,6 +1381,7 @@ window.WORLD_ENGINE_UI = (function() {
       common: sec('set-memory-api', '记忆引擎 API', apiBody)
         + sec('set-memory-evolve', '记忆提取与事件整理', modeBody)
         + sec('set-memory-inject', '记忆信息注入', injectBody),
+      mechanics: sec('set-memory-mechanics', '正文保留与推演参考', mechanicsBody),
       link: sec('set-memory-link', '向世界引擎联动', linkBody),
       advanced: sec('set-memory-retry', 'API 自动重试', retryBody)
         + sec('set-memory-blacklist', '人物与实体黑名单', blacklistBody)
@@ -4680,6 +4761,10 @@ window.WORLD_ENGINE_UI = (function() {
           smallSummaryEveryX: 1,
           bigSummaryEveryX: Math.max(1, parseInt(gv('we-memory-big-summary-every')) || 5),
           bigSummaryInjectLimit: Math.max(1, parseInt(gv('we-memory-big-summary-inject-limit')) || 3),
+          recentRawRounds: Math.max(0, parseInt(gv('we-memory-recent-raw-rounds')) || 0),
+          referenceRawRounds: Math.max(0, parseInt(gv('we-memory-reference-raw-rounds')) || 0),
+          referenceSmallSummaryCount: Math.max(0, parseInt(gv('we-memory-reference-small-count')) || 0),
+          referenceBigSummaryCount: Math.max(0, parseInt(gv('we-memory-reference-big-count')) || 0),
           injectIntoPrompt: document.getElementById('we-memory-inject')?.checked !== false,
           injectIntoWorldEngine: document.getElementById('we-memory-inject-world-engine')?.checked === true,
           worldEngineMemoryLimit: Math.max(1, parseInt(gv('we-memory-world-engine-limit')) || 5),

@@ -10,6 +10,7 @@ const calls = [];
 const listeners = new Map();
 const runningLabels = [];
 const startSignals = [];
+let memoryRefreshes = 0;
 let injectionContent = '';
 const settings = {
   engineEnabled: true,
@@ -21,6 +22,10 @@ const settings = {
   smallSummaryEveryX: 2,
   bigSummaryEveryX: 1,
   bigSummaryInjectLimit: 3,
+  recentRawRounds: 3,
+  referenceRawRounds: 0,
+  referenceSmallSummaryCount: 4,
+  referenceBigSummaryCount: 1,
   injectIntoWorldEngine: false,
   worldEngineMemoryLimit: 1,
   injectIntoPrompt: true,
@@ -73,7 +78,10 @@ const sandbox = {
   },
   WORLD_ENGINE_WORLDBOOK: { async buildPromptSection() { return ''; } },
   WORLD_ENGINE_CHATCACHE: { forScope() { return { afterEvolution() {}, createSnapshot() {} }; } },
-  WORLD_ENGINE_UI: { setMemoryEvolvingUI(active, label) { if (active) { runningLabels.push(label); startSignals.push('ui'); } } },
+  WORLD_ENGINE_UI: {
+    setMemoryEvolvingUI(active, label) { if (active) { runningLabels.push(label); startSignals.push('ui'); } },
+    refresh(auto) { if (auto === true) memoryRefreshes++; }
+  },
   MEMORY_ENGINE_SETTINGS: { getSettings() { return { ...settings }; } },
   WORLD_ENGINE_API: {
     async callApi(prompt) {
@@ -132,19 +140,28 @@ for (const filename of [
     originChatId: 'summary-test',
     status: 'valid'
   }));
-  const history = sandbox.MEMORY_ENGINE._test.buildSmallHistoryContext(contextState, { startLayer: 11 });
-  assert.deepStrictEqual(history.historyBigSummaries.map(item => item.content), ['总述1']);
-  assert.deepStrictEqual(history.historySmallSummaries.map(item => item.content), ['纪要2', '纪要3', '纪要4', '纪要5'],
-    '生成第6条纪要时应读取最近一条总述及最近的第2、3、4、5条纪要，允许内容重叠');
+  const history = sandbox.MEMORY_ENGINE._test.buildSmallHistoryContext(contextState, { startLayer: 35 });
+  assert.deepStrictEqual(history.historyBigSummaries.map(item => item.content), ['总述2']);
+  assert.deepStrictEqual(history.historySmallSummaries.map(item => item.content), ['纪要14', '纪要15', '纪要16', '纪要17'],
+    '参考链必须按“更早总述→前置纪要→本轮”取值，且不同层正文范围不得重叠');
   const prompt = sandbox.MEMORY_ENGINE_SMALL_SUMMARY_PROMPT.buildUserPrompt({
-    startLayer: 11,
-    endLayer: 12,
-    conversation: '第6轮用户正文\n第6轮角色正文',
+    startLayer: 35,
+    endLayer: 36,
+    conversation: '第18轮用户正文\n第18轮角色正文',
     ...history
   });
-  assert.ok(prompt.includes('总述1') && prompt.includes('纪要2') && prompt.includes('纪要5'));
-  assert.ok(prompt.includes('第6轮用户正文') && prompt.includes('第6轮角色正文'),
+  assert.ok(prompt.includes('总述2') && prompt.includes('纪要14') && prompt.includes('纪要17'));
+  assert.ok(prompt.includes('第18轮用户正文') && prompt.includes('第18轮角色正文'),
     '历史参考之外必须同时携带当前这一轮的完整正文');
+
+  const rawReference = sandbox.MEMORY_ENGINE._test.buildTaskReferenceContext(
+    contextState,
+    { startLayer: 3 },
+    { ...settings, referenceRawRounds: 1, referenceSmallSummaryCount: 0, referenceBigSummaryCount: 0 }
+  );
+  assert.ok(rawReference.text.includes('进入城镇。') && rawReference.text.includes('发现城门已经关闭。'),
+    '追加一轮正文参考时必须带上该轮用户输入与 AI 回复');
+  assert.ok(!rawReference.text.includes('这是角色卡的开场白'), '正文参考不得误带已忽略的 AI 开场白');
 }
 
 {
@@ -208,6 +225,13 @@ for (const filename of [
   );
   assert.deepStrictEqual([...hidden], ['user-1', 'ai-1'],
     '有效摘要覆盖正文时只能隐藏最近三轮之外的当前聊天消息');
+  const recentOne = sandbox.MEMORY_ENGINE._test.recentRawRoundMessageIds(
+    messages,
+    1,
+    { firstLayerIsAiOpening: true },
+    { ensureMessageId: message => message.id }
+  );
+  assert.deepStrictEqual([...recentOne], ['user-4', 'ai-4'], '正文保留轮数必须按设置值动态变化');
 }
 
 (async () => {
@@ -263,22 +287,25 @@ for (const filename of [
     sandbox.MEMORY_ENGINE_DATA.saveState(sandbox.MEMORY_ENGINE_DATA.defaultState());
   }
 
+  const refreshesBeforeCombined = memoryRefreshes;
   const combined = await sandbox.MEMORY_ENGINE.manualSmallSummary();
   assert.strictEqual(calls.length, 2, '达到阈值时应先生成并保存小总结，再独立请求大总结');
-  assert.ok(calls[0].includes('事件记忆的纪要整理器'));
+  assert.ok(calls[0].includes('世界进程的纪要记录员'));
   assert.ok(!calls[0].includes('这是角色卡的开场白'), '初始化纪要必须忽略第 0 层 AI 开场白');
   assert.ok(calls[0].includes('守卫说明北方发生叛乱'), '忽略开场白后仍应读取窗口内最新的 AI 回复');
-  assert.ok(!calls[0].includes('事件记忆的总述整理器'));
+  assert.ok(!calls[0].includes('世界进程的总述编纂者'));
   assert.ok(!calls[0].includes('"personal_memory": []'), '未到人物实体任务时不应携带人物实体输出字段');
-  assert.ok(calls[1].includes('事件记忆的总述整理器'));
+  assert.ok(calls[1].includes('世界进程的总述编纂者'));
   assert.ok(!calls[1].includes('既有故事总览'), '总述只能读取本批尚未整理的纪要');
-  assert.ok(!calls[1].includes('事件记忆的纪要整理器'));
+  assert.ok(!calls[1].includes('世界进程的纪要记录员'));
   assert.ok(!calls[1].includes('【最新对话片段】'), '大总结只能读取已落库的小总结与既有大总结');
   assert.deepStrictEqual(runningLabels.slice(0, 2), ['纪要', '总述']);
   assert.deepStrictEqual(startSignals.slice(0, 4), ['status', 'ui', 'status', 'ui'],
     '顶部提示必须先于记忆球运行态刷新，否则会清除自动动画类');
   assert.strictEqual(combined.addedSmall, 1);
   assert.strictEqual(combined.updatedBig, 1);
+  assert.strictEqual(memoryRefreshes, refreshesBeforeCombined + 2,
+    '纪要与随后独立总述各自完成本地解析落库后，都必须自动刷新记忆面板');
   let state = sandbox.MEMORY_ENGINE_DATA.loadState();
   assert.strictEqual(state.event_memory.small_summaries.length, 1);
   assert.strictEqual(state.event_memory.big_summary_cursor, 1);
@@ -318,8 +345,8 @@ for (const filename of [
   calls.length = 0;
   await sandbox.MEMORY_ENGINE.manualBigSummary();
   assert.strictEqual(calls.length, 1);
-  assert.ok(calls[0].includes('事件记忆的总述整理器'));
-  assert.ok(!calls[0].includes('事件记忆的纪要整理器'), '手动大总结只应携带大总结 Prompt');
+  assert.ok(calls[0].includes('世界进程的总述编纂者'));
+  assert.ok(!calls[0].includes('世界进程的纪要记录员'), '手动大总结只应携带大总结 Prompt');
   assert.ok(!calls[0].includes('"personal_memory": []'));
 
   const legacy = sandbox.MEMORY_ENGINE_DATA.defaultState();

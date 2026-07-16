@@ -3,7 +3,6 @@ window.MEMORY_ENGINE = (function() {
   const INJECTION_NAME = 'memory-engine-memory';
   const SENTINEL = '【记忆信息】';
   const DEFAULT_INJECTION_DICE_SIDES = 10000;
-  const RECENT_RAW_ROUND_COUNT = 3;
   const ENTITY_TYPES = ['organization', 'object', 'ability', 'location'];
   const ENTITY_LABELS = { organization: '组织', object: '物件', ability: '能力', location: '地点' };
   let initialized = false, running = false, backfillRunning = false, reconciling = false;
@@ -23,6 +22,9 @@ window.MEMORY_ENGINE = (function() {
   const timelineApi = () => window.MEMORY_ENGINE_TIMELINE;
   function setExternalStatus(text, isError) {
     window.__WE_SetExternalStatus?.(text, !!isError);
+  }
+  function refreshMemoryPanel() {
+    window.WORLD_ENGINE_UI?.refresh?.(true);
   }
   function context() { try { return SillyTavern.getContext(); } catch (_) { return null; } }
   const chat = () => context()?.chat || [];
@@ -121,25 +123,86 @@ window.MEMORY_ENGINE = (function() {
     ) || conversation;
   }
 
-  function buildSmallHistoryContext(state, task) {
+  function previousRawReference(task, roundCount, st) {
+    const count = Math.max(0, parseInt(roundCount) || 0);
+    const all = chat();
+    const boundary = Number.isFinite(Number(task?.startLayer)) ? Number(task.startLayer) : all.length;
+    if (!count || boundary <= 0) return { conversation: '', startLayer: boundary, endLayer: boundary - 1 };
+    const aiLayers = all.map((message, index) => (
+      index < boundary && !(ignoreFirstLayer(st || settings()) && index === 0) && message && !message.is_user ? index : -1
+    )).filter(index => index >= 0).slice(-count);
+    if (!aiLayers.length) return { conversation: '', startLayer: boundary, endLayer: boundary - 1 };
+    const firstAi = aiLayers[0];
+    let start = firstAi;
+    for (let index = firstAi - 1; index >= 0; index--) {
+      if (all[index] && !all[index].is_user) break;
+      start = index;
+    }
+    const end = aiLayers.at(-1);
+    return {
+      conversation: formatMessages(all.slice(start, end + 1), start),
+      startLayer: start,
+      endLayer: end
+    };
+  }
+
+  function buildTaskReferenceContext(state, task, st) {
     const eventMemory = ensureEventState(state);
-    const startLayer = Number.isFinite(Number(task?.startLayer)) ? Number(task.startLayer) : Infinity;
+    const rawCount = st?.referenceRawRounds === undefined ? 1 : Math.max(0, parseInt(st.referenceRawRounds) || 0);
+    const raw = previousRawReference(task, rawCount, st);
+    const rawBoundary = raw.conversation
+      ? raw.startLayer
+      : (Number.isFinite(Number(task?.startLayer)) ? Number(task.startLayer) : Infinity);
     const currentChatId = clean(data()?.getChatId?.());
     const valid = item => item?.status !== 'stale' && item?.status !== 'failed' && clean(item?.content);
-    const beforeTask = item => {
+    const beforeLayer = (item, layer) => {
       const originChatId = clean(item?.originChatId);
       if (originChatId && currentChatId && originChatId !== currentChatId) return true;
-      return Number(item?.endLayer) < startLayer;
+      return Number(item?.endLayer) < layer;
     };
-    const eligibleBig = eventMemory.big_summaries.filter(item => valid(item) && beforeTask(item));
-    const historyBigSummaries = eligibleBig.slice(-1);
-    const historySmallSummaries = eventMemory.small_summaries
-      .filter(item => valid(item) && beforeTask(item)).slice(-4);
-    return { historyBigSummaries, historySmallSummaries };
+    const smallCount = st?.referenceSmallSummaryCount === undefined
+      ? 5 : Math.max(0, parseInt(st.referenceSmallSummaryCount) || 0);
+    const bigCount = st?.referenceBigSummaryCount === undefined
+      ? 1 : Math.max(0, parseInt(st.referenceBigSummaryCount) || 0);
+    const eligibleSmall = eventMemory.small_summaries
+      .filter(item => valid(item) && beforeLayer(item, rawBoundary));
+    const historySmallSummaries = smallCount ? eligibleSmall.slice(-smallCount) : [];
+    const currentChatSmall = historySmallSummaries.find(item => {
+      const originChatId = clean(item?.originChatId);
+      return !originChatId || !currentChatId || originChatId === currentChatId;
+    });
+    const bigBoundary = currentChatSmall ? Number(currentChatSmall.startLayer) : rawBoundary;
+    const eligibleBig = eventMemory.big_summaries
+      .filter(item => valid(item) && beforeLayer(item, bigBoundary));
+    const historyBigSummaries = bigCount ? eligibleBig.slice(-bigCount) : [];
+    const parts = [];
+    if (historyBigSummaries.length) parts.push(`【更早总述】\n${historyBigSummaries.map((item, index) =>
+      `${index + 1}. [楼层 ${Number(item?.startLayer) || 0}-${Number(item?.endLayer) || 0}] ${clean(item?.content)}`
+    ).join('\n')}`);
+    if (historySmallSummaries.length) parts.push(`【前置纪要】\n${historySmallSummaries.map((item, index) =>
+      `${index + 1}. [楼层 ${Number(item?.startLayer) || 0}-${Number(item?.endLayer) || 0}] ${clean(item?.content)}`
+    ).join('\n')}`);
+    if (raw.conversation) parts.push(`【近期正文】\n${filterConversation(raw.conversation, st)}`);
+    return { historyBigSummaries, historySmallSummaries, raw, text: parts.join('\n\n') };
+  }
+
+  function buildSmallHistoryContext(state, task) {
+    const st = settings();
+    const context = buildTaskReferenceContext(state, task, st);
+    return {
+      historyBigSummaries: context.historyBigSummaries,
+      historySmallSummaries: context.historySmallSummaries
+    };
   }
 
   async function buildRequestPrompt(tasks, state, st) {
     const segments = [];
+    const memoryReference = tasks.memory ? buildTaskReferenceContext(state, tasks.memory, st) : null;
+    const sharesReference = Boolean(tasks.memory && tasks.small
+      && Number(tasks.memory.startLayer) === Number(tasks.small.startLayer)
+      && Number(tasks.memory.endLayer) === Number(tasks.small.endLayer));
+    const smallReference = tasks.small && !sharesReference
+      ? buildTaskReferenceContext(state, tasks.small, st) : null;
     if (tasks.memory) {
       const filtered = filterConversation(tasks.memory.conversation, st);
       let worldbook = '';
@@ -153,6 +216,7 @@ window.MEMORY_ENGINE = (function() {
           type: ENTITY_LABELS[type], name: entity.name, description: entity.description
         }))),
         worldbook,
+        referenceContext: memoryReference?.text || '',
         conversation: filtered
       });
       segments.push(`【任务说明】\n${window.MEMORY_ENGINE_PROMPT.TASK_PROMPT || window.MEMORY_ENGINE_PROMPT.SYSTEM_PROMPT}\n\n${user}`);
@@ -160,7 +224,9 @@ window.MEMORY_ENGINE = (function() {
     if (tasks.small) {
       segments.push(`【任务说明】\n${window.MEMORY_ENGINE_SMALL_SUMMARY_PROMPT.SYSTEM_PROMPT}\n\n${window.MEMORY_ENGINE_SMALL_SUMMARY_PROMPT.buildUserPrompt({
         ...tasks.small,
-        ...buildSmallHistoryContext(state, tasks.small),
+        referenceContext: sharesReference && memoryReference?.text
+          ? '沿用同一请求前文人物/实体任务中的【只读辅助参考】，不得把其中旧内容写成本段新增事件。'
+          : (smallReference?.text || ''),
         conversation: filterConversation(tasks.small.conversation, st)
       })}`);
     }
@@ -778,6 +844,7 @@ window.MEMORY_ENGINE = (function() {
       data().saveState(next);
       window.WORLD_ENGINE_CHATCACHE?.forScope?.('memory')?.afterEvolution?.();
       applyInjection();
+      refreshMemoryPanel();
       setExternalStatus(`${taskLabel}完成`);
       return {
         added: added + addedSmall + updatedBig,
@@ -1120,7 +1187,12 @@ window.MEMORY_ENGINE = (function() {
     const base = replayTimeline(state, nodeId);
     const conversation = api?.refsToConversation?.(node.sourceRefs) || '';
     if (!conversation) return false;
-    const extracted = await requestTasks({ memory: { conversation } }, { baseState: base });
+    const repairBounds = sourceBounds(audit.refs, node.endLayer);
+    const extracted = await requestTasks({ memory: {
+      conversation,
+      startLayer: repairBounds.startLayer,
+      endLayer: repairBounds.endLayer
+    } }, { baseState: base });
 
     state = data().loadState();
     timeline = ensureTimelineState(state);
@@ -1137,6 +1209,7 @@ window.MEMORY_ENGINE = (function() {
     node.revision = Math.max(1, Number(node.revision) || 1) + 1;
     node.updatedAt = Date.now();
     data().saveState(replayTimeline(state));
+    refreshMemoryPanel();
     return true;
   }
 
@@ -1161,7 +1234,11 @@ window.MEMORY_ENGINE = (function() {
     const bounds = sourceBounds(nodeAudit.refs, node.endLayer);
     const base = replayTimeline(state, nodeId);
     const extracted = await requestTasks({
-      memory: { conversation },
+      memory: {
+        startLayer: bounds.startLayer,
+        endLayer: bounds.endLayer,
+        conversation
+      },
       small: {
         startLayer: bounds.startLayer,
         endLayer: bounds.endLayer,
@@ -1210,6 +1287,7 @@ window.MEMORY_ENGINE = (function() {
       summary.revision = Math.max(1, Number(summary.revision) || 1) + 1;
     }
     data().saveState(replayTimeline(state));
+    refreshMemoryPanel();
     return true;
   }
 
@@ -1248,6 +1326,7 @@ window.MEMORY_ENGINE = (function() {
     summary.status = 'valid';
     summary.revision = Math.max(1, Number(summary.revision) || 1) + 1;
     data().saveState(state);
+    refreshMemoryPanel();
     return true;
   }
 
@@ -1278,6 +1357,7 @@ window.MEMORY_ENGINE = (function() {
     overview.status = 'valid';
     overview.revision = Math.max(1, Number(overview.revision) || 1) + 1;
     data().saveState(state);
+    refreshMemoryPanel();
     return true;
   }
 
@@ -1512,9 +1592,9 @@ window.MEMORY_ENGINE = (function() {
       ...pendingSmall.map(item => item.sourceRefs || [])
     ]) || [];
     const api = timelineApi();
-    const recentMessageIds = recentRawRoundMessageIds(
-      chat(), RECENT_RAW_ROUND_COUNT, st, api
-    );
+    const keepRawRounds = st.recentRawRounds === undefined
+      ? 1 : Math.max(0, parseInt(st.recentRawRounds) || 0);
+    const recentMessageIds = recentRawRoundMessageIds(chat(), keepRawRounds, st, api);
     const coveredMessageIds = selectHiddenMessageIds(
       coveredRefs, data()?.getChatId?.(), recentMessageIds
     );
@@ -1802,7 +1882,8 @@ window.MEMORY_ENGINE = (function() {
     isRunning: () => running || backfillRunning || reconciling,
     _test: {
       exponentialMemorySample, rollbackLinkedLayer, rewindSummaryCursorForDeletedLayers,
-      buildSmallHistoryContext, parseResponse, selectHiddenMessageIds, recentRawRoundMessageIds
+      buildSmallHistoryContext, buildTaskReferenceContext, previousRawReference,
+      parseResponse, selectHiddenMessageIds, recentRawRoundMessageIds
     }
   };
 })();

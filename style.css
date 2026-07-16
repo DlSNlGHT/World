@@ -1123,6 +1123,15 @@
   gap: 10px;
   margin-bottom: 9px;
 }
+.we-memory-record.is-collapsed .we-memory-record-head {
+  margin-bottom: 0;
+}
+.we-memory-record-body[hidden] {
+  display: none !important;
+}
+.we-memory-toggle-record i {
+  transition: transform 0.16s ease;
+}
 .we-memory-record-title {
   color: var(--we-text);
   font-family: "SimSun", "宋体", "Songti SC", "STSong", serif;

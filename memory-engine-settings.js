@@ -19,6 +19,10 @@ window.MEMORY_ENGINE_SETTINGS = (function() {
     smallSummaryEveryX: 1,
     bigSummaryEveryX: 5,
     bigSummaryInjectLimit: 3,
+    recentRawRounds: 1,
+    referenceRawRounds: 1,
+    referenceSmallSummaryCount: 5,
+    referenceBigSummaryCount: 1,
     injectIntoPrompt: true,
     injectIntoWorldEngine: false,
     worldEngineMemoryLimit: 5,
@@ -45,13 +49,17 @@ window.MEMORY_ENGINE_SETTINGS = (function() {
   // 日常记忆以一轮为最小可重放单元：人物/实体与纪要同轮联合提取。
   // 这里同时覆盖旧存档和 UI 传入值，避免历史设置中的 X 继续生效。
   function normalizeSettings(value) {
+    const merged = { ...DEFAULTS, ...(value || {}) };
     return {
-      ...DEFAULTS,
-      ...(value || {}),
+      ...merged,
       evolveEveryX: 1,
       evolveReadRounds: 1,
       manualReadRounds: 1,
-      smallSummaryEveryX: 1
+      smallSummaryEveryX: 1,
+      recentRawRounds: Math.max(0, parseInt(merged.recentRawRounds) || 0),
+      referenceRawRounds: Math.max(0, parseInt(merged.referenceRawRounds) || 0),
+      referenceSmallSummaryCount: Math.max(0, parseInt(merged.referenceSmallSummaryCount) || 0),
+      referenceBigSummaryCount: Math.max(0, parseInt(merged.referenceBigSummaryCount) || 0)
     };
   }
 
