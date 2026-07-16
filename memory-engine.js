@@ -1033,6 +1033,7 @@ window.MEMORY_ENGINE = (function() {
   async function manualReextract() {
     const st = settings();
     if (st.engineEnabled === false) throw new Error('记忆引擎已关闭');
+    if (running || backfillRunning || reconciling) throw new Error('已有记忆任务正在运行');
     const current = data().loadState();
     const timeline = ensureTimelineState(current);
     const latestNode = timeline.nodes.slice().reverse().find(node => node.kind === 'memory' && node.status === 'valid');
@@ -1045,13 +1046,57 @@ window.MEMORY_ENGINE = (function() {
           || timelineApi()?.digestRefs?.(summary.sourceRefs || []) || '';
         return summary.status === 'valid' && digest === sourceDigest;
       }) : null;
-      latestNode.status = 'stale';
-      if (pairedSummary) pairedSummary.status = 'stale';
-      data().saveState(current);
-      const repaired = await repairMemoryAndSmall(latestNode.id, pairedSummary?.id);
-      if (!repaired) throw new Error('最新一轮人物、实体与纪要未能重新提取');
-      await reconcileHistory();
-      return { replacedNodeId: latestNode.id, replacedSummaryId: pairedSummary?.id || null, state: data().loadState() };
+      const taskLabel = '人物、实体与纪要重新推演';
+      running = true;
+      runningLabel = taskLabel;
+      abortController = new AbortController();
+      setExternalStatus(`正在进行${taskLabel}…`);
+      window.WORLD_ENGINE_UI?.setMemoryEvolvingUI?.(true, runningLabel);
+      let repaired;
+      try {
+        latestNode.status = 'stale';
+        if (pairedSummary) pairedSummary.status = 'stale';
+        data().saveState(current);
+        repaired = await repairMemoryAndSmall(latestNode.id, pairedSummary?.id);
+        if (!repaired) throw new Error('最新一轮人物、实体与纪要未能重新提取');
+        setExternalStatus(`${taskLabel}完成`);
+      } catch (error) {
+        // 请求失败或用户停止时恢复旧节点，不能把一次未完成的重新推演留成 stale。
+        const rollback = data().loadState();
+        const rollbackNode = ensureTimelineState(rollback).nodes.find(node => node.id === latestNode.id);
+        const rollbackSummary = pairedSummary
+          ? ensureEventState(rollback).small_summaries.find(summary => summary.id === pairedSummary.id)
+          : null;
+        if (rollbackNode?.status === 'stale') rollbackNode.status = 'valid';
+        if (rollbackSummary?.status === 'stale') rollbackSummary.status = 'valid';
+        data().saveState(rollback);
+        applyInjection();
+        const stopped = abortController?.signal?.aborted || error?.name === 'AbortError';
+        setExternalStatus(stopped ? `${taskLabel}已停止` : `${taskLabel}失败：${error?.message || error}`, !stopped);
+        throw error;
+      } finally {
+        running = false;
+        runningLabel = '';
+        abortController = null;
+        window.WORLD_ENGINE_UI?.setMemoryEvolvingUI?.(false, '');
+      }
+
+      // 与原动作一致：重做受本轮纪要影响的既有总述，并在仍满足阈值时继续生成总述。
+      const reconciliation = await reconcileHistory();
+      const afterReconcile = data().loadState();
+      const dueBigTask = buildBigTask(afterReconcile, false);
+      const bigResult = dueBigTask
+        ? await runTasks({ big: dueBigTask }, { baseState: afterReconcile, saveCheckpoint: false })
+        : null;
+      const updated = Math.max(1, Number(repaired?.updated || 0));
+      return {
+        added: updated + Number(reconciliation?.repairedCount || 0) + Number(bigResult?.updatedBig || 0),
+        extracted: Number(repaired?.extracted || 0),
+        updatedBig: Number(reconciliation?.updatedBig || 0) + Number(bigResult?.updatedBig || 0),
+        replacedNodeId: latestNode.id,
+        replacedSummaryId: pairedSummary?.id || null,
+        state: bigResult?.state || data().loadState()
+      };
     }
     // 旧数据尚未产生时间链节点时，保留一次兼容回退；新节点产生后不再依赖 checkpoint。
     const checkpoint = data().loadCheckpoint();
@@ -1245,6 +1290,9 @@ window.MEMORY_ENGINE = (function() {
         conversation
       }
     }, { baseState: base });
+    if (!clean(extracted.smallSummary)) {
+      throw new Error('API 未返回纪要，已保留重新推演前的记录');
+    }
 
     state = data().loadState();
     timeline = ensureTimelineState(state);
@@ -1288,7 +1336,9 @@ window.MEMORY_ENGINE = (function() {
     }
     data().saveState(replayTimeline(state));
     refreshMemoryPanel();
-    return true;
+    const extractedCount = (extracted.personal || []).length
+      + ENTITY_TYPES.reduce((sum, type) => sum + (extracted.entities?.[type] || []).length, 0);
+    return { repaired: true, extracted: extractedCount, updated: extractedCount + 1 };
   }
 
   async function repairSmallSummary(summaryId) {
@@ -1365,6 +1415,7 @@ window.MEMORY_ENGINE = (function() {
     if (reconciling || running || backfillRunning || settings().engineEnabled === false) return { skipped: true };
     reconciling = true;
     let announced = false;
+    let repairedCount = 0, updatedBig = 0;
     const auditReport = newHistoryAuditReport();
     try {
       let state = data().loadState();
@@ -1385,6 +1436,7 @@ window.MEMORY_ENGINE = (function() {
         return { repaired: false };
       }
       runningLabel = '历史记忆对账';
+      abortController = new AbortController();
       setExternalStatus(historyAuditMessage(auditReport, 'detected'));
       window.WORLD_ENGINE_UI?.setMemoryEvolvingUI?.(true, runningLabel);
       announced = true;
@@ -1404,19 +1456,23 @@ window.MEMORY_ENGINE = (function() {
         const repairedTogether = pairedSummary
           ? await repairMemoryAndSmall(node.id, pairedSummary.id)
           : false;
-        if (!repairedTogether) await repairMemoryNode(node.id);
+        if (repairedTogether) repairedCount += Math.max(1, Number(repairedTogether.updated || 0));
+        else if (await repairMemoryNode(node.id)) repairedCount += 1;
       }
       state = data().loadState();
       auditStoredSources(state);
       data().saveState(state);
       for (const summary of ensureEventState(data().loadState()).small_summaries.slice()) {
-        if (summary.status === 'stale') await repairSmallSummary(summary.id);
+        if (summary.status === 'stale' && await repairSmallSummary(summary.id)) repairedCount += 1;
       }
       state = data().loadState();
       auditStoredSources(state);
       data().saveState(state);
       for (const overview of ensureEventState(data().loadState()).big_summaries.slice()) {
-        if (overview.status === 'stale') await repairBigSummary(overview.id);
+        if (overview.status === 'stale' && await repairBigSummary(overview.id)) {
+          repairedCount += 1;
+          updatedBig += 1;
+        }
       }
       state = data().loadState();
       auditStoredSources(state);
@@ -1428,7 +1484,7 @@ window.MEMORY_ENGINE = (function() {
       if (unresolved) throw new Error('仍有相关记忆或纪要未能重建');
       applyInjection();
       setExternalStatus(historyAuditMessage(auditReport, 'success'));
-      return { repaired: true };
+      return { repaired: true, repairedCount, updatedBig };
     } catch (error) {
       const state = data().loadState();
       auditStoredSources(state, auditReport);
@@ -1439,6 +1495,7 @@ window.MEMORY_ENGINE = (function() {
     } finally {
       reconciling = false;
       runningLabel = '';
+      abortController = null;
       if (announced) window.WORLD_ENGINE_UI?.setMemoryEvolvingUI?.(false, '');
     }
   }

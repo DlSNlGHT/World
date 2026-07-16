@@ -6041,7 +6041,7 @@ window.WORLD_ENGINE_UI = (function() {
     if (!window.MEMORY_ENGINE?.manualReextract) { showToast('记忆推演入口未就绪', true); return; }
     try {
       const result = await window.MEMORY_ENGINE.manualReextract();
-      showToast(`记忆重新推演完成，写入或更新 ${result?.added || 0} 项`);
+      showToast(`记忆重新推演完成，写入或更新 ${result?.added ?? '未知'} 项`);
     } catch (error) { showToast(`记忆重新推演失败：${error?.message || error}`, true); }
   }
 
