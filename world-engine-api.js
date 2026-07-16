@@ -8,7 +8,7 @@ window.WORLD_ENGINE_API = (function() {
     model: 'gpt-3.5-turbo',
     connectionMode: 'direct',
     temperature: 0.7,
-    maxTokens: 2000,
+    maxTokens: 65000,
     apiTimeoutMs: 120000
   });
   let cachedSettings = null;
@@ -21,7 +21,7 @@ window.WORLD_ENGINE_API = (function() {
       apiKey: '',
       model: 'gpt-3.5-turbo',
       temperature: 0.7,
-      maxTokens: 2000,
+      maxTokens: 65000,
       apiAutoRetries: 0,
       engineEnabled: true,
       firstLayerIsAiOpening: true,
@@ -107,7 +107,11 @@ window.WORLD_ENGINE_API = (function() {
     };
     const raw = window.WORLD_ENGINE_STORE.getItem('world_engine_settings');
     if (raw) {
-      try { cachedSettings = { ...defaults, ...JSON.parse(raw) }; return cachedSettings; } catch(e) {}
+      try {
+        cachedSettings = { ...defaults, ...JSON.parse(raw) };
+        if (parseInt(cachedSettings.maxTokens) === 4096) cachedSettings.maxTokens = 65000;
+        return cachedSettings;
+      } catch(e) {}
     }
     cachedSettings = defaults;
     return cachedSettings;
@@ -268,13 +272,15 @@ window.WORLD_ENGINE_API = (function() {
       ? { ...REQUEST_DEFAULTS, ...settingsOverride }
       : getSettings();
     const selectedTemperature = temperature ?? settings.temperature;
-    const selectedMaxTokens = maxTokens ?? settings.maxTokens;
+    const configuredMaxTokens = Math.max(1, parseInt(maxTokens ?? settings.maxTokens) || 65000);
+    // 兼容旧设置：曾保存为 4096 的输出上限自动提升到 65000。
+    const selectedMaxTokens = configuredMaxTokens === 4096 ? 65000 : configuredMaxTokens;
 
     const body = {
       model: settings.model || 'gpt-3.5-turbo',
       messages: [{ role: 'user', content: prompt }],
       temperature: Number.isFinite(Number(selectedTemperature)) ? Math.max(0, Number(selectedTemperature)) : 0.7,
-      max_tokens: Math.max(1, parseInt(selectedMaxTokens) || 2000)
+      max_tokens: selectedMaxTokens
     };
 
     // [FIX] 经酒馆代理：绕过第三方 API 的 CORS 限制，由酒馆 Node 服务端转发

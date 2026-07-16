@@ -1105,7 +1105,7 @@ window.WORLD_ENGINE_UI = (function() {
     const summaryBackfillSmallEveryX = Math.max(1, parseInt(settings.summaryBackfillSmallEveryX) || 5);
     const summaryBackfillBigEveryX = Math.max(1, parseInt(settings.summaryBackfillBigEveryX) || 5);
     const apiTemperature = Number.isFinite(Number(settings.temperature)) ? Math.max(0, Number(settings.temperature)) : 0.2;
-    const apiMaxTokens = Math.max(1, parseInt(settings.maxTokens) || 2000);
+    const apiMaxTokens = Math.max(1, parseInt(settings.maxTokens) || 65000);
     const apiTimeoutSec = Math.max(0, Math.round((Number(settings.apiTimeoutMs) || 120000) / 1000));
 
     const apiBody = `
@@ -3353,7 +3353,7 @@ window.WORLD_ENGINE_UI = (function() {
     const lastDayVal = (core.getLastStoryDay && core.getLastStoryDay() != null) ? core.getLastStoryDay() : '';
     const tv = (k, d) => (settings[k] != null && settings[k] !== '') ? settings[k] : d;
     const apiTemperature = Number.isFinite(Number(settings.temperature)) ? Math.max(0, Number(settings.temperature)) : 0.7;
-    const apiMaxTokens = Math.max(1, parseInt(settings.maxTokens) || 2000);
+    const apiMaxTokens = Math.max(1, parseInt(settings.maxTokens) || 65000);
     const apiAutoRetries = Math.max(0, parseInt(settings.apiAutoRetries) || 0);
     const apiTimeoutMs = Number.isFinite(Number(settings.apiTimeoutMs)) ? Number(settings.apiTimeoutMs) : 120000;
     const apiTimeoutSec = Math.max(0, Math.round(apiTimeoutMs / 1000));
@@ -4751,7 +4751,7 @@ window.WORLD_ENGINE_UI = (function() {
           apiKey: gv('we-api-key') || '',
           model: gv('we-model') || 'gpt-3.5-turbo',
           temperature: Number.isFinite(temperatureRaw) ? Math.max(0, temperatureRaw) : 0.2,
-          maxTokens: Math.max(1, parseInt(gv('we-max-tokens')) || 2000),
+          maxTokens: Math.max(1, parseInt(gv('we-max-tokens')) || 65000),
           apiTimeoutMs: Number.isFinite(timeoutSecRaw) ? Math.max(0, Math.round(timeoutSecRaw * 1000)) : 120000,
           connectionMode: document.getElementById('we-connection-mode')?.value === 'proxy' ? 'proxy' : 'direct',
           evolveMode: gv('we-memory-evolve-mode') === 'manual' ? 'manual' : 'auto',
@@ -4954,7 +4954,7 @@ window.WORLD_ENGINE_UI = (function() {
           apiKey: document.getElementById('we-api-key')?.value || '',
           model: document.getElementById('we-model')?.value || 'gpt-3.5-turbo',
           temperature: Number.isFinite(temperatureRaw) ? Math.max(0, temperatureRaw) : 0.7,
-          maxTokens: Math.max(1, parseInt(gv('we-max-tokens')) || 2000),
+          maxTokens: Math.max(1, parseInt(gv('we-max-tokens')) || 65000),
           apiAutoRetries: Math.max(0, parseInt(gv('we-api-auto-retries')) || 0),
           apiTimeoutMs: Number.isFinite(timeoutSecRaw) ? Math.max(0, Math.round(timeoutSecRaw * 1000)) : 120000,
           connectionMode: document.getElementById('we-connection-mode')?.value === 'proxy' ? 'proxy' : 'direct',
@@ -5350,7 +5350,7 @@ window.WORLD_ENGINE_UI = (function() {
           temperature: Number.isFinite(parseFloat(document.getElementById('we-temperature')?.value))
             ? Math.max(0, parseFloat(document.getElementById('we-temperature')?.value))
             : (requestScope === 'memory' ? 0.2 : 0.7),
-          maxTokens: Math.max(1, parseInt(document.getElementById('we-max-tokens')?.value) || 2000),
+          maxTokens: Math.max(1, parseInt(document.getElementById('we-max-tokens')?.value) || 65000),
           apiTimeoutMs: Number.isFinite(parseFloat(document.getElementById('we-api-timeout-sec')?.value)) ? Math.max(0, Math.round(parseFloat(document.getElementById('we-api-timeout-sec')?.value) * 1000)) : 120000,
           connectionMode: document.getElementById('we-connection-mode')?.value === 'proxy' ? 'proxy' : 'direct'
         };

@@ -8,7 +8,7 @@ window.MEMORY_ENGINE_SETTINGS = (function() {
     model: 'gpt-3.5-turbo',
     connectionMode: 'direct',
     temperature: 0.2,
-    maxTokens: 2000,
+    maxTokens: 65000,
     apiTimeoutMs: 120000,
     engineEnabled: true,
     firstLayerIsAiOpening: true,
@@ -50,8 +50,11 @@ window.MEMORY_ENGINE_SETTINGS = (function() {
   // 这里同时覆盖旧存档和 UI 传入值，避免历史设置中的 X 继续生效。
   function normalizeSettings(value) {
     const merged = { ...DEFAULTS, ...(value || {}) };
+    const savedMaxTokens = Math.max(1, parseInt(merged.maxTokens) || 65000);
     return {
       ...merged,
+      // 旧版部分预设把输出上限保存成 4096；升级后自动迁移，避免继续截断 API 返回。
+      maxTokens: savedMaxTokens === 4096 ? 65000 : savedMaxTokens,
       evolveEveryX: 1,
       evolveReadRounds: 1,
       manualReadRounds: 1,
