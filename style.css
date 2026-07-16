@@ -1346,6 +1346,24 @@
   padding-right: 82px;
 }
 
+.we-event-title { color: var(--event-level); }
+.we-event-level-badge {
+  color: var(--event-level);
+  background: color-mix(in srgb, var(--event-level) 13%, transparent);
+}
+.we-event-type-badge {
+  color: var(--event-type);
+  background: color-mix(in srgb, var(--event-type) 13%, transparent);
+}
+.we-event-stage-badge {
+  color: var(--event-accent);
+  background: color-mix(in srgb, var(--event-accent) 13%, transparent);
+}
+.we-event-result-badge {
+  color: var(--event-result);
+  background: color-mix(in srgb, var(--event-result) 13%, transparent);
+}
+
 .we-event-meta {
   font-size: 11px;
   color: var(--we-text3);
@@ -1366,6 +1384,8 @@
   letter-spacing: 2px;
   opacity: 0.78;
   pointer-events: none;
+  color: var(--event-stamp);
+  border-color: var(--event-stamp);
 }
 
 .we-event-item-terminal > .we-event-meta {
@@ -2359,6 +2379,7 @@
   background: rgba(255,255,255,0.06);
   border: 1px solid currentColor;
   border-radius: 8px;
+  color: var(--event-countdown);
   padding: 0 7px;
   opacity: 0.92;
   animation: we-countdown-pulse 2.2s ease-in-out infinite;
@@ -3800,6 +3821,46 @@
   --we-section-enemies: #923740;
   --we-section-economy: #765313;
   --we-section-blackbox: #5d496d;
+}
+
+/* 浅色主题不能直接使用事件链为深色底设计的银白等级色。
+   保留原始等级/类型/阶段色相，同时混入主题正文色以满足可读性。 */
+:root[data-we-theme="paper"] .we-event-title,
+:root[data-we-theme="sakura"] .we-event-title,
+:root[data-we-theme="paper"] .we-event-level-badge,
+:root[data-we-theme="sakura"] .we-event-level-badge {
+  color: color-mix(in srgb, var(--event-level) 35%, var(--we-text));
+}
+:root[data-we-theme="paper"] .we-event-type-badge,
+:root[data-we-theme="sakura"] .we-event-type-badge {
+  color: color-mix(in srgb, var(--event-type) 58%, var(--we-text));
+}
+:root[data-we-theme="paper"] .we-event-stage-badge,
+:root[data-we-theme="sakura"] .we-event-stage-badge {
+  color: color-mix(in srgb, var(--event-accent) 55%, var(--we-text));
+}
+:root[data-we-theme="paper"] .we-event-result-badge,
+:root[data-we-theme="sakura"] .we-event-result-badge {
+  color: color-mix(in srgb, var(--event-result) 52%, var(--we-text));
+}
+:root[data-we-theme="paper"] .we-event-level-badge,
+:root[data-we-theme="sakura"] .we-event-level-badge,
+:root[data-we-theme="paper"] .we-event-type-badge,
+:root[data-we-theme="sakura"] .we-event-type-badge,
+:root[data-we-theme="paper"] .we-event-stage-badge,
+:root[data-we-theme="sakura"] .we-event-stage-badge,
+:root[data-we-theme="paper"] .we-event-result-badge,
+:root[data-we-theme="sakura"] .we-event-result-badge {
+  background: color-mix(in srgb, currentColor 12%, var(--we-bg2));
+}
+:root[data-we-theme="paper"] .we-event-countdown,
+:root[data-we-theme="sakura"] .we-event-countdown {
+  color: color-mix(in srgb, var(--event-countdown) 54%, var(--we-text));
+}
+:root[data-we-theme="paper"] .we-event-stamp,
+:root[data-we-theme="sakura"] .we-event-stamp {
+  color: color-mix(in srgb, var(--event-stamp) 52%, var(--we-text));
+  border-color: color-mix(in srgb, var(--event-stamp) 52%, var(--we-text));
 }
 
 /* 小字号元数据不再靠降低整卡透明度区分等级。 */

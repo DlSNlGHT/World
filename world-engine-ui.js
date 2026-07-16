@@ -2161,7 +2161,7 @@ window.WORLD_ENGINE_UI = (function() {
       if (e.evolveResult && !isTerminal) {
         const resultColors = { '成功':'#7a9a7a', '保持':'#b8a070', '受挫':'#c46a6a' };
         const color = resultColors[e.evolveResult] || '#888';
-        metaExtra = ` <span class="we-badge" style="background:${color}22;color:${color};">${e.evolveResult}</span>`;
+        metaExtra = ` <span class="we-badge we-event-result-badge" style="--event-result:${color};">${e.evolveResult}</span>`;
       }
       // 阶段进度条
       let progressHtml = '';
@@ -2188,7 +2188,7 @@ window.WORLD_ENGINE_UI = (function() {
         const left = keepRounds - (curRound - e._terminalSince) + 1;
         if (left >= 1) {
           const cdColor = e.stage === '已完成' ? '#58e8b3' : '#e07465';
-          countdownHtml = ` <span class="we-badge we-event-countdown" style="color:${cdColor};" title="该事件在 ${left} 轮后自动清退"><i class="fa-regular fa-clock"></i>剩余${left}轮</span>`;
+          countdownHtml = ` <span class="we-badge we-event-countdown" style="--event-countdown:${cdColor};" title="该事件在 ${left} 轮后自动清退"><i class="fa-regular fa-clock"></i>剩余${left}轮</span>`;
         }
       }
       const terminalStamp = {
@@ -2210,12 +2210,12 @@ window.WORLD_ENGINE_UI = (function() {
       const metaStyle = isTerminal
         ? 'style="color:var(--we-text2);"'
         : '';
-      const stageBadge = isTerminal ? '' : ` <span class="we-badge" style="background:${color}22;color:${color};">${e.stage}</span>`;
+      const stageBadge = isTerminal ? '' : ` <span class="we-badge we-event-stage-badge">${e.stage}</span>`;
       const metaText = isTerminal
         ? (e.desc ? u(e.desc) : '')
         : `${e.stageRound||1}/9 ${e.desc ? '— '+u(e.desc) : ''}${metaExtra}`;
       const stampHtml = isTerminal && terminalStamp
-        ? `<div class="we-event-stamp" style="border-color:${terminalStamp.color};color:${terminalStamp.color};">${terminalStamp.text}</div>`
+        ? `<div class="we-event-stamp" style="--event-stamp:${terminalStamp.color};">${terminalStamp.text}</div>`
         : '';
       const actionHtml = isEditing ? '' : `
         <div class="we-event-actions">
@@ -2226,7 +2226,7 @@ window.WORLD_ENGINE_UI = (function() {
       const editHtml = isEditing ? renderEventEditor(e, scope, eventIndex) : '';
       return `<div class="${itemClass}" style="${itemStyle}">
         ${stampHtml}
-        <div class="we-event-name"><span style="color:${levelColor};">${u(e.name)}</span> <span class="we-badge" style="background:${levelColor}22;color:${levelColor};">Lv.${e.level||'?'}</span> <span class="we-badge" style="background:${typeColor}22;color:${typeColor};">${typeName}</span>${countdownHtml}${stageBadge}${extras}</div>
+        <div class="we-event-name"><span class="we-event-title">${u(e.name)}</span> <span class="we-badge we-event-level-badge">Lv.${e.level||'?'}</span> <span class="we-badge we-event-type-badge">${typeName}</span>${countdownHtml}${stageBadge}${extras}</div>
         ${metaText ? `<div class="we-event-meta" ${metaStyle}>${metaText}</div>` : ''}
         ${editHtml}
         ${actionHtml}
