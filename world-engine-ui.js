@@ -889,9 +889,9 @@ window.WORLD_ENGINE_UI = (function() {
 
   const MEMORY_SETTINGS_TABS = [
     { key: 'common', label: '常用' },
-    { key: 'mechanics', label: '本地机制' },
     { key: 'link', label: '联动' },
     { key: 'advanced', label: '高级' },
+    { key: 'mechanics', label: '本地机制' },
     { key: 'archive', label: '存档' },
     { key: 'worldbook', label: '世界书' },
     { key: 'debug', label: '调试' },
@@ -1092,6 +1092,7 @@ window.WORLD_ENGINE_UI = (function() {
     const mode = settings.evolveMode === 'manual' ? 'manual' : 'auto';
     const bigSummaryEveryX = Math.max(1, parseInt(settings.bigSummaryEveryX) || 5);
     const bigSummaryInjectLimit = Math.max(1, parseInt(settings.bigSummaryInjectLimit) || 3);
+    const hideCoveredRawText = settings.hideCoveredRawText !== false;
     const recentRawRounds = Math.max(0, parseInt(settings.recentRawRounds) || 0);
     const referenceRawRounds = Math.max(0, parseInt(settings.referenceRawRounds) || 0);
     const referenceSmallSummaryCount = Math.max(0, parseInt(settings.referenceSmallSummaryCount) || 0);
@@ -1208,8 +1209,15 @@ window.WORLD_ENGINE_UI = (function() {
 
     const mechanicsBody = `
       <div class="we-input-group">
+        <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
+          <input type="checkbox" id="we-memory-hide-covered-raw" ${hideCoveredRawText ? 'checked' : ''}>
+          隐藏正文
+        </label>
+        <div style="font-size:11px;color:var(--we-text3);margin-top:3px;">开启后，只有被有效纪要或总述明确覆盖的旧正文才会隐藏；关闭并保存后恢复、保留全部正文，下面的“保留最近正文轮数”不再生效。</div>
+      </div>
+      <div class="we-input-group">
         <label>保留最近正文轮数</label>
-        <input type="number" id="we-memory-recent-raw-rounds" min="0" step="1" value="${recentRawRounds}" style="width:100%;">
+        <input type="number" id="we-memory-recent-raw-rounds" min="0" step="1" value="${recentRawRounds}" style="width:100%;" ${hideCoveredRawText ? '' : 'disabled'}>
         <div style="font-size:11px;color:var(--we-text3);margin-top:3px;">最近多少个 AI 回合的用户与 AI 正文始终不隐藏；0 表示不额外保留。更早正文只有在有效纪要或总述的来源范围明确覆盖时才会隐藏。</div>
       </div>
       <div class="we-input-group">
@@ -4736,6 +4744,16 @@ window.WORLD_ENGINE_UI = (function() {
     bindFilterControls('world');
     bindFilterControls('memory');
 
+    const memoryHideCoveredRaw = document.getElementById('we-memory-hide-covered-raw');
+    const memoryRecentRawRounds = document.getElementById('we-memory-recent-raw-rounds');
+    if (memoryHideCoveredRaw && memoryRecentRawRounds) {
+      const syncRawRetentionAvailability = () => {
+        memoryRecentRawRounds.disabled = !memoryHideCoveredRaw.checked;
+      };
+      memoryHideCoveredRaw.onchange = syncRawRetentionAvailability;
+      syncRawRetentionAvailability();
+    }
+
     const memorySaveBtn = document.getElementById('we-save-memory-settings');
     if (memorySaveBtn) {
       memorySaveBtn.onclick = () => {
@@ -4761,6 +4779,7 @@ window.WORLD_ENGINE_UI = (function() {
           smallSummaryEveryX: 1,
           bigSummaryEveryX: Math.max(1, parseInt(gv('we-memory-big-summary-every')) || 5),
           bigSummaryInjectLimit: Math.max(1, parseInt(gv('we-memory-big-summary-inject-limit')) || 3),
+          hideCoveredRawText: document.getElementById('we-memory-hide-covered-raw')?.checked !== false,
           recentRawRounds: Math.max(0, parseInt(gv('we-memory-recent-raw-rounds')) || 0),
           referenceRawRounds: Math.max(0, parseInt(gv('we-memory-reference-raw-rounds')) || 0),
           referenceSmallSummaryCount: Math.max(0, parseInt(gv('we-memory-reference-small-count')) || 0),

@@ -22,6 +22,7 @@ const settings = {
   smallSummaryEveryX: 2,
   bigSummaryEveryX: 1,
   bigSummaryInjectLimit: 3,
+  hideCoveredRawText: true,
   recentRawRounds: 3,
   referenceRawRounds: 0,
   referenceSmallSummaryCount: 4,
@@ -262,6 +263,10 @@ for (const filename of [
       ]
     }];
     sandbox.MEMORY_ENGINE_DATA.saveState(editedState);
+    settings.hideCoveredRawText = false;
+    sandbox.MEMORY_ENGINE.applyInjection();
+    assert.deepStrictEqual(hiddenWanted, [], '关闭隐藏正文后必须恢复并保留全部正文');
+    settings.hideCoveredRawText = true;
     calls.length = 0;
     await sandbox.MEMORY_ENGINE.prepareHistoryForGeneration();
     assert.strictEqual(calls.length, 0, '生成前只能撤下失效摘要，不得调用后台 API');

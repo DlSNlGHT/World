@@ -1592,12 +1592,13 @@ window.MEMORY_ENGINE = (function() {
       ...pendingSmall.map(item => item.sourceRefs || [])
     ]) || [];
     const api = timelineApi();
-    const keepRawRounds = st.recentRawRounds === undefined
-      ? 1 : Math.max(0, parseInt(st.recentRawRounds) || 0);
-    const recentMessageIds = recentRawRoundMessageIds(chat(), keepRawRounds, st, api);
-    const coveredMessageIds = selectHiddenMessageIds(
-      coveredRefs, data()?.getChatId?.(), recentMessageIds
-    );
+    const coveredMessageIds = (() => {
+      if (st.hideCoveredRawText === false) return new Set();
+      const keepRawRounds = st.recentRawRounds === undefined
+        ? 1 : Math.max(0, parseInt(st.recentRawRounds) || 0);
+      const recentMessageIds = recentRawRoundMessageIds(chat(), keepRawRounds, st, api);
+      return selectHiddenMessageIds(coveredRefs, data()?.getChatId?.(), recentMessageIds);
+    })();
     syncHiddenMessages(coveredMessageIds, '同步正文覆盖失败');
     if (!sections.length) { clearInjection(); return ''; }
     const content = `${SENTINEL}\n事件总结记录对话中已经发生的剧情；人物条目是当前场景人物持有或明确知晓的主观记忆，允许彼此矛盾；实体条目记录相关组织、物件、能力与地点的当前描述和本地历史。\n\n${sections.join('\n\n')}`;

@@ -19,6 +19,7 @@ window.MEMORY_ENGINE_SETTINGS = (function() {
     smallSummaryEveryX: 1,
     bigSummaryEveryX: 5,
     bigSummaryInjectLimit: 3,
+    hideCoveredRawText: true,
     recentRawRounds: 1,
     referenceRawRounds: 1,
     referenceSmallSummaryCount: 5,
