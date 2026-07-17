@@ -583,7 +583,7 @@ window.WORLD_ENGINE_UI = (function() {
     const items = Array.isArray(state.event_memory?.big_summaries) ? state.event_memory.big_summaries : [];
     const editor = (big, isNew) => `<div class="we-memory-editor">
       <div class="we-memory-form-grid"><div class="we-input-group"><label>起始楼层</label><input class="we-memory-big-start" type="number" min="0" value="${h(String(big.startLayer ?? 0))}"></div><div class="we-input-group"><label>结束楼层</label><input class="we-memory-big-end" type="number" min="0" value="${h(String(big.endLayer ?? 0))}"></div></div>
-      <div class="we-input-group"><label>总述内容</label><textarea class="we-memory-big-content" rows="10">${h(big.content || '')}</textarea><div class="we-hint">API 以 500–2000 字为目标，超出时仍完整保留；删除总述不会回退纪要整理游标。</div></div>
+      <div class="we-input-group"><label>总述内容</label><textarea class="we-memory-big-content" rows="10">${h(big.content || '')}</textarea><div class="we-hint">API 目标下限为 500 字，上限为本批纪要正文的一半；上限不足 500 时上下限均为 500 字。超出时仍完整保留；删除总述不会回退纪要整理游标。</div></div>
       <div class="we-memory-editor-actions"><button class="we-btn we-memory-cancel-edit" type="button">取消</button><button class="we-btn we-btn-primary we-memory-save-big" data-new="${isNew ? 'true' : 'false'}" type="button">保存</button></div>
     </div>`;
     const draft = _memoryEditingBig === '__new__'
@@ -1170,7 +1170,7 @@ window.WORLD_ENGINE_UI = (function() {
       <div style="font-size:11px;color:var(--we-text3);margin-bottom:8px;">人物、实体和纪要固定以一轮为单位处理，并合并为一次 API 请求。重 Roll 不计入新轮次。</div>
       <div class="we-input-group">
         <label>总述整理</label>
-        <div style="font-size:11px;color:var(--we-text3);margin-top:3px;">每轮生成一条 50–200 字的纪要；每累计 X 条尚未整理的纪要，独立生成一条 500–2000 字的总述，历史总述不会被覆盖。</div>
+        <div style="font-size:11px;color:var(--we-text3);margin-top:3px;">每轮生成一条目标 50–200 字的纪要；每累计 X 条尚未整理的纪要，独立生成总述。总述目标下限为 500 字，上限为本批纪要正文的一半；上限不足 500 时上下限均为 500 字。超出目标仍完整保存，历史总述不会被覆盖。</div>
       </div>
       <div class="we-input-group">
         <label>总述间隔轮数（X）</label>

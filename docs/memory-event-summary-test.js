@@ -168,6 +168,11 @@ for (const filename of [
 {
   const longSmall = '纪'.repeat(201);
   const longBig = '述'.repeat(2001);
+  const lengthPrompt = sandbox.MEMORY_ENGINE_BIG_SUMMARY_PROMPT.buildUserPrompt({
+    summaries: [{ content: '甲'.repeat(600) }, { content: '乙'.repeat(600) }]
+  });
+  assert.ok(lengthPrompt.includes('不超过 600 字'), '总述 Prompt 必须写入计算后的具体上限');
+  assert.ok(!lengthPrompt.includes('本批纪要正文合计'), '总述 Prompt 不应暴露纪要合计字数');
   assert.strictEqual(
     sandbox.MEMORY_ENGINE._test.parseResponse(JSON.stringify({ small_summary: longSmall }), { small: {} }).smallSummary,
     longSmall,

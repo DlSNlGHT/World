@@ -22,7 +22,7 @@ window.MEMORY_ENGINE_BIG_SUMMARY_PROMPT = (function() {
     const records = Array.isArray(input.summaries) ? input.summaries : [];
     const sourceLength = records.reduce((total, item) => total + clean(item?.content).length, 0);
     const maxLength = Math.max(500, Math.ceil(sourceLength / 2));
-    return `【本次篇幅】\n本批纪要正文合计 ${sourceLength} 字；总述正文不少于 500 字、不超过 ${maxLength} 字。\n\n【待整理的阶段纪要】\n${records.length ? records.map((item, index) =>
+    return `【本次篇幅】\n总述正文不少于 500 字、不超过 ${maxLength} 字。\n\n【待整理的阶段纪要】\n${records.length ? records.map((item, index) =>
       `${index + 1}. [楼层 ${Number(item?.startLayer) || 0}-${Number(item?.endLayer) || 0}] ${clean(item?.content)}`
     ).join('\n') : '（暂无）'}`;
   }
