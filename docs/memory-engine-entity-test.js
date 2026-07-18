@@ -36,7 +36,7 @@ for (const file of ['memory-engine-settings.js', 'memory-engine-data.js', 'memor
   'memory-engine-small-summary-prompt.js', 'memory-engine-big-summary-prompt.js', 'memory-engine.js']) {
   vm.runInThisContext(fs.readFileSync(path.join(root, file), 'utf8'), { filename: file });
 }
-WORLD_ENGINE_STORE.setItem('memory_engine_settings', JSON.stringify({ apiAutoRetries: 3 }));
+WORLD_ENGINE_STORE.setItem('memory_engine_settings', JSON.stringify({ apiAutoRetries: 3, injectIntoWorldEngine: true }));
 
 function assert(condition, message) {
   if (!condition) throw new Error(message);
@@ -60,7 +60,7 @@ async function run() {
     }],
     entity_updates: [
       { type: 'organization', name: '听潮阁', description: '活动于沿海地区的情报组织。', event: '', time: '' },
-      { type: 'object', name: '断潮剑', description: '一柄剑格刻有海浪纹的旧剑，目前剑身折损。', event: '断潮剑在黑礁湾交战中折损。', time: '嘉宁三十年正月十五' },
+      { type: 'object', name: '断潮剑', aliases: ['断潮', '海纹旧剑'], description: '一柄剑格刻有海浪纹的旧剑，目前剑身折损。', event: '断潮剑在黑礁湾交战中折损。', time: '嘉宁三十年正月十五' },
       { type: 'ability', name: '听潮', description: '能够从潮声中分辨远处动静的感知能力。', event: '沈鹤亭在黑礁湾觉醒听潮。', time: '嘉宁三十年正月十五' },
       { type: 'location', name: '黑礁湾', description: '遍布黑色礁石的海湾。', event: '沈鹤亭在此取出断潮剑。', time: '刚才' }
     ],
@@ -71,6 +71,8 @@ async function run() {
   assert(first.addedPersonal === 1, '应写入一条人物记忆');
   let state = MEMORY_ENGINE_DATA.loadState();
   assert(state.entity_memory.object[0].id === 'obj_000001', '物件 ID 应由本地生成');
+  assert(JSON.stringify(state.entity_memory.object[0].aliases) === JSON.stringify(['断潮', '海纹旧剑']), '实体别名应完整保存');
+  assert(state.entity_index['object:断潮'] === 'obj_000001', '实体别名应写入名称索引');
   assert(state.entity_memory.organization[0].id === 'org_000001', '组织 ID 应由本地生成');
   assert(state.entity_memory.ability[0].id === 'ability_000001', '能力 ID 应由本地生成');
   assert(state.entity_memory.location[0].id === 'location_000001', '地点 ID 应由本地生成');
@@ -80,6 +82,7 @@ async function run() {
   assert(injection.includes('【地点：黑礁湾】'), '命中名称后应注入地点记忆');
   assert(injection.includes('【组织：听潮阁】'), '命中名称后应注入组织记忆');
   assert(injection.includes('【能力：听潮】'), '命中名称后应注入能力记忆');
+  assert(MEMORY_ENGINE.buildWorldEngineContext({ current: '断潮' }).includes('【物件：断潮剑】'), '世界状态命中实体别名时应注入该实体');
 
   chat.push(
     { is_user: true, name: '玩家', mes: '嘉宁三十年正月十六，沈鹤亭使用玄铁修复断潮剑。' },
@@ -89,7 +92,7 @@ async function run() {
     personal_memory: [],
     entity_updates: [
       { type: 'object', name: '断潮剑', description: '一柄剑格刻有海浪纹的旧剑，剑身已用玄铁修复。', event: '断潮剑在黑礁湾交战中折损。', time: '嘉宁三十年正月十五' },
-      { type: 'object', name: '断潮剑', description: '一柄剑格刻有海浪纹的旧剑，剑身已用玄铁修复。', event: '断潮剑以玄铁修复。', time: '嘉宁三十年正月十六' },
+      { type: 'object', name: '断潮', aliases: ['潮剑'], description: '一柄剑格刻有海浪纹的旧剑，剑身已用玄铁修复。', event: '断潮剑以玄铁修复。', time: '嘉宁三十年正月十六' },
       { type: 'organization', name: '听潮阁', description: '', event: '听潮阁宣告解散。', time: '嘉宁三十年正月十六' }
     ],
     small_summary: '断潮剑以玄铁修复，听潮阁随后宣告解散。'
@@ -97,6 +100,7 @@ async function run() {
   await MEMORY_ENGINE.manualExtract();
   state = MEMORY_ENGINE_DATA.loadState();
   assert(state.entity_memory.object.length === 1, '同类型同名实体应归并');
+  assert(state.entity_memory.object[0].aliases.includes('潮剑'), 'API 使用实体别名时应归并并追加新别名');
   assert(state.entity_memory.object[0].history.length === 2, '重复事件应去重，新事件应追加到本地历史');
   assert(state.entity_memory.object[0].description.includes('已用玄铁修复'), 'API 返回的当前描述应直接覆盖本地描述');
   assert(state.entity_memory.organization[0].description === '活动于沿海地区的情报组织。', 'API 返回空描述时应保留本地原描述');

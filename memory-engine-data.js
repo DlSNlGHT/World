@@ -90,9 +90,23 @@ window.MEMORY_ENGINE_DATA = (function() {
     delete next.entity_memory.item;
     for (const type of ENTITY_TYPES) {
       if (!Array.isArray(next.entity_memory[type])) next.entity_memory[type] = [];
+      next.entity_memory[type] = next.entity_memory[type].map(entity => {
+        const item = entity && typeof entity === 'object' && !Array.isArray(entity) ? entity : {};
+        const name = clean(item.name);
+        item.aliases = unique(item.aliases).filter(alias => normalized(alias) !== normalized(name));
+        return item;
+      });
     }
     delete next.world_memory;
-    if (!next.entity_index || typeof next.entity_index !== 'object' || Array.isArray(next.entity_index)) next.entity_index = {};
+    next.entity_index = {};
+    for (const type of ENTITY_TYPES) {
+      for (const entity of next.entity_memory[type]) {
+        if (!clean(entity?.id)) continue;
+        for (const name of unique([entity.name, ...(entity.aliases || [])])) {
+          next.entity_index[`${type}:${normalized(name)}`] = entity.id;
+        }
+      }
+    }
     if (!next.event_memory || typeof next.event_memory !== 'object' || Array.isArray(next.event_memory)) next.event_memory = {};
     if (!Array.isArray(next.event_memory.small_summaries)) next.event_memory.small_summaries = [];
     next.event_memory.small_summaries = next.event_memory.small_summaries.map((item, index) => {

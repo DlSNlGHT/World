@@ -527,6 +527,7 @@ window.WORLD_ENGINE_UI = (function() {
     const options = Object.entries(MEMORY_ENTITY_LABELS).map(([value, label]) => `<option value="${value}" ${value === type ? 'selected' : ''}>${label}</option>`).join('');
     return `<div class="we-memory-editor" data-entity-editor data-entity-id="${h(entity?.id || '')}" data-original-type="${h(type || 'organization')}" data-new="${isNew ? 'true' : 'false'}">
       <div class="we-memory-form-grid"><div class="we-input-group"><label>类型</label><select class="we-memory-entity-type">${options}</select></div><div class="we-input-group"><label>名称</label><input class="we-memory-entity-name" type="text" value="${h(entity?.name || '')}" placeholder="实体名称"></div></div>
+      <div class="we-input-group"><label>别名（用 / 分隔）</label><input class="we-memory-entity-aliases" type="text" value="${h((entity?.aliases || []).join(' / '))}" placeholder="例如：断潮剑 / 断潮 / 海纹旧剑"></div>
       <div class="we-input-group"><label>当前描述</label><textarea class="we-memory-entity-description" rows="3" placeholder="实体当前状态与特征">${h(entity?.description || '')}</textarea></div>
       <div class="we-memory-editor-label">历史事件</div>
       <div class="we-memory-entry-list">${history || '<div class="we-memory-entry-empty">暂无历史，可在下方增加</div>'}</div>
@@ -546,7 +547,7 @@ window.WORLD_ENGINE_UI = (function() {
           `<div class="we-memory-line"><span class="we-memory-line-time">${h(entry.time || '时间未明')}</span><div class="we-memory-line-main"><div class="we-memory-line-content">${h(entry.event)}</div></div></div>`
         ).join('');
         return `<div class="${memoryRecordClass(collapseKey)}" data-entity-id="${h(entity.id)}" data-entity-type="${type}">
-          <div class="we-memory-record-head"><div><div class="we-memory-record-title"><span class="we-memory-type-badge">${label}</span>${h(entity.name || '未命名实体')}</div><div class="we-memory-record-meta">${h(entity.id)}</div></div>
+          <div class="we-memory-record-head"><div><div class="we-memory-record-title"><span class="we-memory-type-badge">${label}</span>${h(entity.name || '未命名实体')}</div><div class="we-memory-record-meta">${h((entity.aliases || []).join(' · ') || entity.id)}</div></div>
             <div class="we-memory-record-actions">${memoryRecordToggle(collapseKey)}<button class="we-icon-btn we-memory-edit-entity" type="button" title="编辑"><i class="fa-solid fa-pen"></i></button><button class="we-icon-btn we-memory-delete-entity" type="button" title="删除"><i class="fa-solid fa-trash"></i></button></div>
           </div>
           ${memoryRecordBody(collapseKey, _memoryEditingEntity === key ? renderMemoryEntityEditor(entity, type, false) : `<div class="we-memory-description">${h(entity.description || '暂无描述')}</div>${history}`)}
@@ -768,15 +769,20 @@ window.WORLD_ENGINE_UI = (function() {
         const oldType = editor.dataset.originalType;
         const type = editor.querySelector('.we-memory-entity-type')?.value;
         const name = String(editor.querySelector('.we-memory-entity-name')?.value || '').trim();
+        const aliases = Array.from(new Set(String(editor.querySelector('.we-memory-entity-aliases')?.value || '')
+          .split(/[\/／,，\n]/).map(value => value.trim()).filter(Boolean)))
+          .filter(alias => alias.toLocaleLowerCase() !== name.toLocaleLowerCase());
         if (!MEMORY_ENTITY_LABELS[type] || !name) { showToast('请选择类型并填写实体名称', true); return; }
         const oldId = editor.dataset.entityId;
-        const duplicate = (state.entity_memory?.[type] || []).some(item => item.id !== oldId && String(item.name || '').trim().toLocaleLowerCase() === name.toLocaleLowerCase());
-        if (duplicate) { showToast('同类型下已存在同名实体', true); return; }
+        const incomingNames = [name, ...aliases].map(value => value.toLocaleLowerCase());
+        const duplicate = (state.entity_memory?.[type] || []).some(item => item.id !== oldId
+          && [item.name, ...(item.aliases || [])].some(existing => incomingNames.includes(String(existing || '').trim().toLocaleLowerCase())));
+        if (duplicate) { showToast('同类型下的名称或别名已被其他实体使用', true); return; }
         const prefix = { organization: 'org', object: 'obj', ability: 'ability', location: 'location' }[type];
         let id = oldId;
         if (editor.dataset.new === 'true' || oldType !== type) id = nextMemoryUiId(state.entity_memory?.[type], prefix);
         const entity = {
-          id, name,
+          id, name, aliases,
           description: String(editor.querySelector('.we-memory-entity-description')?.value || '').trim(),
           history: readMemoryEntryRows(editor).map(entry => ({ time: entry.time, event: entry.content }))
         };
