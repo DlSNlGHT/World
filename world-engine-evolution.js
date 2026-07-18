@@ -999,14 +999,31 @@ ${JSON.stringify(sample || [], null, 2)}
       'events', 'factions', 'worldTrends', 'winds', 'economy', 'reputation',
       'world_digest', 'enemies', 'influenceChain', 'regionalIncident', 'blackbox'
     ];
-    const rawResult = await api.callApi(prompt, undefined, undefined, _abortController.signal);
-    _lastRawResult = rawResult;
-    const update = api.parseJSON(rawResult);
-    if (!update || typeof update !== 'object' || Array.isArray(update)) {
-      throw new Error('API 返回无法解析为有效 JSON，已保留重 roll 前的当前状态');
-    }
-    if (!knownFields.some(field => Object.prototype.hasOwnProperty.call(update, field))) {
-      throw new Error('API 返回不包含任何世界状态字段，已保留重 roll 前的当前状态');
+    const retrySettings = api.getSettings ? api.getSettings() : {};
+    const maxRetries = Math.max(0, parseInt(retrySettings.apiAutoRetries) || 0);
+    let update = null;
+
+    for (let attempt = 0; attempt <= maxRetries; attempt++) {
+      try {
+        const rawResult = await api.callApi(prompt, undefined, undefined, _abortController.signal);
+        _lastRawResult = rawResult;
+        update = api.parseJSON(rawResult);
+        if (!update || typeof update !== 'object' || Array.isArray(update)) {
+          throw new Error('API 返回无法解析为有效 JSON，已保留重 roll 前的当前状态');
+        }
+        if (!knownFields.some(field => Object.prototype.hasOwnProperty.call(update, field))) {
+          throw new Error('API 返回不包含任何世界状态字段，已保留重 roll 前的当前状态');
+        }
+        break;
+      } catch (error) {
+        if (_abortController && _abortController.signal.aborted) throw error;
+        if (attempt >= maxRetries) {
+          if (maxRetries > 0 && error && error.message) error.message += `（已自动重试 ${maxRetries} 次）`;
+          throw error;
+        }
+        console.warn(`[世界引擎] API fault，自动重试 ${attempt + 1}/${maxRetries}:`, error && error.message ? error.message : error);
+        if (window.__WE_SetExternalStatus) window.__WE_SetExternalStatus(`API fault，自动重试 ${attempt + 1}/${maxRetries}`);
+      }
     }
     console.log('[世界引擎] API JSON 解析成功，世界摘要:', update.world_digest || '[未返回]');
 
@@ -1370,6 +1387,7 @@ ${JSON.stringify(sample || [], null, 2)}
 
     const settings = api && api.getSettings ? api.getSettings(true) : {};
     const batchSize = Math.max(1, parseInt(opts.batchSize ?? settings.backfillBatchSize) || 1);
+    const retries = Math.max(0, parseInt(opts.retries ?? settings.backfillRetries) || 0);
     const onProgress = typeof opts.onProgress === 'function' ? opts.onProgress : () => {};
 
     // 1) 收集所有有效 AI 楼层在 chat 中的下标（与自动推演判据一致：非 user、mes 非空）
@@ -1447,22 +1465,32 @@ ${JSON.stringify(sample || [], null, 2)}
           layerFrom: pStart + 1, layerTo: pEnd + 1, attempt: 0 });
 
         // 每批重读 state（evolve 已落盘），与单轮路径一致
-        if (_backfillAborted) break;
-        // 每批调用前校验 chatId：await api.callApi 有数秒空窗，用户极可能在此切聊天。
-        if (core.getChatId() !== startChatId) {
-          console.warn('[世界引擎] 🛑 检测到切聊天，中止批量回填（start', startChatId, '→ now', core.getChatId(), '）');
-          return { done: false, reason: 'chat-changed', totalBatches, completedBatches, failedAt: b + 1 };
+        let ok = false;
+        let lastAttempt = 0;
+        for (let attempt = 0; attempt <= retries; attempt++) {
+          lastAttempt = attempt;
+          if (_backfillAborted) break;
+          if (core.getChatId() !== startChatId) {
+            console.warn('[世界引擎] 🛑 检测到切聊天，中止批量回填（start', startChatId, '→ now', core.getChatId(), '）');
+            return { done: false, reason: 'chat-changed', totalBatches, completedBatches, failedAt: b + 1 };
+          }
+          const state = core.loadState();
+          ok = await evolve(state, '', aiMsg, { mode: 'forward', dialogueText });
+          if (ok || _backfillAborted) break;
+          if (attempt < retries) {
+            console.warn(`[世界引擎] ⚠️ 第 ${b + 1}/${totalBatches} 批 API fault，重试 ${attempt + 1}/${retries}`);
+            onProgress({ phase: 'retry', batch: b + 1, totalBatches,
+              layerFrom: pStart + 1, layerTo: pEnd + 1, attempt: attempt + 1 });
+          }
         }
-        const state = core.loadState();
-        const ok = await evolve(state, '', aiMsg, { mode: 'forward', dialogueText });
 
         if (!ok) {
           if (_backfillAborted) {
             return { done: false, reason: 'aborted', totalBatches, completedBatches, failedAt: b + 1 };
           }
-          console.error(`[世界引擎] ❌ 第 ${b + 1}/${totalBatches} 批推演失败，中止回填`);
+          console.error(`[世界引擎] ❌ 第 ${b + 1}/${totalBatches} 批 API fault 重试用尽，中止回填`);
           onProgress({ phase: 'batch-failed', batch: b + 1, totalBatches,
-            layerFrom: pStart + 1, layerTo: pEnd + 1, attempt: 0 });
+            layerFrom: pStart + 1, layerTo: pEnd + 1, attempt: lastAttempt });
           return { done: false, reason: 'evolve-failed', totalBatches, completedBatches, failedAt: b + 1 };
         }
 
@@ -1472,7 +1500,7 @@ ${JSON.stringify(sample || [], null, 2)}
           try { window.WORLD_ENGINE_LEDGER.recordChanges(cur); } catch (e) {}
         }
         onProgress({ phase: 'batch-done', batch: b + 1, totalBatches,
-          layerFrom: pStart + 1, layerTo: pEnd + 1, attempt: 0, ok: true, round: cur.round });
+          layerFrom: pStart + 1, layerTo: pEnd + 1, attempt: lastAttempt, ok: true, round: cur.round });
       }
 
       onProgress({ phase: 'all-done', totalBatches, completedBatches });
