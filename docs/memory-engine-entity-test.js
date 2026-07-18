@@ -6,6 +6,7 @@ const root = path.resolve(__dirname, '..');
 const storage = new Map();
 let injection = '';
 let apiResponse = '';
+let apiCalls = 0;
 const chat = [
   { is_user: true, name: '玩家', mes: '嘉宁三十年正月十五，沈鹤亭在黑礁湾代表听潮阁取出断潮剑。' },
   { is_user: false, name: '角色', mes: '断潮剑在交战中折损，沈鹤亭确信它还能修复，并在此觉醒听潮能力。' }
@@ -28,13 +29,14 @@ global.WORLD_ENGINE_CORE = {
   getChatId: () => 'entity-test',
   filterDialogue: value => value
 };
-global.WORLD_ENGINE_API = { callApi: async () => apiResponse };
+global.WORLD_ENGINE_API = { callApi: async () => { apiCalls++; return apiResponse; } };
 global.WORLD_ENGINE_UI = { setMemoryEvolvingUI: () => {} };
 
 for (const file of ['memory-engine-settings.js', 'memory-engine-data.js', 'memory-engine-prompt.js',
   'memory-engine-small-summary-prompt.js', 'memory-engine-big-summary-prompt.js', 'memory-engine.js']) {
   vm.runInThisContext(fs.readFileSync(path.join(root, file), 'utf8'), { filename: file });
 }
+WORLD_ENGINE_STORE.setItem('memory_engine_settings', JSON.stringify({ apiAutoRetries: 3 }));
 
 function assert(condition, message) {
   if (!condition) throw new Error(message);
@@ -109,7 +111,9 @@ async function run() {
     entity_updates: [{ type: 'object', name: '断潮剑', description: '', event: '事'.repeat(51), time: '' }],
     small_summary: '断潮剑产生了一条超过 Prompt 建议字数的完整事件记录。'
   });
+  const callsBeforeOverlong = apiCalls;
   await MEMORY_ENGINE.manualExtract();
+  assert(apiCalls === callsBeforeOverlong + 1, '内容超出 Prompt 建议字数仍属成功，不得触发重试');
   state = MEMORY_ENGINE_DATA.loadState();
   assert(state.entity_memory.object[0].history.some(item => item.event === '事'.repeat(51)),
     '超过 Prompt 建议字数的 event 仍应完整写入本地状态');
