@@ -257,17 +257,18 @@ window.MEMORY_ENGINE = (function() {
     }
     const nameBlacklist = configuredNameBlacklist(settings());
     // 兼容 0.1.x：旧 API 只返回人物记忆数组。
-    const personalSource = tasks.memory ? (Array.isArray(value)
+    const personalValue = tasks.memory ? (Array.isArray(value)
       ? value
       : (value?.personal_memory || value?.memories || value?.memory || value?.data || [])) : [];
-    if (tasks.memory && !Array.isArray(personalSource)) throw new Error('personal_memory 必须是 JSON 数组');
+    const personalSource = Array.isArray(personalValue)
+      ? personalValue
+      : (personalValue && typeof personalValue === 'object' ? [personalValue] : []);
     const counts = new Map(), personal = [];
     for (const item of personalSource) {
       if (!item || typeof item !== 'object') continue;
       if (nameIsBlacklisted(item.name, nameBlacklist)) continue;
-      const names = unique(Array.isArray(item.name) ? item.name : []), memory = clean(item.memory);
+      const names = unique(Array.isArray(item.name) ? item.name : [item.name]), memory = clean(item.memory);
       if (!names.length || !memory) continue;
-      if (Array.from(memory).length > 50) throw new Error(`记忆超过 50 字：${memory}`);
       const holder = normalized(names[0]), count = counts.get(holder) || 0;
       if (count >= 3) continue;
       counts.set(holder, count + 1);
@@ -275,15 +276,17 @@ window.MEMORY_ENGINE = (function() {
       if (/^(昨晚|昨天|三天前|刚才|不久前|宴会之后)$/.test(time)) time = '';
       personal.push({
         name: names,
-        known_by: unique(Array.isArray(item.known_by) ? item.known_by : [])
+        known_by: unique(Array.isArray(item.known_by) ? item.known_by : [item.known_by])
           .filter(name => !names.some(holderName => normalized(holderName) === normalized(name))),
         memory,
         time
       });
       if (personal.length >= 8) break;
     }
-    const entitySource = tasks.memory && !Array.isArray(value) && Array.isArray(value?.entity_updates)
-      ? value.entity_updates : [];
+    const entityValue = tasks.memory && !Array.isArray(value) ? value?.entity_updates : [];
+    const entitySource = Array.isArray(entityValue)
+      ? entityValue
+      : (entityValue && typeof entityValue === 'object' ? [entityValue] : []);
     const entities = {};
     for (const type of ENTITY_TYPES) entities[type] = [];
     const perEntityCounts = new Map();
@@ -292,12 +295,9 @@ window.MEMORY_ENGINE = (function() {
       if (entityUpdateCount >= 8) break;
       if (!item || typeof item !== 'object') continue;
       if (nameIsBlacklisted(item.name, nameBlacklist)) continue;
-      if (!ENTITY_TYPES.includes(item.type) || typeof item.name !== 'string'
-        || typeof item.description !== 'string' || typeof item.event !== 'string' || typeof item.time !== 'string') continue;
+      if (!ENTITY_TYPES.includes(item.type)) continue;
       const type = item.type, name = clean(item.name), description = clean(item.description), event = clean(item.event);
       if (!name) continue;
-      if (Array.from(description).length > 200) throw new Error(`${ENTITY_LABELS[type]}“${name}”的描述超过 200 字`);
-      if (Array.from(event).length > 50) throw new Error(`${ENTITY_LABELS[type]}“${name}”的事件超过 50 字`);
       const key = `${type}:${normalized(name)}`, count = perEntityCounts.get(key) || 0;
       if (count >= 3) continue;
       perEntityCounts.set(key, count + 1);
@@ -306,13 +306,11 @@ window.MEMORY_ENGINE = (function() {
     }
     let smallSummary = '';
     if (tasks.small) {
-      if (Array.isArray(value) || typeof value?.small_summary !== 'string') throw new Error('small_summary 必须是字符串');
-      smallSummary = clean(value.small_summary);
+      smallSummary = Array.isArray(value) ? '' : clean(value?.small_summary);
     }
     let bigSummary = '';
     if (tasks.big) {
-      if (Array.isArray(value) || typeof value?.big_summary !== 'string') throw new Error('big_summary 必须是字符串');
-      bigSummary = clean(value.big_summary);
+      bigSummary = Array.isArray(value) ? '' : clean(value?.big_summary);
     }
     return { personal, entities, smallSummary, bigSummary };
   }
@@ -729,25 +727,18 @@ window.MEMORY_ENGINE = (function() {
     const st = settings(), state = options?.baseState ? clone(options.baseState) : data().loadState();
     const prompt = await buildRequestPrompt(tasks, state, st);
     lastDebug = { prompt, requestPrompt: prompt, rawResult: '', apiResponse: '', parsed: null, error: '' };
-    const retries = Math.max(0, Number(options?.retries ?? st.apiAutoRetries) || 0);
-    for (let attempt = 0; attempt <= retries; attempt++) {
-      try {
-        const raw = await window.WORLD_ENGINE_API.callApi(
-          prompt, st.maxTokens, st.temperature, abortController?.signal, st
-        );
-        lastDebug.rawResult = lastDebug.apiResponse = raw;
-        const parsed = parseResponse(raw, tasks);
-        lastDebug.parsed = clone(parsed);
-        return parsed;
-      } catch (error) {
-        lastDebug.error = String(error?.message || error);
-        if (abortController?.signal?.aborted || attempt >= retries) throw error;
-      }
+    try {
+      const raw = await window.WORLD_ENGINE_API.callApi(
+        prompt, st.maxTokens, st.temperature, abortController?.signal, st
+      );
+      lastDebug.rawResult = lastDebug.apiResponse = raw;
+      const parsed = parseResponse(raw, tasks);
+      lastDebug.parsed = clone(parsed);
+      return parsed;
+    } catch (error) {
+      lastDebug.error = String(error?.message || error);
+      throw error;
     }
-    return {
-      personal: [], entities: Object.fromEntries(ENTITY_TYPES.map(type => [type, []])),
-      smallSummary: '', bigSummary: ''
-    };
   }
 
   async function runTasks(tasks, options) {

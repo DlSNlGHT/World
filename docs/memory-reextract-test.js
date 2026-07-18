@@ -173,6 +173,16 @@ function seedState() {
   assert.ok(result.added >= 3, '成功结果必须返回人物记忆、纪要和总述的真实更新数');
   assert.strictEqual(result.updatedBig, 1);
   assert.ok(uiStates.some(item => item.active && item.running), '重新推演必须立即刷新运行动效');
+
+  seedState();
+  settings.apiAutoRetries = 3;
+  let malformedCalls = 0;
+  sandbox.WORLD_ENGINE_API.callApi = async () => {
+    malformedCalls++;
+    return '这不是可解析的 JSON';
+  };
+  await assert.rejects(sandbox.MEMORY_ENGINE.manualReextract(), /没有合法 JSON/);
+  assert.strictEqual(malformedCalls, 1, 'API 已返回内容时不得因解析失败再次请求');
   console.log('memory reextract tests passed');
 })().catch(error => {
   console.error(error);

@@ -1102,7 +1102,6 @@ window.WORLD_ENGINE_UI = (function() {
     const maxPerCharacter = Math.max(1, parseInt(settings.maxPerCharacter) || 20);
     const backfillBatch = Math.max(1, parseInt(settings.backfillBatchSize) || 5);
     const backfillEnd = Math.max(0, parseInt(settings.backfillEndLayer) || 0);
-    const backfillRetries = Math.max(0, parseInt(settings.backfillRetries) || 0);
     const summaryBackfillSmallEveryX = Math.max(1, parseInt(settings.summaryBackfillSmallEveryX) || 5);
     const summaryBackfillBigEveryX = Math.max(1, parseInt(settings.summaryBackfillBigEveryX) || 5);
     const apiTemperature = Number.isFinite(Number(settings.temperature)) ? Math.max(0, Number(settings.temperature)) : 0.2;
@@ -1256,8 +1255,8 @@ window.WORLD_ENGINE_UI = (function() {
           <input type="number" id="we-memory-backfill-batch" min="1" step="1" value="${backfillBatch}"></div>
         <div class="we-input-group" style="flex:1;min-width:90px;margin-bottom:0;"><label>结束楼层（0=全部）</label>
           <input type="number" id="we-memory-backfill-end" min="0" step="1" value="${backfillEnd}"></div>
-        <div class="we-input-group" style="flex:1;min-width:90px;margin-bottom:0;"><label>每批重试次数</label>
-          <input type="number" id="we-memory-backfill-retries" min="0" step="1" value="${backfillRetries}"></div>
+        <div class="we-input-group" style="flex:1;min-width:90px;margin-bottom:0;"><label>每批 API 请求</label>
+          <input type="number" id="we-memory-backfill-retries" value="0" disabled><div class="we-hint">固定只请求一次，不重试</div></div>
       </div>
       <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px;">
         <div class="we-input-group" style="flex:1;min-width:120px;margin-bottom:0;"><label>纪要回填：每 X 个 AI 楼层</label>
@@ -1286,9 +1285,9 @@ window.WORLD_ENGINE_UI = (function() {
 
     const retryBody = `
       <div class="we-input-group">
-        <label>记忆 API 异常自动重试次数</label>
-        <input type="number" id="we-memory-api-auto-retries" min="0" step="1" value="${Math.max(0, parseInt(settings.apiAutoRetries) || 0)}" style="width:100%;">
-        <div style="font-size:11px;color:var(--we-text3);margin-top:3px;">仅用于记忆提取，不修改世界推演的重试次数。</div>
+        <label>记忆 API 请求策略</label>
+        <input type="number" id="we-memory-api-auto-retries" value="0" disabled style="width:100%;">
+        <div style="font-size:11px;color:var(--we-text3);margin-top:3px;">每个任务固定只请求一次；API 返回后只做本地解析与修补，不自动重试。</div>
       </div>`;
 
     const blacklistBody = `
@@ -3372,7 +3371,6 @@ window.WORLD_ENGINE_UI = (function() {
     const tv = (k, d) => (settings[k] != null && settings[k] !== '') ? settings[k] : d;
     const apiTemperature = Number.isFinite(Number(settings.temperature)) ? Math.max(0, Number(settings.temperature)) : 0.7;
     const apiMaxTokens = Math.max(1, parseInt(settings.maxTokens) || 65000);
-    const apiAutoRetries = Math.max(0, parseInt(settings.apiAutoRetries) || 0);
     const apiTimeoutMs = Number.isFinite(Number(settings.apiTimeoutMs)) ? Number(settings.apiTimeoutMs) : 120000;
     const apiTimeoutSec = Math.max(0, Math.round(apiTimeoutMs / 1000));
     const injectMaxChars = Number.isFinite(Number(settings.injectMaxChars)) ? Math.max(0, Math.floor(Number(settings.injectMaxChars))) : 5000;
@@ -3616,8 +3614,8 @@ window.WORLD_ENGINE_UI = (function() {
           <input type="number" id="we-backfill-batch" min="1" step="1" value="${bf('backfillBatchSize', 5)}"></div>
         <div class="we-input-group" style="flex:1;min-width:90px;margin-bottom:0;"><label>结束楼层（0=全部）</label>
           <input type="number" id="we-backfill-end" min="0" step="1" value="${bf('backfillEndLayer', 0)}"></div>
-        <div class="we-input-group" style="flex:1;min-width:90px;margin-bottom:0;"><label>每批重试次数</label>
-          <input type="number" id="we-backfill-retries" min="0" step="1" value="${bf('backfillRetries', 2)}"></div>
+        <div class="we-input-group" style="flex:1;min-width:90px;margin-bottom:0;"><label>每批 API 请求</label>
+          <input type="number" id="we-backfill-retries" value="0" disabled><div class="we-hint">固定只请求一次，不重试</div></div>
       </div>
       <div class="we-hint" id="we-backfill-status" style="margin:6px 0;"></div>
       <div style="display:flex;gap:6px;flex-wrap:wrap;margin:6px 0;">
@@ -3689,9 +3687,9 @@ window.WORLD_ENGINE_UI = (function() {
 
     const retryBody = `
       <div class="we-input-group">
-        <label>API 异常自动重试次数（X）</label>
-        <input type="number" id="we-api-auto-retries" min="0" step="1" value="${apiAutoRetries}" style="width:100%;">
-        <div style="font-size:11px;color:var(--we-text3);margin-top:3px;">默认 0 = 不重试。除主动停止或切换聊天造成的中止外，空返回、乱码、解析失败、HTTP 错误、超时和网络错误都会额外重试 X 次；总请求次数最多为 1 + X。</div>
+        <label>API 请求策略</label>
+        <input type="number" id="we-api-auto-retries" value="0" disabled style="width:100%;">
+        <div style="font-size:11px;color:var(--we-text3);margin-top:3px;">每个任务固定只请求一次；API 返回后只做本地解析与修补，不自动重试。</div>
       </div>`;
 
     const diceBody = `
@@ -6053,7 +6051,7 @@ window.WORLD_ENGINE_UI = (function() {
     const st = window.WORLD_ENGINE_API ? window.WORLD_ENGINE_API.getSettings(true) : {};
     if (st.engineEnabled === false) { showToast('世界引擎已关闭', true); return; }
     const batchSize = Math.max(1, parseInt(st.backfillBatchSize) || 1);
-    const retries = Math.max(0, parseInt(st.backfillRetries) || 0);
+    const retries = 0;
     let endLayer = Math.max(0, parseInt(st.backfillEndLayer) || 0);
 
     // 统计当前 AI 楼层数，给出确认信息
@@ -6076,7 +6074,7 @@ window.WORLD_ENGINE_UI = (function() {
 
     if (!confirm(
       `「重填世界推演」将清空当前世界状态，从第 1 个 AI 楼层重新推演到第 ${effectiveEnd} 层，` +
-      `共约 ${totalBatches} 批、每批最多重试 ${retries} 次。\n` +
+      `共约 ${totalBatches} 批，每批固定只请求一次。\n` +
       `开始前会自动存一份备份快照。\n确定推倒重来？`
     )) return;
 
