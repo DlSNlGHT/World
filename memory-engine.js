@@ -213,7 +213,7 @@ window.MEMORY_ENGINE = (function() {
         currentStoryTime: extractStoryTime(filtered),
         knownPeople: (state.personal_memory || []).map(character => unique(character.names)),
         knownEntities: ENTITY_TYPES.flatMap(type => (state.entity_memory?.[type] || []).map(entity => ({
-          type: ENTITY_LABELS[type], name: entity.name, description: entity.description
+          type: ENTITY_LABELS[type], name: entity.name, aliases: unique(entity.aliases), description: entity.description
         }))),
         worldbook,
         referenceContext: memoryReference?.text || '',
@@ -294,14 +294,16 @@ window.MEMORY_ENGINE = (function() {
     for (const item of entitySource) {
       if (entityUpdateCount >= 8) break;
       if (!item || typeof item !== 'object') continue;
-      if (nameIsBlacklisted(item.name, nameBlacklist)) continue;
+      const aliases = unique(Array.isArray(item.aliases) ? item.aliases : [item.aliases]);
+      if (nameIsBlacklisted([item.name, ...aliases], nameBlacklist)) continue;
       if (!ENTITY_TYPES.includes(item.type)) continue;
       const type = item.type, name = clean(item.name), description = clean(item.description), event = clean(item.event);
       if (!name) continue;
+      const cleanAliases = aliases.filter(alias => normalized(alias) !== normalized(name));
       const key = `${type}:${normalized(name)}`, count = perEntityCounts.get(key) || 0;
       if (count >= 3) continue;
       perEntityCounts.set(key, count + 1);
-      entities[type].push({ name, description, event, time: event ? sanitizeTime(item.time) : '' });
+      entities[type].push({ name, aliases: cleanAliases, description, event, time: event ? sanitizeTime(item.time) : '' });
       entityUpdateCount++;
     }
     let smallSummary = '';
@@ -358,7 +360,14 @@ window.MEMORY_ENGINE = (function() {
 
   function ensureEntityState(state) {
     if (!state.entity_memory || typeof state.entity_memory !== 'object' || Array.isArray(state.entity_memory)) state.entity_memory = {};
-    for (const type of ENTITY_TYPES) if (!Array.isArray(state.entity_memory[type])) state.entity_memory[type] = [];
+    for (const type of ENTITY_TYPES) {
+      if (!Array.isArray(state.entity_memory[type])) state.entity_memory[type] = [];
+      for (const entity of state.entity_memory[type]) {
+        const name = clean(entity?.name);
+        entity.aliases = unique(Array.isArray(entity?.aliases) ? entity.aliases : [entity?.aliases])
+          .filter(alias => normalized(alias) !== normalized(name));
+      }
+    }
     if (!state.entity_index || typeof state.entity_index !== 'object' || Array.isArray(state.entity_index)) state.entity_index = {};
   }
 
@@ -379,8 +388,8 @@ window.MEMORY_ENGINE = (function() {
     for (const type of ENTITY_TYPES) {
       for (const entity of state.entity_memory[type]) {
         if (!clean(entity.id)) entity.id = nextEntityId(state, type);
-        const name = clean(entity.name);
-        if (name) index[`${type}:${normalized(name)}`] = entity.id;
+        const names = unique([entity.name, ...(entity.aliases || [])]);
+        for (const name of names) index[`${type}:${normalized(name)}`] = entity.id;
       }
     }
     state.entity_index = index;
@@ -419,15 +428,18 @@ window.MEMORY_ENGINE = (function() {
     return state;
   }
 
-  function findEntity(state, type, name) {
+  function findEntity(state, type, name, aliases) {
     ensureEntityState(state);
-    const key = `${type}:${normalized(name)}`;
-    let id = state.entity_index[key];
+    const names = unique([name, ...(aliases || [])]);
+    let id = names.map(item => state.entity_index[`${type}:${normalized(item)}`]).find(Boolean);
     let entity = id && state.entity_memory[type].find(item => item.id === id);
-    if (!entity) entity = state.entity_memory[type].find(item => normalized(item.name) === normalized(name));
+    if (!entity) entity = state.entity_memory[type].find(item => {
+      const existing = unique([item.name, ...(item.aliases || [])]).map(normalized);
+      return names.some(candidate => existing.includes(normalized(candidate)));
+    });
     if (entity) {
       if (!clean(entity.id)) entity.id = nextEntityId(state, type);
-      state.entity_index[key] = entity.id;
+      for (const candidate of names) state.entity_index[`${type}:${normalized(candidate)}`] = entity.id;
     }
     return entity;
   }
@@ -438,14 +450,20 @@ window.MEMORY_ENGINE = (function() {
     const result = { entities: 0, history: 0, descriptions: 0 };
     for (const type of ENTITY_TYPES) {
       for (const item of groups?.[type] || []) {
-        let entity = findEntity(state, type, item.name);
+        let entity = findEntity(state, type, item.name, item.aliases);
         let isNew = false;
         if (!entity) {
-          entity = { id: nextEntityId(state, type), name: item.name, description: '', history: [] };
+          entity = { id: nextEntityId(state, type), name: item.name, aliases: unique(item.aliases), description: '', history: [] };
           state.entity_memory[type].push(entity);
           state.entity_index[`${type}:${normalized(item.name)}`] = entity.id;
           result.entities++;
           isNew = true;
+        }
+        entity.aliases = unique([...(entity.aliases || []), ...(item.aliases || []),
+          normalized(entity.name) === normalized(item.name) ? '' : item.name])
+          .filter(alias => normalized(alias) !== normalized(entity.name));
+        for (const candidate of [entity.name, ...entity.aliases]) {
+          state.entity_index[`${type}:${normalized(candidate)}`] = entity.id;
         }
         if (item.description && entity.description !== item.description) {
           entity.description = item.description;
@@ -1590,7 +1608,7 @@ window.MEMORY_ENGINE = (function() {
     };
     const matched = (state.personal_memory || []).filter(character => (character.names || []).some(appearsInScan));
     const matchedEntities = ENTITY_TYPES.flatMap(type => state.entity_memory[type]
-      .filter(entity => appearsInScan(entity.name))
+      .filter(entity => unique([entity.name, ...(entity.aliases || [])]).some(appearsInScan))
       .map(entity => ({ type, entity })));
     const sections = [], globalSeen = new Set(), limit = Math.max(1, parseInt(st.maxPerCharacter) || 20);
     const bigLimit = Math.max(1, parseInt(st.bigSummaryInjectLimit) || 3);
@@ -1686,7 +1704,7 @@ window.MEMORY_ENGINE = (function() {
     }
     for (const type of ENTITY_TYPES) {
       for (const entity of state.entity_memory[type] || []) {
-        if (!appears(entity.name)) continue;
+        if (!unique([entity.name, ...(entity.aliases || [])]).some(appears)) continue;
         const lines = [`【${ENTITY_LABELS[type]}：${entity.name}】`];
         if (entity.description) lines.push(entity.description);
         lines.push(...exponentialMemorySample(

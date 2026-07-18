@@ -26,16 +26,17 @@ window.MEMORY_ENGINE_PROMPT = (function() {
 4. location：具有持续空间身份，可被进入、占据、控制、发现或改造的地点，包括区域、城市、建筑、房间、遗迹和独立空间。不包括组织、临时方位或没有独立身份的场景背景。
 
 【实体更新规则】
-1. entity_updates 是扁平数组。每项只允许 type、name、description、event、time。
-2. name 是正文明确使用的实体规范名称。优先沿用“已知实体”中的既有名称；不要猜测别名，不要把同一实体拆成近义名称。
-3. description 是本批对实体当前状态的描述更新，允许为空字符串，非空时最多 200 个字符（包含标点）。非空值必须是当前状态摘要，不是事件列表，不得堆叠历史、计划或预测。无法从本批对话可靠确定描述，或本批没有描述变化时返回空字符串；空字符串表示“不更新本地描述”，非空字符串才覆盖本地描述。
-4. event 只记录本批对话中实际发生、直接涉及该实体、且值得长期保留的故事事件，允许为空字符串，非空时必须是一条不超过 50 个字符（包含标点）的完整客观陈述。新披露的静态属性应写入 description，不得伪装成 event；普通提及、重复旧事实、计划、可能性、修辞和无持续影响的动作一律不记录。
-5. 各类重要事件包括但不限于：组织的成立、解散、合并、分裂、领导权/目标/结构/领地/关系变化；物件的制造、获得、转移、遗失、损坏、修复、改造、封印、启用或销毁；能力的获得、觉醒、学会、显著施展、增强、削弱、封印或失去；地点的发现、建立、占领、易主、开放、封锁、改造、迁移或毁坏。
-6. 若只有值得保存的当前描述或新披露的属性而没有符合条件的新事件，event 返回空字符串。不得为了填充 event 而把“本批首次提到”“被看见”“被说明具有某性质”等提取或叙述行为写成故事事件。
-7. time 只对应 event 的发生时间。event 为空时 time 必须为空；event 非空时使用绝对故事时间，无法唯一换算则留空。不得原样使用相对时间。
-8. 同一实体有多条彼此独立的重要事件时，可以返回多项；这些项必须使用相同的 description 更新值（可以同为空字符串），每项只携带一条 event。每个实体本批最多 3 项，全部实体更新合计最多 8 项。
-9. 全部非空 description 和非空 event 必须由待提取对话直接支持。不得为了保留旧描述而把“已知实体”中的 description 原样带回；没有新的描述依据时应返回空字符串。世界书仅用于辨认实体，不得直接生成更新。
-10. 没有值得记录的实体更新时返回空数组 []。
+1. entity_updates 是扁平数组。每项只允许 type、name、aliases、description、event、time。
+2. name 是正文明确使用的实体规范名称。优先沿用“已知实体”中的既有规范名称；不要把同一实体拆成近义名称。
+3. aliases 必须是字符串数组，只填写正文明确指向同一实体的别名、简称或其他称呼。不要猜测别名，不要重复 name；没有别名时返回 []。已知实体中的既有别名应继续沿用。
+4. description 是本批对实体当前状态的描述更新，允许为空字符串，非空时最多 200 个字符（包含标点）。非空值必须是当前状态摘要，不是事件列表，不得堆叠历史、计划或预测。无法从本批对话可靠确定描述，或本批没有描述变化时返回空字符串；空字符串表示“不更新本地描述”，非空字符串才覆盖本地描述。
+5. event 只记录本批对话中实际发生、直接涉及该实体、且值得长期保留的故事事件，允许为空字符串，非空时必须是一条不超过 50 个字符（包含标点）的完整客观陈述。新披露的静态属性应写入 description，不得伪装成 event；普通提及、重复旧事实、计划、可能性、修辞和无持续影响的动作一律不记录。
+6. 各类重要事件包括但不限于：组织的成立、解散、合并、分裂、领导权/目标/结构/领地/关系变化；物件的制造、获得、转移、遗失、损坏、修复、改造、封印、启用或销毁；能力的获得、觉醒、学会、显著施展、增强、削弱、封印或失去；地点的发现、建立、占领、易主、开放、封锁、改造、迁移或毁坏。
+7. 若只有值得保存的当前描述或新披露的属性而没有符合条件的新事件，event 返回空字符串。不得为了填充 event 而把“本批首次提到”“被看见”“被说明具有某性质”等提取或叙述行为写成故事事件。
+8. time 只对应 event 的发生时间。event 为空时 time 必须为空；event 非空时使用绝对故事时间，无法唯一换算则留空。不得原样使用相对时间。
+9. 同一实体有多条彼此独立的重要事件时，可以返回多项；这些项必须使用相同的 description 更新值（可以同为空字符串），每项只携带一条 event。每个实体本批最多 3 项，全部实体更新合计最多 8 项。
+10. 全部非空 description 和非空 event 必须由待提取对话直接支持。不得为了保留旧描述而把“已知实体”中的 description 原样带回；没有新的描述依据时应返回空字符串。世界书仅用于辨认实体，不得直接生成更新。
+11. 没有值得记录的实体更新时返回空数组 []。
 
 【输出前静默筛选】
 在内部完成以下步骤，不要展示过程：人物记忆先按“人物 + 时间 + 主题”聚类，删除流水账、客观说明、从属细节和重复表述，再压缩成不超过 50 个字符的核心记忆；实体先按“type + name”聚类，确定对话结束时的当前描述，再筛出本批新增的重要事件；最后检查分类边界、原文依据、重复项和数量上限。
@@ -58,6 +59,7 @@ window.MEMORY_ENGINE_PROMPT = (function() {
     {
       "type": "organization、object、ability、location 四者之一",
       "name": "非空实体名称",
+      "aliases": ["实体别名"],
       "description": "0至200个字符的实体描述；不更新时填写空字符串",
       "event": "0至50个字符的本批新增重要实体事件",
       "time": "event对应的绝对故事时间或空字符串"
@@ -69,8 +71,8 @@ window.MEMORY_ENGINE_PROMPT = (function() {
 1. 顶层对象只能包含 personal_memory 和 entity_updates。
 2. 没有对应内容时，数组返回 []。
 3. PersonalMemory 只能包含 name、known_by、memory、time。
-4. EntityUpdate 只能包含 type、name、description、event、time。
-5. PersonalMemory.name 必须是非空字符串数组；EntityUpdate.name 必须是非空字符串；known_by 必须是字符串数组。
+4. EntityUpdate 只能包含 type、name、aliases、description、event、time。
+5. PersonalMemory.name 必须是非空字符串数组；EntityUpdate.name 必须是非空字符串；known_by 与 aliases 必须是字符串数组。
 6. memory 长度为 1 至 50 个字符。
 7. description 长度为 0 至 200 个字符；空字符串表示不更新本地描述。
 8. event 长度为 0 至 50 个字符。
@@ -84,7 +86,7 @@ window.MEMORY_ENGINE_PROMPT = (function() {
   const TASK_PROMPT = SYSTEM_PROMPT.replace(/【输出格式】[\s\S]*$/, `【本任务输出字段】
 返回 personal_memory 与 entity_updates 两个 JSON 字段。
 personal_memory 的每一项只能包含 name、known_by、memory、time；没有内容时返回 []。
-entity_updates 的每一项只能包含 type、name、description、event、time；没有内容时返回 []。
+entity_updates 的每一项只能包含 type、name、aliases、description、event、time；没有内容时返回 []。
 严格遵守前述类型、长度、数量、时间和分类规则。`);
 
   function clean(value) {
@@ -103,7 +105,8 @@ entity_updates 的每一项只能包含 type、name、description、event、time
       ? input.knownEntities.map(item => {
           if (!item || typeof item !== 'object') return '';
           const type = clean(item.type), name = clean(item.name), description = clean(item.description);
-          return name ? `- [${type}] ${name}${description ? `：${description}` : ''}` : '';
+          const aliases = (Array.isArray(item.aliases) ? item.aliases : [item.aliases]).map(clean).filter(Boolean);
+          return name ? `- [${type}] ${name}${aliases.length ? ` / ${aliases.join(' / ')}` : ''}${description ? `：${description}` : ''}` : '';
         }).filter(Boolean)
       : [];
     const worldbook = clean(input.worldbook);
