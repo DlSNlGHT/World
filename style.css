@@ -1162,6 +1162,14 @@
 .we-memory-record-body[hidden] {
   display: none !important;
 }
+.we-memory-entity-group > .we-memory-record-body {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+.we-memory-entity-group > .we-memory-record-body > .we-memory-record {
+  background: color-mix(in srgb, var(--we-accent) 2%, var(--we-surface));
+}
 .we-memory-toggle-record i {
   transition: transform 0.16s ease;
 }
