@@ -727,18 +727,22 @@ window.MEMORY_ENGINE = (function() {
     const st = settings(), state = options?.baseState ? clone(options.baseState) : data().loadState();
     const prompt = await buildRequestPrompt(tasks, state, st);
     lastDebug = { prompt, requestPrompt: prompt, rawResult: '', apiResponse: '', parsed: null, error: '' };
-    try {
-      const raw = await window.WORLD_ENGINE_API.callApi(
-        prompt, st.maxTokens, st.temperature, abortController?.signal, st
-      );
-      lastDebug.rawResult = lastDebug.apiResponse = raw;
-      const parsed = parseResponse(raw, tasks);
-      lastDebug.parsed = clone(parsed);
-      return parsed;
-    } catch (error) {
-      lastDebug.error = String(error?.message || error);
-      throw error;
+    const retries = Math.max(0, Number(options?.retries ?? st.apiAutoRetries) || 0);
+    for (let attempt = 0; attempt <= retries; attempt++) {
+      try {
+        const raw = await window.WORLD_ENGINE_API.callApi(
+          prompt, st.maxTokens, st.temperature, abortController?.signal, st
+        );
+        lastDebug.rawResult = lastDebug.apiResponse = raw;
+        const parsed = parseResponse(raw, tasks);
+        lastDebug.parsed = clone(parsed);
+        return parsed;
+      } catch (error) {
+        lastDebug.error = String(error?.message || error);
+        if (abortController?.signal?.aborted || attempt >= retries) throw error;
+      }
     }
+    throw new Error('记忆 API 请求失败');
   }
 
   async function runTasks(tasks, options) {

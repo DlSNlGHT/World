@@ -182,7 +182,7 @@ function seedState() {
     return '这不是可解析的 JSON';
   };
   await assert.rejects(sandbox.MEMORY_ENGINE.manualReextract(), /没有合法 JSON/);
-  assert.strictEqual(malformedCalls, 1, 'API 已返回内容时不得因解析失败再次请求');
+  assert.strictEqual(malformedCalls, 4, 'JSON 无法修补属于 fault，应按配置额外重试 3 次');
   console.log('memory reextract tests passed');
 })().catch(error => {
   console.error(error);
