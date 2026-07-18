@@ -6,15 +6,16 @@ const root = path.resolve(__dirname, '..');
 const storage = new Map();
 let injection = '';
 let apiResponse = '';
+const chat = [
+  { is_user: true, name: '玩家', mes: '嘉宁三十年正月十五，沈鹤亭在黑礁湾代表听潮阁取出断潮剑。' },
+  { is_user: false, name: '角色', mes: '断潮剑在交战中折损，沈鹤亭确信它还能修复，并在此觉醒听潮能力。' }
+];
 
 global.window = global;
 global.document = { getElementById: () => null };
 global.SillyTavern = {
   getContext: () => ({
-    chat: [
-      { is_user: true, name: '玩家', mes: '嘉宁三十年正月十五，沈鹤亭在黑礁湾代表听潮阁取出断潮剑。' },
-      { is_user: false, name: '角色', mes: '断潮剑在交战中折损，沈鹤亭确信它还能修复，并在此觉醒听潮能力。' }
-    ],
+    chat,
     setExtensionPrompt: (_name, content) => { injection = content; }
   })
 };
@@ -30,7 +31,8 @@ global.WORLD_ENGINE_CORE = {
 global.WORLD_ENGINE_API = { callApi: async () => apiResponse };
 global.WORLD_ENGINE_UI = { setMemoryEvolvingUI: () => {} };
 
-for (const file of ['memory-engine-settings.js', 'memory-engine-data.js', 'memory-engine-prompt.js', 'memory-engine.js']) {
+for (const file of ['memory-engine-settings.js', 'memory-engine-data.js', 'memory-engine-prompt.js',
+  'memory-engine-small-summary-prompt.js', 'memory-engine-big-summary-prompt.js', 'memory-engine.js']) {
   vm.runInThisContext(fs.readFileSync(path.join(root, file), 'utf8'), { filename: file });
 }
 
@@ -59,7 +61,8 @@ async function run() {
       { type: 'object', name: '断潮剑', description: '一柄剑格刻有海浪纹的旧剑，目前剑身折损。', event: '断潮剑在黑礁湾交战中折损。', time: '嘉宁三十年正月十五' },
       { type: 'ability', name: '听潮', description: '能够从潮声中分辨远处动静的感知能力。', event: '沈鹤亭在黑礁湾觉醒听潮。', time: '嘉宁三十年正月十五' },
       { type: 'location', name: '黑礁湾', description: '遍布黑色礁石的海湾。', event: '沈鹤亭在此取出断潮剑。', time: '刚才' }
-    ]
+    ],
+    small_summary: '沈鹤亭在黑礁湾经历交战，断潮剑折损，并觉醒听潮能力。'
   });
 
   const first = await MEMORY_ENGINE.manualExtract();
@@ -76,13 +79,18 @@ async function run() {
   assert(injection.includes('【组织：听潮阁】'), '命中名称后应注入组织记忆');
   assert(injection.includes('【能力：听潮】'), '命中名称后应注入能力记忆');
 
+  chat.push(
+    { is_user: true, name: '玩家', mes: '嘉宁三十年正月十六，沈鹤亭使用玄铁修复断潮剑。' },
+    { is_user: false, name: '角色', mes: '断潮剑修复完成；同日听潮阁宣告解散。' }
+  );
   apiResponse = JSON.stringify({
     personal_memory: [],
     entity_updates: [
       { type: 'object', name: '断潮剑', description: '一柄剑格刻有海浪纹的旧剑，剑身已用玄铁修复。', event: '断潮剑在黑礁湾交战中折损。', time: '嘉宁三十年正月十五' },
       { type: 'object', name: '断潮剑', description: '一柄剑格刻有海浪纹的旧剑，剑身已用玄铁修复。', event: '断潮剑以玄铁修复。', time: '嘉宁三十年正月十六' },
       { type: 'organization', name: '听潮阁', description: '', event: '听潮阁宣告解散。', time: '嘉宁三十年正月十六' }
-    ]
+    ],
+    small_summary: '断潮剑以玄铁修复，听潮阁随后宣告解散。'
   });
   await MEMORY_ENGINE.manualExtract();
   state = MEMORY_ENGINE_DATA.loadState();
@@ -92,18 +100,25 @@ async function run() {
   assert(state.entity_memory.organization[0].description === '活动于沿海地区的情报组织。', 'API 返回空描述时应保留本地原描述');
   assert(state.entity_memory.organization[0].history[0].event === '听潮阁宣告解散。', '空描述不得阻止 event 写入本地历史');
 
+  chat.push(
+    { is_user: true, name: '玩家', mes: '翌日继续记录断潮剑的漫长事件。' },
+    { is_user: false, name: '角色', mes: '这是一段需要完整保留的长事件。' }
+  );
   apiResponse = JSON.stringify({
     personal_memory: [],
-    entity_updates: [{ type: 'object', name: '断潮剑', description: '', event: '事'.repeat(51), time: '' }]
+    entity_updates: [{ type: 'object', name: '断潮剑', description: '', event: '事'.repeat(51), time: '' }],
+    small_summary: '断潮剑产生了一条超过 Prompt 建议字数的完整事件记录。'
   });
-  let overlongRejected = false;
-  try { await MEMORY_ENGINE.manualExtract(); } catch (error) { overlongRejected = /事件超过 50 字/.test(error.message); }
-  assert(overlongRejected, '超过 50 字的 event 应被拒绝');
-
-  apiResponse = JSON.stringify([{ name: ['旧版人物'], known_by: [], memory: '旧版人物记得这次测试。', time: '' }]);
   await MEMORY_ENGINE.manualExtract();
   state = MEMORY_ENGINE_DATA.loadState();
-  assert(state.personal_memory.some(person => person.names.includes('旧版人物')), '应兼容旧版人物数组响应');
+  assert(state.entity_memory.object[0].history.some(item => item.event === '事'.repeat(51)),
+    '超过 Prompt 建议字数的 event 仍应完整写入本地状态');
+
+  const legacy = MEMORY_ENGINE._test.parseResponse(
+    JSON.stringify([{ name: ['旧版人物'], known_by: [], memory: '旧版人物记得这次测试。', time: '' }]),
+    { memory: true }
+  );
+  assert(legacy.personal.some(item => item.name.includes('旧版人物')), '应兼容旧版人物数组响应');
 
   const beforeEdit = {
     personal_memory: [
