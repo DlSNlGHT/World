@@ -1156,6 +1156,14 @@
   gap: 10px;
   margin-bottom: 9px;
 }
+.we-memory-record-head[data-memory-collapse-key] {
+  cursor: pointer;
+}
+.we-memory-record-head[data-memory-collapse-key]:focus-visible {
+  outline: 1px solid color-mix(in srgb, var(--we-accent) 65%, transparent);
+  outline-offset: 4px;
+  border-radius: 4px;
+}
 .we-memory-record.is-collapsed .we-memory-record-head {
   margin-bottom: 0;
 }
