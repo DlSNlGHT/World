@@ -116,6 +116,10 @@ for (const filename of [
     '组合人物实体任务必须保留非空 JSON 条目结构，不能只给空数组');
   assert.ok(taskPrompt.includes('每一项都必须重复填写相同的 time'),
     '组合 Prompt 必须明确同一时间的多条记忆逐项重复填写 time');
+  assert.ok(taskPrompt.includes('PersonalMemory 只能包含 name、known_by、memory、time'));
+  assert.ok(taskPrompt.includes('EntityUpdate 只能包含 type、name、aliases、description、event、time'));
+  assert.ok(taskPrompt.includes('不得增加统一输出模板之外的顶层字段或任何额外条目字段'),
+    '组合 Prompt 必须保留完整的 JSON 字段与类型约束');
   const sharedSummaryPrompt = sandbox.MEMORY_ENGINE_SMALL_SUMMARY_PROMPT.buildUserPrompt({
     startLayer: 3, endLayer: 4, conversation: '这段正文不应再次附加', reuseConversation: true
   });
