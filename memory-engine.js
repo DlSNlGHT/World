@@ -224,6 +224,7 @@ window.MEMORY_ENGINE = (function() {
     if (tasks.small) {
       segments.push(`【任务说明】\n${window.MEMORY_ENGINE_SMALL_SUMMARY_PROMPT.SYSTEM_PROMPT}\n\n${window.MEMORY_ENGINE_SMALL_SUMMARY_PROMPT.buildUserPrompt({
         ...tasks.small,
+        reuseConversation: sharesReference,
         referenceContext: sharesReference && memoryReference?.text
           ? '沿用同一请求前文人物/实体任务中的【只读辅助参考】，不得把其中旧内容写成本段新增事件。'
           : (smallReference?.text || ''),
@@ -236,11 +237,30 @@ window.MEMORY_ENGINE = (function() {
       })}`);
     }
     const fields = [];
-    if (tasks.memory) fields.push('"personal_memory": []', '"entity_updates": []');
+    if (tasks.memory) fields.push(`"personal_memory": [
+    {
+      "name": ["人物名或别名"],
+      "known_by": ["其他知情人物名"],
+      "memory": "一条独立的人物主观记忆",
+      "time": "这条记忆对应的绝对故事时间或空字符串"
+    }
+  ]`, `"entity_updates": [
+    {
+      "type": "organization、object、ability、location 四者之一",
+      "name": "实体名称",
+      "aliases": ["实体别名"],
+      "description": "当前描述或空字符串",
+      "event": "一条独立的本批新增重要事件或空字符串",
+      "time": "这条事件对应的绝对故事时间或空字符串"
+    }
+  ]`);
     if (tasks.small) fields.push('"small_summary": ""');
     if (tasks.big) fields.push('"big_summary": ""');
     const tone = clean(st.tonePrompt);
-    return `${segments.join('\n\n=====\n\n')}\n\n【统一输出要求】\n只输出一个合法 JSON 对象，不要输出 Markdown、代码围栏或解释。对象包含本次要求的字段：\n{\n  ${fields.join(',\n  ')}\n}${tone ? `\n\n【附加要求】\n${tone}` : ''}`;
+    const emptyMemory = tasks.memory
+      ? '\n\n没有对应内容时分别使用 "personal_memory": [] 和 "entity_updates": []；不得省略字段。'
+      : '';
+    return `${segments.join('\n\n=====\n\n')}\n\n【统一输出要求】\n只输出一个合法 JSON 对象，不要输出 Markdown、代码围栏或解释。严格按照以下完整结构返回；模板文字替换为实际内容：\n{\n  ${fields.join(',\n  ')}\n}${emptyMemory}${tone ? `\n\n【附加要求】\n${tone}` : ''}`;
   }
 
   function parseResponse(raw, tasks) {
