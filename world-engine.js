@@ -623,6 +623,36 @@
         });
       }
 
+      async function manualMemoryLink() {
+        if (isEvolving) { setStatus('世界引擎或联动任务正在运行...'); return false; }
+        if (window.MEMORY_ENGINE?.isRunning?.()) { setStatus('记忆引擎已有任务正在运行...'); return false; }
+        const state = core.loadState();
+        const digest = String(state?.worldDigest || '').trim();
+        if (!digest) { setStatus('当前没有可联动的世界摘要', true); return false; }
+        isEvolving = true;
+        try {
+          setStatus('正在手动联动记忆引擎...');
+          const result = await window.MEMORY_ENGINE?.ingestWorldEvolution?.({
+            layer: core.getChatLayer(),
+            worldRound: state.round,
+            worldDigest: digest,
+            worldUpdate: state.lastEvolveResult || state,
+            replace: true,
+            force: true
+          });
+          if (!result || result.skipped) throw new Error('记忆引擎未执行联动');
+          setStatus('手动联动完成，世界摘要已新增为纪要');
+          if (ui?.refresh) ui.refresh(true);
+          return true;
+        } catch (error) {
+          console.error('[世界引擎] 手动联动记忆引擎失败', error);
+          setStatus('手动联动失败：' + (error?.message || error), true);
+          return false;
+        } finally {
+          isEvolving = false;
+        }
+      }
+
       // 设置页「本轮对话时间」手填保存后：判断是否够时间，够则推演。
       async function manualTimeEvolve(currentDay) {
         if (api.getSettings(true).engineEnabled === false) { setStatus('世界引擎已关闭'); return; }
@@ -740,7 +770,7 @@
       // 初始化时立即按对话层数选择注入状态
       applyInjectionForCurrentRound();
       // 暴露按对话层数选择的注入入口供手动调用
-      window.WORLD_ENGINE = { applyInjection: applyInjectionForCurrentRound, manualEvolve, manualTimeEvolve };
+      window.WORLD_ENGINE = { applyInjection: applyInjectionForCurrentRound, manualEvolve, manualTimeEvolve, manualMemoryLink };
 
       // ========== 添加面板入口按钮到酒馆输入栏 ==========
       // 已移至 world-engine-ui.js 的 buildInputButton()
