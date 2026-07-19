@@ -33,7 +33,10 @@ window.MEMORY_ENGINE_SMALL_SUMMARY_PROMPT = (function() {
       ).join('\n')}` : ''
     ].filter(Boolean).join('\n\n');
     const reference = referenceContext || history;
-    return `${reference ? `【只读历史参考】\n${reference}\n\n` : ''}【总结范围】\n楼层 ${startLayer} 至 ${endLayer}\n\n【待总结对话】\n${clean(input.conversation) || '（空）'}`;
+    const conversation = input.reuseConversation === true
+      ? '沿用同一请求前文人物/实体任务中的【待提取对话】；该对话即为本次总结范围，不再重复附录。'
+      : (clean(input.conversation) || '（空）');
+    return `${reference ? `【只读历史参考】\n${reference}\n\n` : ''}【总结范围】\n楼层 ${startLayer} 至 ${endLayer}\n\n【待总结对话】\n${conversation}`;
   }
 
   return { SYSTEM_PROMPT, buildUserPrompt };

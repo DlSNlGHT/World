@@ -82,12 +82,49 @@ window.MEMORY_ENGINE_PROMPT = (function() {
 
 不得增加其他顶层字段或条目字段。`;
 
-  // 供组合任务使用：只声明本任务负责的字段，不排斥同一次请求中的其他独立任务字段。
-  const TASK_PROMPT = SYSTEM_PROMPT.replace(/【输出格式】[\s\S]*$/, `【本任务输出字段】
-返回 personal_memory 与 entity_updates 两个 JSON 字段。
-personal_memory 的每一项只能包含 name、known_by、memory、time；没有内容时返回 []。
-entity_updates 的每一项只能包含 type、name、aliases、description、event、time；没有内容时返回 []。
-严格遵守前述类型、长度、数量、时间和分类规则。`);
+  // 供组合任务使用：保留完整条目结构，但不限制同一次请求追加纪要或总述字段。
+  const TASK_PROMPT = SYSTEM_PROMPT.replace(/【输出格式】[\s\S]*$/, `【本任务输出字段与结构】
+统一 JSON 对象中必须包含以下两个字段，并严格使用下列条目结构：
+
+{
+"personal_memory": [
+  {
+    "name": ["人物名或别名"],
+    "known_by": ["其他知情人物名"],
+    "memory": "一条独立的人物主观记忆",
+    "time": "这条记忆对应的绝对故事时间或空字符串"
+  }
+],
+
+"entity_updates": [
+  {
+    "type": "organization、object、ability、location 四者之一",
+    "name": "实体名称",
+    "aliases": ["实体别名"],
+    "description": "当前描述或空字符串",
+    "event": "一条独立的本批新增重要事件或空字符串",
+    "time": "这条事件对应的绝对故事时间或空字符串"
+  }
+]
+}
+
+每个 personal_memory 数组项就是一条独立记忆，每项都必须单独包含 name、known_by、memory、time。同一人物在同一时间有多条彼此独立的记忆时，每一项都必须重复填写相同的 time，不得因上一项已经填写而省略。
+每个 entity_updates 数组项同理只携带一条 event，并单独填写该 event 的 time。
+
+约束：
+1. 本任务负责 personal_memory 和 entity_updates；统一顶层对象除这两个字段外，只能包含同一次请求明确要求的 small_summary 或 big_summary。
+2. 没有对应内容时，数组返回 []。
+3. PersonalMemory 只能包含 name、known_by、memory、time。
+4. EntityUpdate 只能包含 type、name、aliases、description、event、time。
+5. PersonalMemory.name 必须是非空字符串数组；EntityUpdate.name 必须是非空字符串；known_by 与 aliases 必须是字符串数组。
+6. memory 长度为 1 至 50 个字符。
+7. description 长度为 0 至 200 个字符；空字符串表示不更新本地描述。
+8. event 长度为 0 至 50 个字符。
+9. PersonalMemory.time 表示记忆所指事件的绝对故事时间；EntityUpdate.time 只对应 event。无法确定时填写空字符串，event 为空时 time 必须为空。
+10. type 只能是 organization、object、ability、location。
+11. 只输出有效 JSON；模板中的说明文字不得原样输出，不得增加其他字段。
+
+不得增加统一输出模板之外的顶层字段或任何额外条目字段。严格遵守前述类型、长度、数量、时间和分类规则。`);
 
   function clean(value) {
     return String(value == null ? '' : value).trim();
