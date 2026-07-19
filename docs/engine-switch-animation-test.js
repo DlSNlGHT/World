@@ -5,6 +5,7 @@ const path = require('path');
 const root = path.resolve(__dirname, '..');
 const ui = fs.readFileSync(path.join(root, 'world-engine-ui.js'), 'utf8');
 const css = fs.readFileSync(path.join(root, 'style.css'), 'utf8');
+const world = fs.readFileSync(path.join(root, 'world-engine.js'), 'utf8');
 
 assert.match(
   ui,
@@ -26,5 +27,14 @@ assert.match(
   /we-sat-target-world\.we-sat-engine-running::after/,
   '世界引擎入口必须有独立运行动效'
 );
+
+const worldComplete = world.indexOf("setStatus('世界推演完成')");
+const worldUiStop = world.indexOf('ui.setEvolvingUI(false)', worldComplete);
+const worldUiRefresh = world.indexOf('ui.refresh(true)', worldComplete);
+const memoryLinkStart = world.indexOf('await window.MEMORY_ENGINE?.ingestWorldEvolution?.');
+assert.ok(worldComplete >= 0 && worldUiStop > worldComplete && worldUiRefresh > worldUiStop,
+  '世界 API 完成后必须先停止世界动效并刷新世界界面');
+assert.ok(memoryLinkStart > worldUiRefresh,
+  '记忆联动必须在世界动效停止且界面刷新之后才开始');
 
 console.log('engine switch animation tests passed');

@@ -82,12 +82,35 @@ window.MEMORY_ENGINE_PROMPT = (function() {
 
 不得增加其他顶层字段或条目字段。`;
 
-  // 供组合任务使用：只声明本任务负责的字段，不排斥同一次请求中的其他独立任务字段。
-  const TASK_PROMPT = SYSTEM_PROMPT.replace(/【输出格式】[\s\S]*$/, `【本任务输出字段】
-返回 personal_memory 与 entity_updates 两个 JSON 字段。
-personal_memory 的每一项只能包含 name、known_by、memory、time；没有内容时返回 []。
-entity_updates 的每一项只能包含 type、name、aliases、description、event、time；没有内容时返回 []。
-严格遵守前述类型、长度、数量、时间和分类规则。`);
+  // 供组合任务使用：保留完整条目结构，但不限制同一次请求追加纪要或总述字段。
+  const TASK_PROMPT = SYSTEM_PROMPT.replace(/【输出格式】[\s\S]*$/, `【本任务输出字段与结构】
+统一 JSON 对象中必须包含以下两个字段，并严格使用下列条目结构：
+
+{
+"personal_memory": [
+  {
+    "name": ["人物名或别名"],
+    "known_by": ["其他知情人物名"],
+    "memory": "一条独立的人物主观记忆",
+    "time": "这条记忆对应的绝对故事时间或空字符串"
+  }
+],
+
+"entity_updates": [
+  {
+    "type": "organization、object、ability、location 四者之一",
+    "name": "实体名称",
+    "aliases": ["实体别名"],
+    "description": "当前描述或空字符串",
+    "event": "一条独立的本批新增重要事件或空字符串",
+    "time": "这条事件对应的绝对故事时间或空字符串"
+  }
+]
+}
+
+每个 personal_memory 数组项就是一条独立记忆，每项都必须单独包含 name、known_by、memory、time。同一人物在同一时间有多条彼此独立的记忆时，每一项都必须重复填写相同的 time，不得因上一项已经填写而省略。
+每个 entity_updates 数组项同理只携带一条 event，并单独填写该 event 的 time。
+没有人物记忆时 personal_memory 返回 []；没有实体更新时 entity_updates 返回 []。不得增加其他条目字段。严格遵守前述类型、长度、数量、时间和分类规则。`);
 
   function clean(value) {
     return String(value == null ? '' : value).trim();

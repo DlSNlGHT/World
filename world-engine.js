@@ -529,6 +529,7 @@
       // storyDay 非 null → 推演成功后写入 state.time（按时间模式）。
       async function performEvolution(aiMsg, chat, storyDay, readRoundsOverride, opts) {
         isEvolving = true;
+        let worldUiPhaseFinished = false;
         opts = opts || {};
         try {
           const state = core.loadState();
@@ -558,6 +559,13 @@
           if (success) {
             ledger.recordChanges(state);
             if (storyDay != null) { state.time = Number(storyDay); core.saveState(state); }
+            // 世界 API 已经完成：先落库、更新注入并刷新世界界面，再开始记忆联动。
+            // isEvolving 继续作为内部互斥锁保持 true，防止联动期间再次启动世界推演；
+            // UI 运行态则在这里结束，让两个引擎的动画严格按先后阶段显示。
+            if (isNewRound || opts.forceApplyInjection) applyInjection();
+            setStatus('世界推演完成');
+            if (ui) { ui.setEvolvingUI(false); ui.refresh(true); }
+            worldUiPhaseFinished = true;
             if (settings.memoryLinkEnabled === true) {
               try {
                 await window.MEMORY_ENGINE?.ingestWorldEvolution?.({
@@ -572,14 +580,12 @@
                 setStatus('世界推演完成，但记忆联动失败：' + (linkError?.message || linkError), true);
               }
             }
-            // 重 roll 时正文已按楼层注入存档点，推演完成后不覆盖
-            if (isNewRound || opts.forceApplyInjection) applyInjection();
             console.log('[世界引擎] ✅ 推演完成，当前第', state.round, '轮');
           } else {
             console.warn('[世界引擎] ⚠️ 推演失败或已中止');
           }
           const reason = !success && evolution.getLastError ? evolution.getLastError() : '';
-          setStatus(success ? '推演完成' : (reason ? '推演失败：' + reason : '推演失败或已中止'), !success);
+          if (!success) setStatus(reason ? '推演失败：' + reason : '推演失败或已中止', true);
           return success;
         } catch(e) {
           console.error('[世界引擎] 处理失败', e);
@@ -587,7 +593,10 @@
           return false;
         } finally {
           isEvolving = false;
-          if (ui) { ui.setEvolvingUI(false); ui.refresh(true); }
+          if (ui) {
+            if (!worldUiPhaseFinished) ui.setEvolvingUI(false);
+            ui.refresh(true);
+          }
         }
       }
 
