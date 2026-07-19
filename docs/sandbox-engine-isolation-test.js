@@ -34,6 +34,7 @@ async function testExecutionCrashDoesNotBlockMemory() {
       'world-engine-inject.js': ['WORLD_ENGINE_INJECT', { buildContext() { return ''; } }],
       'memory-engine-settings.js': ['MEMORY_ENGINE_SETTINGS', { getSettings() { return {}; }, patchSettings() {} }],
       'memory-engine-data.js': ['MEMORY_ENGINE_DATA', { loadState() { return { personal_memory: [] }; }, saveState() {} }],
+      'memory-engine-timeline.js': ['MEMORY_ENGINE_TIMELINE', { captureRange() { return []; }, auditRefs() { return { valid: true, refs: [] }; }, syncHidden() {} }],
       'memory-engine-prompt.js': ['MEMORY_ENGINE_PROMPT', { buildUserPrompt() { return ''; } }],
       'memory-engine-small-summary-prompt.js': ['MEMORY_ENGINE_SMALL_SUMMARY_PROMPT', { buildUserPrompt() { return ''; } }],
       'memory-engine-big-summary-prompt.js': ['MEMORY_ENGINE_BIG_SUMMARY_PROMPT', { buildUserPrompt() { return ''; } }],
