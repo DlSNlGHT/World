@@ -64,6 +64,19 @@ for (const file of [
 }
 
 (async () => {
+  let ordinaryState = sandbox.MEMORY_ENGINE_DATA.loadState();
+  ordinaryState.timeline.nodes.push({
+    id: 'memory_ordinary', kind: 'memory', originChatId: 'world-link-test',
+    startLayer: 19, endLayer: 20, status: 'valid', revision: 1,
+    sourceRefs: [{
+      chatId: 'world-link-test', messageId: 'ordinary:19-20', layer: 20,
+      role: 'synthetic', swipeId: 0, hash: 'ordinary', synthetic: true
+    }],
+    sourceDigest: 'ordinary',
+    personal: [{ name: ['ordinary-person'], known_by: [], memory: 'ordinary-memory', time: '' }],
+    entities: {}, createdAt: Date.now(), updatedAt: Date.now()
+  });
+  sandbox.MEMORY_ENGINE_DATA.saveState(sandbox.MEMORY_ENGINE.replayTimeline(ordinaryState));
   await sandbox.MEMORY_ENGINE.ingestWorldEvolution({
     layer: 20, worldDigest: '世界摘要A', worldUpdate: { world_digest: '世界摘要A' }, replace: false
   });
@@ -74,7 +87,20 @@ for (const file of [
   assert.strictEqual(state.event_memory.big_summaries[0].content, '总述A');
   assert.ok(JSON.stringify(state).includes('版本A'));
 
+  assert.strictEqual(state.event_memory.small_summaries[0].sourceKey, 'world-link-test:20');
+  assert.ok(state.timeline.nodes.some(node =>
+    node.kind === 'world_link' && node.sourceKey === 'world-link-test:20'
+  ));
+  state.event_memory.small_summaries.push({
+    id: 'small_ordinary', startLayer: 19, endLayer: 20,
+    content: 'ordinary-summary-19-20', status: 'valid', revision: 1
+  });
+  sandbox.MEMORY_ENGINE_DATA.saveState(state);
+
   assert.strictEqual(sandbox.MEMORY_ENGINE._test.rollbackLinkedLayer(20), true);
+  state = sandbox.MEMORY_ENGINE_DATA.loadState();
+  assert.ok(JSON.stringify(state).includes('ordinary-summary-19-20'));
+  assert.ok(JSON.stringify(state).includes('ordinary'));
   version = 'B';
   await sandbox.MEMORY_ENGINE.ingestWorldEvolution({
     layer: 20, worldDigest: '世界摘要B', worldUpdate: { world_digest: '世界摘要B' }, replace: true
@@ -84,7 +110,8 @@ for (const file of [
   assert.ok(!serialized.includes('摘要A') && !serialized.includes('版本A') && !serialized.includes('总述A'),
     '同楼层重 roll 后不得残留旧人物、实体、纪要或总述');
   assert.ok(serialized.includes('摘要B') && serialized.includes('版本B') && serialized.includes('总述B'));
-  assert.strictEqual(state.event_memory.small_summaries.length, 1, '重 roll 应替换而不是追加世界摘要纪要');
+  assert.ok(serialized.includes('ordinary-summary-19-20') && serialized.includes('ordinary'));
+  assert.strictEqual(state.event_memory.small_summaries.length, 2, '重 roll 应只替换世界摘要纪要');
   assert.strictEqual(state.event_memory.big_summaries.length, 1, '受影响总述应重算而不是追加');
 
   const items = Array.from({ length: 5 }, (_, index) => `记忆${index}`); // 旧 → 新

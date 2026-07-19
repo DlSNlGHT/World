@@ -175,6 +175,8 @@ window.MEMORY_ENGINE_DATA = (function() {
         nodes: (Array.isArray(timeline.nodes) ? timeline.nodes : []).map((node, index) => ({
           id: clean(node?.id) || `memory_${String(index + 1).padStart(6, '0')}`,
           kind: clean(node?.kind) || 'memory',
+          ...(node?.source === 'world_engine' ? { source: 'world_engine' } : {}),
+          ...(clean(node?.sourceKey) ? { sourceKey: clean(node.sourceKey) } : {}),
           originChatId: clean(node?.originChatId || originChatId),
           startLayer: Number.isFinite(Number(node?.startLayer)) ? Number(node.startLayer) : 0,
           endLayer: Number.isFinite(Number(node?.endLayer)) ? Number(node.endLayer) : 0,
