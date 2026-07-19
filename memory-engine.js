@@ -41,28 +41,12 @@ window.MEMORY_ENGINE = (function() {
     return names.some(name => blacklist.has(normalized(name)));
   }
 
-  function worldLinkEnabled() {
-    return window.WORLD_ENGINE_API?.getSettings?.(true)?.memoryLinkEnabled === true;
-  }
-
-  function ensureLinkCheckpoint(layer, baseState) {
-    if (!worldLinkEnabled() || !Number.isFinite(Number(layer)) || !data()?.saveLinkCheckpoint) return null;
-    const numericLayer = Number(layer);
-    const existing = data().loadLinkCheckpoint?.();
-    if (existing?.layer === numericLayer) return existing;
-    return data().saveLinkCheckpoint({
-      layer: numericLayer,
-      rolledBack: false,
-      baseState: clone(baseState || data().loadState())
-    });
-  }
-
   function rollbackLinkedLayer(layer) {
-    if (!worldLinkEnabled()) return false;
-    const checkpoint = data()?.loadLinkCheckpoint?.();
-    if (!checkpoint || checkpoint.layer !== Number(layer)) return false;
-    data().saveState(checkpoint.baseState);
-    data().saveLinkCheckpoint({ ...checkpoint, rolledBack: true });
+    const state = data()?.loadState?.();
+    if (!state) return false;
+    const removed = removeLinkedLayerFromState(state, layer);
+    if (!removed.removed) return false;
+    data().saveState(replayTimeline(state));
     applyInjection();
     return true;
   }
@@ -640,6 +624,8 @@ window.MEMORY_ENGINE = (function() {
     const node = {
       id: nextTimelineNodeId(timeline),
       kind: task?.kind || 'memory',
+      source: task?.kind === 'world_link' ? 'world_engine' : undefined,
+      sourceKey: task?.kind === 'world_link' ? clean(task?.sourceKey) : undefined,
       originChatId: data()?.getChatId?.() || 'default',
       startLayer: bounds.startLayer,
       endLayer: bounds.endLayer,
@@ -654,6 +640,59 @@ window.MEMORY_ENGINE = (function() {
     };
     timeline.nodes.push(node);
     return node;
+  }
+
+  // 世界联动是一笔带来源标记的独立事务。重 roll 只撤销当前楼层的联动节点、
+  // 世界摘要纪要及消费过这些纪要的总述；普通对话记忆和普通纪要始终保留。
+  function removeLinkedLayerFromState(state, layer) {
+    const numericLayer = Number(layer);
+    if (!Number.isFinite(numericLayer)) return { removed: false, sourceKey: '', removedSmallIds: [] };
+    const sourceKey = `${data()?.getChatId?.() || 'default'}:${numericLayer}`;
+    const timeline = ensureTimelineState(state), eventMemory = ensureEventState(state);
+    const matchesNode = node => {
+      if (node?.kind !== 'world_link') return false;
+      if (clean(node?.sourceKey) === sourceKey) return true;
+      if ((node?.sourceRefs || []).some(ref => clean(ref?.messageId) === sourceKey)) return true;
+      return !clean(node?.sourceKey) && Number(node?.startLayer) === numericLayer
+        && Number(node?.endLayer) === numericLayer;
+    };
+    const matchesSmall = item => item?.source === 'world_engine' && (
+      clean(item?.sourceKey) === sourceKey
+      || (!clean(item?.sourceKey) && Number(item?.startLayer) === numericLayer && Number(item?.endLayer) === numericLayer)
+    );
+
+    const removedNodes = timeline.nodes.filter(matchesNode);
+    const removedSmall = eventMemory.small_summaries.filter(matchesSmall);
+    if (!removedNodes.length && !removedSmall.length) {
+      return { removed: false, sourceKey, removedSmallIds: [] };
+    }
+
+    const removedSmallIds = new Set(removedSmall.map(item => clean(item?.id)).filter(Boolean));
+    const affectedBig = eventMemory.big_summaries.filter(item =>
+      (item?.childIds || []).some(id => removedSmallIds.has(clean(id)))
+    );
+    const affectedChildIds = new Set([
+      ...removedSmallIds,
+      ...affectedBig.flatMap(item => item?.childIds || []).map(clean).filter(Boolean)
+    ]);
+    const firstAffectedIndex = eventMemory.small_summaries.findIndex(item => affectedChildIds.has(clean(item?.id)));
+
+    timeline.nodes = timeline.nodes.filter(node => !matchesNode(node));
+    eventMemory.small_summaries = eventMemory.small_summaries.filter(item => !matchesSmall(item));
+    eventMemory.big_summaries = eventMemory.big_summaries.filter(item => !affectedBig.includes(item));
+    if (firstAffectedIndex >= 0) {
+      eventMemory.big_summary_cursor = Math.min(eventMemory.big_summary_cursor, firstAffectedIndex);
+    }
+    eventMemory.big_summary_cursor = Math.max(0, Math.min(
+      eventMemory.small_summaries.length, Number(eventMemory.big_summary_cursor) || 0
+    ));
+    return {
+      removed: true,
+      sourceKey,
+      removedNodeIds: removedNodes.map(node => node.id),
+      removedSmallIds: [...removedSmallIds],
+      removedBigIds: affectedBig.map(item => item.id)
+    };
   }
 
   function replayTimeline(state, stopBeforeId) {
@@ -787,9 +826,6 @@ window.MEMORY_ENGINE = (function() {
     if (running && !options?.allowWhileBackfill) return { skipped: true, reason: 'running' };
     if (!tasks?.memory && !tasks?.small && !tasks?.big) return { skipped: true, reason: 'no_tasks' };
     if (tasks.small && tasks.big) throw new Error('总述必须在纪要落库后独立运行');
-    if (tasks.memory && Number.isFinite(Number(options?.layer))) {
-      ensureLinkCheckpoint(Number(options.layer), options?.baseState);
-    }
     running = true;
     runningLabel = tasks.memory && tasks.small ? '人物、实体与纪要'
       : (tasks.memory ? '人物与实体提取' : (tasks.small ? '纪要' : '总述'));
@@ -846,7 +882,9 @@ window.MEMORY_ENGINE = (function() {
           endLayer: Number(linked.layer) || 0,
           content: Array.from(clean(linked.content)).slice(0, 200).join(''),
           source: 'world_engine',
-          sourceKey: clean(linked.sourceKey)
+          sourceKey: clean(linked.sourceKey),
+          status: 'valid',
+          revision: 1
         });
         addedSmall += 1;
       }
@@ -1740,7 +1778,7 @@ window.MEMORY_ENGINE = (function() {
 
   async function ingestWorldEvolution(payload) {
     const worldSettings = window.WORLD_ENGINE_API?.getSettings?.(true) || {};
-    if (worldSettings.memoryLinkEnabled !== true) return { skipped: true, reason: 'disabled' };
+    if (worldSettings.memoryLinkEnabled !== true && payload?.force !== true) return { skipped: true, reason: 'disabled' };
     const st = settings();
     if (st.engineEnabled === false) throw new Error('记忆引擎已关闭，无法执行世界联动');
     if (backfillRunning) throw new Error('记忆引擎正在批量重填，暂不能执行世界联动');
@@ -1749,12 +1787,7 @@ window.MEMORY_ENGINE = (function() {
     const deadline = Date.now() + Math.max(10000, Number(st.apiTimeoutMs) || 120000);
     while (running && Date.now() < deadline) await delay(100);
     if (running) throw new Error('等待当前记忆任务结束超时');
-    let checkpoint = ensureLinkCheckpoint(layer, data().loadState());
-    if (payload?.replace === true && checkpoint && checkpoint.rolledBack !== true) {
-      data().saveState(checkpoint.baseState);
-      data().saveLinkCheckpoint({ ...checkpoint, rolledBack: true });
-      checkpoint = data().loadLinkCheckpoint();
-    }
+    if (payload?.replace === true) rollbackLinkedLayer(layer);
 
     const digest = clean(payload?.worldDigest);
     if (!digest) return { skipped: true, reason: 'empty_digest' };
@@ -1778,17 +1811,11 @@ window.MEMORY_ENGINE = (function() {
         saveCheckpoint: false,
         worldDigestMinute: { layer, sourceKey, content: digest }
       });
-      checkpoint = data().loadLinkCheckpoint?.();
-      if (checkpoint?.layer === layer) data().saveLinkCheckpoint({ ...checkpoint, rolledBack: false });
       return result;
     } catch (error) {
-      checkpoint = data().loadLinkCheckpoint?.();
-      if (checkpoint?.layer === layer) {
-        // 联动失败只撤销本次联动尝试；同楼层已完成的普通记忆提取仍应保留。
-        data().saveState(attemptBase);
-        data().saveLinkCheckpoint({ ...checkpoint, rolledBack: true });
-        applyInjection();
-      }
+      // 联动失败只撤销本次联动尝试；同楼层已完成的普通记忆提取仍应保留。
+      data().saveState(attemptBase);
+      applyInjection();
       throw error;
     }
   }
@@ -1972,7 +1999,7 @@ window.MEMORY_ENGINE = (function() {
     getRunningLabel: () => runningLabel,
     isRunning: () => running || backfillRunning || reconciling,
     _test: {
-      exponentialMemorySample, rollbackLinkedLayer, rewindSummaryCursorForDeletedLayers,
+      exponentialMemorySample, rollbackLinkedLayer, removeLinkedLayerFromState, rewindSummaryCursorForDeletedLayers,
       buildSmallHistoryContext, buildTaskReferenceContext, previousRawReference,
       parseResponse, selectHiddenMessageIds, recentRawRoundMessageIds
     }

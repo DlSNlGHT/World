@@ -3629,7 +3629,9 @@ window.WORLD_ENGINE_UI = (function() {
           <input type="checkbox" id="we-memory-link-enabled" ${settings.memoryLinkEnabled === true ? 'checked' : ''}>
           世界推演完成后联动记忆引擎
         </label>
-        <div style="font-size:11px;color:var(--we-text3);margin-top:3px;">开启后，世界 API 的本轮返回会交给记忆 API 更新人物与实体，并把世界摘要新增为一条纪要。同楼层重 roll 使用独立联动 checkpoint 整体撤销旧结果后重做，不覆盖世界或记忆引擎原有 checkpoint。</div>
+        <div style="font-size:11px;color:var(--we-text3);margin-top:3px;">开启后，世界 API 的本轮返回会交给记忆 API 更新人物与实体，并把世界摘要新增为一条纪要。同楼层重 roll 只撤销带联动标记的旧结果，不影响普通记忆与原有纪要。</div>
+        <button class="we-btn we-btn-primary" id="we-memory-link-now" type="button" style="width:100%;margin-top:8px;"><i class="fa-solid fa-link"></i> 手动联动当前世界信息</button>
+        <div style="font-size:11px;color:var(--we-text3);margin-top:3px;">立即把当前世界状态交给记忆引擎处理，并把当前世界摘要新增为纪要；同楼层重复执行会替换上一次联动结果。</div>
       </div>`;
 
     const displayMode = settings.displayMode === 'expand' ? 'expand' : 'mask';
@@ -4824,6 +4826,21 @@ window.WORLD_ENGINE_UI = (function() {
     }
     bindFilterControls('world');
     bindFilterControls('memory');
+
+    const memoryLinkNow = document.getElementById('we-memory-link-now');
+    if (memoryLinkNow) {
+      memoryLinkNow.onclick = async () => {
+        memoryLinkNow.disabled = true;
+        try {
+          const ok = await window.WORLD_ENGINE?.manualMemoryLink?.();
+          showToast(ok ? '手动联动完成，世界摘要已新增为纪要' : '手动联动未完成', !ok);
+        } catch (error) {
+          showToast('手动联动失败：' + (error?.message || error), true);
+        } finally {
+          memoryLinkNow.disabled = false;
+        }
+      };
+    }
 
     const memoryHideCoveredRaw = document.getElementById('we-memory-hide-covered-raw');
     const memoryRecentRawRounds = document.getElementById('we-memory-recent-raw-rounds');
