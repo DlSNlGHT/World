@@ -1677,7 +1677,9 @@ window.MEMORY_ENGINE = (function() {
         `- [楼层 ${item.startLayer}-${item.endLayer}] ${item.content}`
       ).join('\n')}`);
     }
-    const coveredChildIds = new Set(recentBig.flatMap(item => item.childIds || []));
+    // 总述注入上限只控制进入 prompt 的总述数量；判断纪要是否已经整理时，
+    // 必须查看全部有效总述，避免旧总述退出注入窗口后其子纪要重新被注入。
+    const coveredChildIds = new Set(validBig.flatMap(item => item.childIds || []));
     const hasStructuredOverview = eventMemory.big_summaries.some(item => Array.isArray(item.childIds) && item.childIds.length);
     const pendingSmall = eventMemory.small_summaries.filter((item, index) => {
       if (item.status === 'stale' || item.status === 'failed') return false;
