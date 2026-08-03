@@ -1428,6 +1428,12 @@ window.WORLD_ENGINE_UI = (function() {
         </div>
       </div>
       <div class="we-section" style="margin-top:10px;">
+        <div class="we-section-title">v1.1.2 · 修复总述与纪要重复注入</div>
+        <ul class="we-changelog-items">
+          <li>总述超过注入条数上限后，已被旧总述整理的纪要不再重新进入提示词；只有真正尚未整理的纪要会作为近期事件注入。</li>
+        </ul>
+      </div>
+      <div class="we-section" style="margin-top:10px;">
         <div class="we-section-title">v1.1.1 · 记忆面板与提取稳定性</div>
         <ul class="we-changelog-items">
           <li>人物与实体记忆默认折叠，实体按组织、物品、能力和地点分类展示；纪要与总述默认展开最新一条。</li>

@@ -420,6 +420,29 @@ for (const filename of [
   assert.ok(injectionContent.includes('尚未整理纪要'), '未整理纪要不受总述条数上限影响');
   settings.bigSummaryInjectLimit = 3;
 
+  const structuredInjection = sandbox.MEMORY_ENGINE_DATA.defaultState();
+  structuredInjection.event_memory.small_summaries = Array.from({ length: 5 }, (_, index) => ({
+    id: `covered_small_${index + 1}`,
+    startLayer: index * 2 + 1,
+    endLayer: index * 2 + 2,
+    content: index === 4 ? 'pending-minute' : `covered-minute-${index + 1}`,
+    status: 'valid'
+  }));
+  structuredInjection.event_memory.big_summaries = Array.from({ length: 4 }, (_, index) => ({
+    id: `overview_${index + 1}`,
+    startLayer: index * 2 + 1,
+    endLayer: index * 2 + 2,
+    content: `overview-content-${index + 1}`,
+    childIds: [`covered_small_${index + 1}`],
+    status: 'valid'
+  }));
+  sandbox.MEMORY_ENGINE_DATA.saveState(structuredInjection);
+  sandbox.MEMORY_ENGINE.applyInjection();
+  assert.ok(!injectionContent.includes('overview-content-1'), '超过上限的旧总述不应注入');
+  assert.ok(!injectionContent.includes('covered-minute-1'), '旧总述退出注入窗口后，其已整理纪要不得重新注入');
+  assert.ok(injectionContent.includes('overview-content-2'), '上限内的最近总述应继续注入');
+  assert.ok(injectionContent.includes('pending-minute'), '真正未整理的纪要应继续注入');
+
   const latest = sandbox.MEMORY_ENGINE_DATA.defaultState();
   latest.personal_memory = [
     { id: 'char_000001', names: ['甲'], memory: { '': ['甲掌握秘密。'] } },
