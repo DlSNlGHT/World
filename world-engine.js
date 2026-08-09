@@ -359,13 +359,12 @@
         if (window.__WE_SetExternalStatus) window.__WE_SetExternalStatus(text, !!isErr);
       }
 
-      // [移植 v2.3.20 区间] 自上次推演经过的轮数（存档点锚定），夹紧到 maxRounds 上限
-      function getElapsedReadRounds(state, maxRounds) {
+      // [移植上游 c233bef] 按调用路径显式传入锚点：
+      // forward 从当前状态继续，redo/time 从存档点重算，避免 forward 错读旧 checkpoint。
+      function getElapsedReadRounds(baseState, maxRounds) {
         const limit = Math.max(1, parseInt(maxRounds) || 1);
-        const cp = core.restoreCheckpoint();
         const L = core.getChatLayer();
-        let anchorL = (cp && cp.chatLayer != null) ? Number(cp.chatLayer)
-                    : (state && state.chatLayer != null ? Number(state.chatLayer) : L);
+        let anchorL = baseState && baseState.chatLayer != null ? Number(baseState.chatLayer) : L;
         if (!Number.isFinite(anchorL)) anchorL = L;
         const since = Math.floor(Math.max(0, L - anchorL) / 2);
         return Math.max(1, Math.min(since, limit));
@@ -440,7 +439,8 @@
         const aiMsg = !lastMsg?.is_user ? (lastMsg?.mes || '').trim() : '';
         const settings = api.getSettings(true);
         const state = core.loadState();
-        const readRounds = getElapsedReadRounds(state, settings.manualReadRounds);
+        const dialogueBase = mode === 'redo' ? core.restoreCheckpoint() : state;
+        const readRounds = getElapsedReadRounds(dialogueBase, settings.manualReadRounds);
         return performEvolution(aiMsg, chat, null, readRounds, {
           mode,
           displayScope: scope,
@@ -474,7 +474,7 @@
         const lastMsg = chat[chat.length - 1];
         const aiMsg = !lastMsg?.is_user ? (lastMsg?.mes || '').trim() : '';
         // 与自动路径一致：读取 min(经过轮数, 上限X) 轮
-        const readRounds = getElapsedReadRounds(st, settings.evolveTimeMaxRounds);
+        const readRounds = getElapsedReadRounds(cp || st, settings.evolveTimeMaxRounds);
         await performEvolution(aiMsg, chat, Number(currentDay), readRounds);
       }
 

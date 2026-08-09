@@ -1090,7 +1090,7 @@ window.WORLD_ENGINE_UI = (function() {
       if (e.evolveResult && !isTerminal) {
         const resultColors = { '成功':'#7a9a7a', '保持':'#b8a070', '受挫':'#c46a6a' };
         const color = resultColors[e.evolveResult] || '#888';
-        metaExtra = ` <span class="we-badge" style="background:${color}22;color:${color};">${e.evolveResult}</span>`;
+        metaExtra = ` <span class="we-badge we-event-result-badge" style="--event-result:${color};">${e.evolveResult}</span>`;
       }
       // 阶段进度条
       let progressHtml = '';
@@ -1117,7 +1117,7 @@ window.WORLD_ENGINE_UI = (function() {
         const left = keepRounds - (curRound - e._terminalSince) + 1;
         if (left >= 1) {
           const cdColor = e.stage === '已完成' ? '#58e8b3' : '#e07465';
-          countdownHtml = ` <span class="we-badge we-event-countdown" style="color:${cdColor};" title="该事件在 ${left} 轮后自动清退"><i class="fa-regular fa-clock"></i>剩余${left}轮</span>`;
+          countdownHtml = ` <span class="we-badge we-event-countdown" style="--event-countdown:${cdColor};" title="该事件在 ${left} 轮后自动清退"><i class="fa-regular fa-clock"></i>剩余${left}轮</span>`;
         }
       }
       const terminalStamp = {
@@ -1139,12 +1139,12 @@ window.WORLD_ENGINE_UI = (function() {
       const metaStyle = isTerminal
         ? 'style="color:var(--we-text2);"'
         : '';
-      const stageBadge = isTerminal ? '' : ` <span class="we-badge" style="background:${color}22;color:${color};">${e.stage}</span>`;
+      const stageBadge = isTerminal ? '' : ` <span class="we-badge we-event-stage-badge">${e.stage}</span>`;
       const metaText = isTerminal
         ? (e.desc ? u(e.desc) : '')
         : `${e.stageRound||1}/9 ${e.desc ? '— '+u(e.desc) : ''}${metaExtra}`;
       const stampHtml = isTerminal && terminalStamp
-        ? `<div class="we-event-stamp" style="border-color:${terminalStamp.color};color:${terminalStamp.color};">${terminalStamp.text}</div>`
+        ? `<div class="we-event-stamp" style="--event-stamp:${terminalStamp.color};">${terminalStamp.text}</div>`
         : '';
       const extraFieldsHtml = renderSchemaExtraFields(e, 'events', {
         name: true,
@@ -1167,7 +1167,7 @@ window.WORLD_ENGINE_UI = (function() {
       const editHtml = isEditing ? renderEventEditor(e, scope, eventIndex) : '';
       return `<div class="${itemClass}" style="${itemStyle}">
         ${stampHtml}
-        <div class="we-event-name"><span style="color:${levelColor};">${u(e.name)}</span> <span class="we-badge" style="background:${levelColor}22;color:${levelColor};">Lv.${e.level||'?'}</span> <span class="we-badge" style="background:${typeColor}22;color:${typeColor};">${typeName}</span>${countdownHtml}${stageBadge}${extras}</div>
+        <div class="we-event-name"><span class="we-event-title">${u(e.name)}</span> <span class="we-badge we-event-level-badge">Lv.${e.level||'?'}</span> <span class="we-badge we-event-type-badge">${typeName}</span>${countdownHtml}${stageBadge}${extras}</div>
         ${metaText ? `<div class="we-event-meta" ${metaStyle}>${metaText}</div>` : ''}
         ${extraFieldsHtml}
         ${editHtml}
@@ -2189,6 +2189,7 @@ window.WORLD_ENGINE_UI = (function() {
     const manualReadRounds = Math.max(1, parseInt(settings.manualReadRounds) || 1);
     const apiTemperature = Number.isFinite(Number(settings.temperature)) ? Math.max(0, Number(settings.temperature)) : 0.7;
     const apiMaxTokens = Math.max(1, parseInt(settings.maxTokens) || 8000);
+    const apiAutoRetries = Math.max(0, parseInt(settings.apiAutoRetries) || 0);
     const apiTimeoutMs = Number.isFinite(Number(settings.apiTimeoutMs)) ? Number(settings.apiTimeoutMs) : 120000;
     const apiTimeoutSec = Math.max(0, Math.round(apiTimeoutMs / 1000));
     // 按时间模式的当前值
@@ -2246,6 +2247,11 @@ window.WORLD_ENGINE_UI = (function() {
         <label>请求超时（秒）</label>
         <input type="number" id="we-api-timeout-sec" min="0" step="1" value="${apiTimeoutSec}" style="width:100%;">
         <div style="font-size:11px;color:var(--we-text3);margin-top:3px;">超过该时间仍未收到完整响应会自动中止并解除「推演中」状态。0 = 不超时。</div>
+      </div>
+      <div class="we-input-group">
+        <label>API fault 自动重试次数</label>
+        <input type="number" id="we-api-auto-retries" min="0" step="1" value="${apiAutoRetries}" style="width:100%;">
+        <div style="font-size:11px;color:var(--we-text3);margin-top:3px;">仅连接、HTTP、超时、空返回或 JSON 无法修补等 fault 才重试；主动停止或切换聊天不重试。默认 0。</div>
       </div>`;
 
     const evolveBody = `
@@ -2352,6 +2358,13 @@ window.WORLD_ENGINE_UI = (function() {
         <label>正文注入最大字符数</label>
         <input type="number" id="we-inject-max-chars" min="0" step="100" value="${injectMaxChars}" style="width:100%;">
         <div style="font-size:11px;color:var(--we-text3);margin-top:3px;">限制注入到正文 prompt 的世界状态长度。默认 5000；0 = 不限制。</div>
+      </div>
+      <div class="we-input-group">
+        <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
+          <input type="checkbox" id="we-inject-all-levels" ${settings.injectAllLevels === true ? 'checked' : ''}>
+          全等级注入
+        </label>
+        <div style="font-size:11px;color:var(--we-text3);margin-top:3px;">开启后事件链和风声的 Lv1-Lv4 全部注入正文；关闭时维持原有高等级筛选。</div>
       </div>`;
 
     // [移植 v2.4.1] 本地机制调参：区域事件 / 事件骰子 / 风声消散 / 保留上限，关键公式直接写在设置里
@@ -2375,6 +2388,35 @@ window.WORLD_ENGINE_UI = (function() {
           ${numInput('we-local-ri-cooldown', 'localRegionalIncidentCooldown', '消散后冷却', 5, 0, '1')}
         </div>
         <div style="font-size:11px;color:var(--we-text3);margin-top:3px;">保持默认值 = 跟随当前预设/内置配置；改动后以此处为准（pigment 的预设可自带区域事件参数）。</div>
+      </div>`;
+
+    const distantBody = `
+      <div style="font-size:12px;color:var(--we-text2);line-height:1.6;margin-bottom:10px;">
+        账本达到门槛后按概率生成一条与主角及既有账本无直接关系的远方事件链或风声（Lv2/Lv3）。<br>
+        类型由本地预选；返回不合格或 API fault 时保留同一类型与账本样本继续尝试。当前预设未启用 events/winds 时自动停用对应目标。
+      </div>
+      <div class="we-input-group">
+        <label>远方随机事件参数</label>
+        <div style="display:flex;gap:6px;flex-wrap:wrap;">
+          ${numInput('we-local-distant-threshold', 'localDistantEventLedgerThreshold', '账本门槛', 10, 1, '1')}
+          ${numInput('we-local-distant-chance', 'localDistantEventChancePercent', '触发概率 %', 20, 0, '0.1')}
+          ${numInput('we-local-distant-cooldown', 'localDistantEventCooldown', '成功后冷却', 5, 0, '1')}
+          ${numInput('we-local-distant-event-percent', 'localDistantEventEventPercent', '事件链占比 %', 50, 0, '0.1')}
+        </div>
+      </div>`;
+
+    const nearBody = `
+      <div style="font-size:12px;color:var(--we-text2);line-height:1.6;margin-bottom:10px;">
+        按概率生成一条与当前对话、主角、所在区域或正在发展事项有明确因果的近端事件链或风声（Lv2/Lv3）。<br>
+        类型由本地预选；返回不合格或 API fault 时保持原类型继续尝试。当前预设未启用 events/winds 时自动停用对应目标。
+      </div>
+      <div class="we-input-group">
+        <label>近端随机事件参数</label>
+        <div style="display:flex;gap:6px;flex-wrap:wrap;">
+          ${numInput('we-local-near-chance', 'localNearEventChancePercent', '触发概率 %', 20, 0, '0.1')}
+          ${numInput('we-local-near-cooldown', 'localNearEventCooldown', '成功后冷却', 5, 0, '1')}
+          ${numInput('we-local-near-event-percent', 'localNearEventEventPercent', '事件链占比 %', 50, 0, '0.1')}
+        </div>
       </div>`;
 
     const diceBody = `
@@ -2487,6 +2529,8 @@ window.WORLD_ENGINE_UI = (function() {
       display: sec('set-display', '界面显示', displayBody),
       inject: sec('set-inject', '正文注入', injectBody),
       mechanics: sec('set-regional', '区域事件', regionalBody)
+        + sec('set-near', '近端随机事件', nearBody)
+        + sec('set-distant', '远方随机事件', distantBody)
         + sec('set-dice', '事件骰子', diceBody)
         + sec('set-winddecay', '风声消散', winddecayBody)
         + sec('set-retention', '保留上限', retentionBody)
@@ -3603,9 +3647,11 @@ window.WORLD_ENGINE_UI = (function() {
           useStProxy: document.getElementById('we-use-st-proxy')?.checked !== false,
           temperature: (() => { const t = parseFloat(gv('we-temperature')); return Number.isFinite(t) ? Math.max(0, t) : 0.7; })(),
           maxTokens: Math.max(1, parseInt(gv('we-max-tokens')) || 8000),
+          apiAutoRetries: Math.max(0, parseInt(gv('we-api-auto-retries')) || 0),
           apiTimeoutMs: (() => { const s = parseFloat(gv('we-api-timeout-sec')); return Number.isFinite(s) ? Math.max(0, Math.round(s * 1000)) : 120000; })(),
           injectIntoPrompt: document.getElementById('we-inject-into-prompt')?.checked !== false,
           injectMaxChars: Math.max(0, parseInt(gv('we-inject-max-chars')) || 0),
+          injectAllLevels: document.getElementById('we-inject-all-levels')?.checked === true,
           evolveMode: (_modeRaw === 'manual' || _modeRaw === 'time') ? _modeRaw : 'auto',
           evolveEveryX: Math.max(1, parseInt(document.getElementById('we-evolve-everyx')?.value) || 1),
           evolveReadRounds: Math.max(1, parseInt(document.getElementById('we-evolve-readrounds')?.value) || 1),
@@ -3629,6 +3675,13 @@ window.WORLD_ENGINE_UI = (function() {
           localRegionalIncidentChancePercent: Math.min(100, Math.max(0, parseFloat(gv('we-local-ri-chance')) || 0)),
           localRegionalIncidentDuration: Math.max(1, parseInt(gv('we-local-ri-duration')) || 5),
           localRegionalIncidentCooldown: Math.max(0, parseInt(gv('we-local-ri-cooldown')) || 0),
+          localDistantEventLedgerThreshold: Math.max(1, parseInt(gv('we-local-distant-threshold')) || 10),
+          localDistantEventChancePercent: Math.min(100, Math.max(0, parseFloat(gv('we-local-distant-chance')) || 0)),
+          localDistantEventCooldown: Math.max(0, parseInt(gv('we-local-distant-cooldown')) || 0),
+          localDistantEventEventPercent: Math.min(100, Math.max(0, parseFloat(gv('we-local-distant-event-percent')) || 0)),
+          localNearEventChancePercent: Math.min(100, Math.max(0, parseFloat(gv('we-local-near-chance')) || 0)),
+          localNearEventCooldown: Math.max(0, parseInt(gv('we-local-near-cooldown')) || 0),
+          localNearEventEventPercent: Math.min(100, Math.max(0, parseFloat(gv('we-local-near-event-percent')) || 0)),
           localEventDiceModifier: Math.min(100, Math.max(-100, parseInt(gv('we-local-dice-mod')) || 0)),
           localEventSetbackRatioPercent: Math.min(100, Math.max(0, parseFloat(gv('we-local-setback-ratio')) || 0)),
           localProgressFailBase: Math.max(0, parseInt(gv('we-local-progress-fail-base')) || 0),
@@ -3957,9 +4010,11 @@ window.WORLD_ENGINE_UI = (function() {
           useStProxy: document.getElementById('we-use-st-proxy')?.checked !== false,
           temperature: (() => { const t = parseFloat(document.getElementById('we-temperature')?.value); return Number.isFinite(t) ? Math.max(0, t) : 0.7; })(),
           maxTokens: Math.max(1, parseInt(document.getElementById('we-max-tokens')?.value) || 8000),
+          apiAutoRetries: Math.max(0, parseInt(document.getElementById('we-api-auto-retries')?.value) || 0),
           apiTimeoutMs: (() => { const s = parseFloat(document.getElementById('we-api-timeout-sec')?.value); return Number.isFinite(s) ? Math.max(0, Math.round(s * 1000)) : 120000; })(),
           injectIntoPrompt: document.getElementById('we-inject-into-prompt')?.checked !== false,
-          injectMaxChars: Math.max(0, parseInt(document.getElementById('we-inject-max-chars')?.value) || 0)
+          injectMaxChars: Math.max(0, parseInt(document.getElementById('we-inject-max-chars')?.value) || 0),
+          injectAllLevels: document.getElementById('we-inject-all-levels')?.checked === true
         }));
         if (api.getSettings) api.getSettings(true);
         fetchBtn.disabled = true;

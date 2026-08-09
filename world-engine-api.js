@@ -46,12 +46,16 @@ window.WORLD_ENGINE_API = (function() {
       // [移植 v2.3.21·pigment 适配] 上游默认 2000；pigment 推演一直用 8000（世界状态 JSON 大，
       // 2000 必截断），此字段此前无 UI 无调用方，默认直接取 8000 保持推演现状
       maxTokens: 8000,
+      // [移植上游 1211a27] 仅 API fault 自动重试；0 = 不重试。
+      apiAutoRetries: 0,
       useStProxy: true,
       injectIntoPrompt: true,
       // 悬浮球开关：关闭后从酒馆「魔法棒」扩展菜单打开面板，推进钮移到面板标题栏
       showFloatingBall: true,
       // [移植 v2.4.1] 正文注入最大字符数。0 = 不限制
       injectMaxChars: 5000,
+      // false 保持原等级筛选；true 时事件链与风声 Lv1-Lv4 全部注入正文。
+      injectAllLevels: false,
       evolveMode: 'auto',
       evolveEveryX: 1,
       evolveReadRounds: 1,
@@ -73,6 +77,14 @@ window.WORLD_ENGINE_API = (function() {
       localRegionalIncidentChancePercent: 3,
       localRegionalIncidentDuration: 5,
       localRegionalIncidentCooldown: 5,
+      // 远方/近端随机动态。仅在当前预设启用 canonical events/winds 时运行。
+      localDistantEventLedgerThreshold: 10,
+      localDistantEventChancePercent: 20,
+      localDistantEventCooldown: 5,
+      localDistantEventEventPercent: 50,
+      localNearEventChancePercent: 20,
+      localNearEventCooldown: 5,
+      localNearEventEventPercent: 50,
       localEventDiceModifier: 0,
       localEventSetbackRatioPercent: 40,
       localProgressFailBase: 2,

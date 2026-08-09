@@ -111,6 +111,19 @@
         "_retryType": "",
         "duration": 0
       },
+      "distantEvent": {
+        "pending": false,
+        "cooldown": 0,
+        "sample": [],
+        "requestedRound": 0,
+        "requestedType": ""
+      },
+      "nearEvent": {
+        "pending": false,
+        "cooldown": 0,
+        "requestedRound": 0,
+        "requestedType": ""
+      },
       "blackbox": {
         "secretActions": [
           {
@@ -371,6 +384,19 @@
         "_retryType": "",
         "duration": 0
       },
+      "distantEvent": {
+        "pending": false,
+        "cooldown": 0,
+        "sample": [],
+        "requestedRound": 0,
+        "requestedType": ""
+      },
+      "nearEvent": {
+        "pending": false,
+        "cooldown": 0,
+        "requestedRound": 0,
+        "requestedType": ""
+      },
       "blackbox": {
         "secretActions": [],
         "secretAssets": []
@@ -555,6 +581,19 @@
         "_retry": false,
         "_retryType": "",
         "duration": 0
+      },
+      "distantEvent": {
+        "pending": false,
+        "cooldown": 0,
+        "sample": [],
+        "requestedRound": 0,
+        "requestedType": ""
+      },
+      "nearEvent": {
+        "pending": false,
+        "cooldown": 0,
+        "requestedRound": 0,
+        "requestedType": ""
       },
       "blackbox": {
         "secretActions": [],
