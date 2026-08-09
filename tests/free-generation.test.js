@@ -92,6 +92,17 @@ function makeResponse(mode) {
       { id: 'events', kind: 'builtin', enabled: true, order: 1 },
       customModule('campusSystems', 'campusSystems', 'Track clubs, student council, and school-life institutions only when plot changes them.', ['stable', 'tense'])
     ],
+    localMechanics: {
+      distantEvent: { ledgerThreshold: 18, chancePercent: 6, cooldownRounds: 12, eventPercent: 30 },
+      nearEvent: { chancePercent: 32, cooldownRounds: 2, eventPercent: 75 },
+      retention: { ledgerKeepRounds: 30, caps: { events: 9 } }
+    },
+    regionalIncidents: {
+      chance: 0.01,
+      durationRounds: 2,
+      cooldownRounds: 14,
+      types: [{ type: 'campusFestival', label: '校园祭风波', weight: 100, guide: '社团、学生会与校方因活动安排产生连锁变化。' }]
+    },
     ui: { summaryEmpty: 'Campus is quiet.' }
   };
 }
@@ -116,6 +127,9 @@ async function generateAndAssert(mode, entryId, field, promptNeedle, promptExclu
   });
   assert(lastPrompt.includes('自由模式'));
   assert(lastPrompt.includes('modules[]'));
+  assert(lastPrompt.includes('"localMechanics"'));
+  const templateMatch = lastPrompt.match(/```json\s*([\s\S]*?)```/);
+  assert(templateMatch && JSON.parse(templateMatch[1]), 'free generation JSON template should stay parseable');
   assert(lastPrompt.includes(promptNeedle));
   if (promptExcluded) assert(!lastPrompt.includes(promptExcluded));
   if (options.moduleCountMode === 'fixed') assert(lastPrompt.includes('恰好为 ' + options.moduleCount + ' 个'));
@@ -136,6 +150,13 @@ async function main() {
   const campus = await generateAndAssert('campus', 'campus::1', 'campusSystems', 'student council clubs', 'cultivation realms', { moduleCountMode: 'fixed', moduleCount: 2 });
   assert.strictEqual(campus.modules[0].kind, 'builtin');
   assert.strictEqual(campus.modules[0].id, 'events');
+  assert.strictEqual(campus.localMechanics.distantEvent.cooldownRounds, 12);
+  assert.strictEqual(campus.localMechanics.nearEvent.chancePercent, 32);
+  assert.strictEqual(campus.localMechanics.retention.ledgerKeepRounds, 30);
+  assert.strictEqual(campus.localMechanics.retention.caps.events, 9);
+  assert.strictEqual(campus.localMechanics.retention.caps.winds, 12, 'missing generated values should use stable defaults');
+  assert.strictEqual(campus.regionalIncidents.chance, 0.01);
+  assert.strictEqual(campus.regionalIncidents.types[0].type, 'campusFestival');
   // 生成模板应包含引擎段落定制说明；响应未带 engineSegments 时双空（跟随默认）
   assert(lastPrompt.includes('"engineSegments"'), '生成模板应含 engineSegments 字段说明');
   assert(lastPrompt.includes('causalSteps'), '生成模板应含 causalSteps 说明');

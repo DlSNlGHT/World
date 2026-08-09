@@ -72,8 +72,13 @@ window.WORLD_ENGINE_API = (function() {
       evolveTimeMul1: 360, evolveTimeMul2: 30, evolveTimeMul3: 1,
       evolveTimeThreshold: 1,
       evolveTimeMaxRounds: 10,
-      // [移植 v2.4.1] 本地机制调参。默认值 = 原硬编码行为。
-      //   区域事件三项默认值另有「跟随预设」语义：保持默认时用预设/内置值，改动后覆盖预设（见 evolution.js tunedRegionalConfig）
+      // [pigment 3.6] 本地机制调参。每组默认跟随当前预设；关闭后使用下面的手动值。
+      localRegionalIncidentUsePreset: true,
+      localDistantEventUsePreset: true,
+      localNearEventUsePreset: true,
+      localEventDiceUsePreset: true,
+      localWindDecayUsePreset: true,
+      localRetentionUsePreset: true,
       localRegionalIncidentChancePercent: 3,
       localRegionalIncidentDuration: 5,
       localRegionalIncidentCooldown: 5,
@@ -129,6 +134,32 @@ window.WORLD_ENGINE_API = (function() {
     if (raw) {
       try { parsed = JSON.parse(raw) || {}; } catch(e) {}
     }
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) parsed = {};
+
+    // 旧版没有 UsePreset 开关。迁移时按组检测：只要用户曾把任一数值改离出厂值，
+    // 就继续使用这组手动设置；未改过的组自动获得“跟随预设”，避免升级后覆盖用户调参。
+    const followGroups = {
+      localRegionalIncidentUsePreset: ['localRegionalIncidentChancePercent', 'localRegionalIncidentDuration', 'localRegionalIncidentCooldown'],
+      localDistantEventUsePreset: ['localDistantEventLedgerThreshold', 'localDistantEventChancePercent', 'localDistantEventCooldown', 'localDistantEventEventPercent'],
+      localNearEventUsePreset: ['localNearEventChancePercent', 'localNearEventCooldown', 'localNearEventEventPercent'],
+      localEventDiceUsePreset: ['localEventDiceModifier', 'localEventSetbackRatioPercent', 'localProgressFailBase', 'localConflictFailBase'],
+      localWindDecayUsePreset: [
+        'localWindAnnouncementBase', 'localWindAnnouncementGrace', 'localWindAnnouncementLinear', 'localWindAnnouncementQuadratic',
+        'localWindReportBase', 'localWindReportGrace', 'localWindReportLinear', 'localWindReportQuadratic',
+        'localWindRumorBase', 'localWindRumorGrace', 'localWindRumorLinear', 'localWindRumorQuadratic',
+        'localWindSentimentBase', 'localWindSentimentGrace', 'localWindSentimentLinear', 'localWindSentimentQuadratic'
+      ],
+      localRetentionUsePreset: [
+        'localTerminalBaseKeepRounds', 'localTerminalLevelKeepRounds', 'localInfluenceKeepRounds', 'localEnemyTerminalKeepRounds', 'localLedgerKeepRounds',
+        'localCapEvents', 'localCapFactions', 'localCapWinds', 'localCapWorldTrends', 'localCapInfluence', 'localCapEnemies', 'localCapEconomySignals', 'localCapBlackbox'
+      ]
+    };
+    Object.keys(followGroups).forEach((flag) => {
+      if (Object.prototype.hasOwnProperty.call(parsed, flag)) return;
+      parsed[flag] = !followGroups[flag].some((key) =>
+        Object.prototype.hasOwnProperty.call(parsed, key) && Number(parsed[key]) !== Number(defaults[key])
+      );
+    });
     cachedSettings = { ...defaults, ...parsed };
     const chatTonePrompt = getChatTonePrompt();
     if (chatTonePrompt !== null) {

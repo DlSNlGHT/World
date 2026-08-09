@@ -30,6 +30,10 @@ const freePreset = {
   description: 'Export/import free preset',
   mode: 'free',
   builtin: false,
+  localMechanics: {
+    nearEvent: { chancePercent: 7, cooldownRounds: 11, eventPercent: 80 },
+    eventDice: { modifier: -4 }
+  },
   modules: [
     { id: 'events', kind: 'builtin', enabled: true, order: 1 },
     {
@@ -59,8 +63,10 @@ window.WORLD_ENGINE_STORE.setItem('world_engine_phase7-chat_customModuleState', 
 
 const exported = P.exportPreset('phase7_free');
 const payload = JSON.parse(exported);
-assert.strictEqual(payload.schemaVersion, 2);
+assert.strictEqual(payload.schemaVersion, 3);
 assert.strictEqual(payload.mode, 'free');
+assert.strictEqual(payload.localMechanics.nearEvent.cooldownRounds, 11);
+assert.strictEqual(payload.localMechanics.eventDice.modifier, -4);
 assert.strictEqual(payload.modules[1].mechanics.stages.progressMax, 2);
 assert.deepStrictEqual(payload.customModuleState.cultivation, [{ name: 'A', realm: 'adept' }]);
 
@@ -68,20 +74,22 @@ window.WORLD_ENGINE_STORE.removeItem('world_engine_custom_presets');
 window.WORLD_ENGINE_STORE.removeItem('world_engine_phase7-chat_customModuleState');
 const imported = P.importPreset(exported);
 assert(imported, 'import should return preset');
-assert.strictEqual(imported.schemaVersion, 2);
+assert.strictEqual(imported.schemaVersion, 3);
 assert.strictEqual(imported.mode, 'free');
+assert.strictEqual(imported.localMechanics.nearEvent.chancePercent, 7);
 assert.strictEqual(imported.modules[1].field, 'cultivation');
 assert.strictEqual(imported.modules[1].mechanics.stages.progressMax, 2);
 const restoredState = JSON.parse(window.WORLD_ENGINE_STORE.getItem('world_engine_phase7-chat_customModuleState'));
 assert.deepStrictEqual(restoredState.cultivation, [{ name: 'A', realm: 'adept' }]);
 
 const legacy = P.normalizePreset({ id: 'legacy_classic', name: 'Legacy Classic' });
-assert.strictEqual(legacy.schemaVersion, 2);
+assert.strictEqual(legacy.schemaVersion, 3);
 assert.strictEqual(legacy.mode, 'classic');
 assert.deepStrictEqual(legacy.modules, []);
+assert.strictEqual(legacy.localMechanics.distantEvent.chancePercent, 20);
 
 const legacyImported = P.importPreset(JSON.stringify({ id: 'legacy_free', name: 'Legacy Free', mode: 'free', modules: [] }));
 assert(legacyImported.importWarnings.some((warning) => warning.includes('旧版预设')));
-assert.strictEqual(legacyImported.schemaVersion, 2);
+assert.strictEqual(legacyImported.schemaVersion, 3);
 
 console.log('Phase 7 persistence tests: 16 passed');

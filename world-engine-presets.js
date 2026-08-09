@@ -14,8 +14,27 @@
   const STORAGE_KEY_ACTIVE = 'world_engine_active_preset';
   const STORAGE_KEY_CUSTOM = 'world_engine_custom_presets';
   const DEFAULT_PRESET_ID = 'ancient_chinese';
-  const PRESET_SCHEMA_VERSION = 2;
+  const PRESET_SCHEMA_VERSION = 3;
   const PRESET_EXPORT_TYPE = 'worldEnginePresetExport';
+  const LOCAL_MECHANICS_DEFAULTS = {
+    distantEvent: { ledgerThreshold: 10, chancePercent: 20, cooldownRounds: 5, eventPercent: 50 },
+    nearEvent: { chancePercent: 20, cooldownRounds: 5, eventPercent: 50 },
+    eventDice: { modifier: 0, setbackRatioPercent: 40, progressFailBase: 2, conflictFailBase: 6 },
+    windDecay: {
+      announcement: { base: 10, grace: 4, linear: 3, quadratic: 1 },
+      report: { base: 20, grace: 2, linear: 4, quadratic: 2 },
+      rumor: { base: 25, grace: 1, linear: 5, quadratic: 3 },
+      sentiment: { base: 8, grace: 5, linear: 2, quadratic: 1 }
+    },
+    retention: {
+      terminalBaseKeepRounds: 2,
+      terminalLevelKeepRounds: 2,
+      influenceKeepRounds: 8,
+      enemyTerminalKeepRounds: 20,
+      ledgerKeepRounds: 20,
+      caps: { events: 16, factions: 15, winds: 12, worldTrends: 4, influence: 12, enemies: 8, economySignals: 8, blackbox: 12 }
+    }
+  };
 
   // ─────────────────────────────────────────────
   // Helper — deep clone
@@ -1192,6 +1211,82 @@
     if (raw.color != null) result.color = normalizeText(raw.color, '');
     return result;
   }
+
+  function normalizeMechanicNumber(value, fallback, min, max, integer) {
+    var n = Number(value);
+    if (!Number.isFinite(n)) n = fallback;
+    if (min !== undefined) n = Math.max(min, n);
+    if (max !== undefined) n = Math.min(max, n);
+    return integer ? Math.round(n) : n;
+  }
+
+  // 预设随附的本地骰子/生命周期配置。旧预设缺字段时完整回退出厂行为，
+  // 因而 schema 升级不会改变已有世界；生成器提供字段时则按世界观自动调参。
+  function normalizeLocalMechanics(raw) {
+    raw = isPlainObject(raw) ? raw : {};
+    var d = LOCAL_MECHANICS_DEFAULTS;
+    var distant = isPlainObject(raw.distantEvent) ? raw.distantEvent : {};
+    var near = isPlainObject(raw.nearEvent) ? raw.nearEvent : {};
+    var dice = isPlainObject(raw.eventDice) ? raw.eventDice : {};
+    var wind = isPlainObject(raw.windDecay) ? raw.windDecay : {};
+    var retention = isPlainObject(raw.retention) ? raw.retention : {};
+    var caps = isPlainObject(retention.caps) ? retention.caps : {};
+
+    function windRow(name) {
+      var src = isPlainObject(wind[name]) ? wind[name] : {};
+      var fallback = d.windDecay[name];
+      return {
+        base: normalizeMechanicNumber(src.base, fallback.base, 0, 95, false),
+        grace: normalizeMechanicNumber(src.grace, fallback.grace, 0, undefined, true),
+        linear: normalizeMechanicNumber(src.linear, fallback.linear, 0, undefined, false),
+        quadratic: normalizeMechanicNumber(src.quadratic, fallback.quadratic, 0, undefined, false)
+      };
+    }
+
+    return {
+      distantEvent: {
+        ledgerThreshold: normalizeMechanicNumber(distant.ledgerThreshold, d.distantEvent.ledgerThreshold, 1, undefined, true),
+        chancePercent: normalizeMechanicNumber(distant.chancePercent, d.distantEvent.chancePercent, 0, 100, false),
+        cooldownRounds: normalizeMechanicNumber(distant.cooldownRounds, d.distantEvent.cooldownRounds, 0, undefined, true),
+        eventPercent: normalizeMechanicNumber(distant.eventPercent, d.distantEvent.eventPercent, 0, 100, false)
+      },
+      nearEvent: {
+        chancePercent: normalizeMechanicNumber(near.chancePercent, d.nearEvent.chancePercent, 0, 100, false),
+        cooldownRounds: normalizeMechanicNumber(near.cooldownRounds, d.nearEvent.cooldownRounds, 0, undefined, true),
+        eventPercent: normalizeMechanicNumber(near.eventPercent, d.nearEvent.eventPercent, 0, 100, false)
+      },
+      eventDice: {
+        modifier: normalizeMechanicNumber(dice.modifier, d.eventDice.modifier, -100, 100, false),
+        setbackRatioPercent: normalizeMechanicNumber(dice.setbackRatioPercent, d.eventDice.setbackRatioPercent, 0, 100, false),
+        progressFailBase: normalizeMechanicNumber(dice.progressFailBase, d.eventDice.progressFailBase, 0, undefined, true),
+        conflictFailBase: normalizeMechanicNumber(dice.conflictFailBase, d.eventDice.conflictFailBase, 1, undefined, true)
+      },
+      windDecay: {
+        announcement: windRow('announcement'),
+        report: windRow('report'),
+        rumor: windRow('rumor'),
+        sentiment: windRow('sentiment')
+      },
+      retention: {
+        terminalBaseKeepRounds: normalizeMechanicNumber(retention.terminalBaseKeepRounds, d.retention.terminalBaseKeepRounds, 0, undefined, true),
+        terminalLevelKeepRounds: normalizeMechanicNumber(retention.terminalLevelKeepRounds, d.retention.terminalLevelKeepRounds, 0, undefined, true),
+        influenceKeepRounds: normalizeMechanicNumber(retention.influenceKeepRounds, d.retention.influenceKeepRounds, 1, undefined, true),
+        enemyTerminalKeepRounds: normalizeMechanicNumber(retention.enemyTerminalKeepRounds, d.retention.enemyTerminalKeepRounds, 1, undefined, true),
+        ledgerKeepRounds: normalizeMechanicNumber(retention.ledgerKeepRounds, d.retention.ledgerKeepRounds, 1, undefined, true),
+        caps: {
+          events: normalizeMechanicNumber(caps.events, d.retention.caps.events, 1, undefined, true),
+          factions: normalizeMechanicNumber(caps.factions, d.retention.caps.factions, 1, undefined, true),
+          winds: normalizeMechanicNumber(caps.winds, d.retention.caps.winds, 1, undefined, true),
+          worldTrends: normalizeMechanicNumber(caps.worldTrends, d.retention.caps.worldTrends, 1, undefined, true),
+          influence: normalizeMechanicNumber(caps.influence, d.retention.caps.influence, 1, undefined, true),
+          enemies: normalizeMechanicNumber(caps.enemies, d.retention.caps.enemies, 1, undefined, true),
+          economySignals: normalizeMechanicNumber(caps.economySignals, d.retention.caps.economySignals, 1, undefined, true),
+          blackbox: normalizeMechanicNumber(caps.blackbox, d.retention.caps.blackbox, 1, undefined, true)
+        }
+      }
+    };
+  }
+
   function normalizePreset(raw, options) {
     options = options || {};
     var source = migratePreset(raw);
@@ -1222,11 +1317,12 @@
         climateVerdicts: VerdictEngine.normalizeSingleAxis(VERDICT_CONFIGS.economyClimate, source.economy && source.economy.climateVerdicts, base.economy.climateVerdicts, termMap)
       },
       regionalIncidents: {
-        chance: Number.isFinite(Number(source.regionalIncidents && source.regionalIncidents.chance)) ? Number(source.regionalIncidents.chance) : base.regionalIncidents.chance,
-        durationRounds: Number.isFinite(Number(source.regionalIncidents && source.regionalIncidents.durationRounds)) ? Number(source.regionalIncidents.durationRounds) : base.regionalIncidents.durationRounds,
-        cooldownRounds: Number.isFinite(Number(source.regionalIncidents && source.regionalIncidents.cooldownRounds)) ? Number(source.regionalIncidents.cooldownRounds) : base.regionalIncidents.cooldownRounds,
+        chance: normalizeMechanicNumber(source.regionalIncidents && source.regionalIncidents.chance, base.regionalIncidents.chance, 0, 1, false),
+        durationRounds: normalizeMechanicNumber(source.regionalIncidents && source.regionalIncidents.durationRounds, base.regionalIncidents.durationRounds, 1, undefined, true),
+        cooldownRounds: normalizeMechanicNumber(source.regionalIncidents && source.regionalIncidents.cooldownRounds, base.regionalIncidents.cooldownRounds, 0, undefined, true),
         types: normalizeIncidentTypes(source.regionalIncidents && source.regionalIncidents.types, base.regionalIncidents.types)
       },
+      localMechanics: normalizeLocalMechanics(source.localMechanics),
       termMap: termMap,
       ui: normalizeUI(source.ui),
       customRules: normalizeText(source.customRules, ''),
@@ -1742,6 +1838,31 @@
       + g + '\n\n';
   }
 
+  function buildLocalMechanicsGenerationRequirements() {
+    return '- 必须生成顶层 localMechanics，让本地机制随世界观预设一起生成：高动荡/高信息流世界可提高近端与远方触发率，慢热/日常世界应降低概率并拉长冷却；信息传播快的世界可缩短风声 grace 或提高衰减，档案/传说型世界应延长保留；容量上限按世界复杂度设置。不要机械照抄示例值。\n'
+      + '- localMechanics 的百分比范围 0-100；cooldownRounds/grace/保留轮数/容量上限用非负整数（要求至少 1 的字段按示例）；windDecay.base 范围 0-95。事件/风声模块未启用时这些参数会保留但不会触发对应机制。\n'
+      + '- regionalIncidents 也是本地机制的一部分：chance、持续/冷却与事件类型必须和上述 localMechanics 的节奏相协调。\n';
+  }
+
+  function buildLocalMechanicsJsonTemplate() {
+    return '  "localMechanics": {\n'
+      + '    "distantEvent": { "ledgerThreshold": 10, "chancePercent": 20, "cooldownRounds": 5, "eventPercent": 50 },\n'
+      + '    "nearEvent": { "chancePercent": 20, "cooldownRounds": 5, "eventPercent": 50 },\n'
+      + '    "eventDice": { "modifier": 0, "setbackRatioPercent": 40, "progressFailBase": 2, "conflictFailBase": 6 },\n'
+      + '    "windDecay": {\n'
+      + '      "announcement": { "base": 10, "grace": 4, "linear": 3, "quadratic": 1 },\n'
+      + '      "report": { "base": 20, "grace": 2, "linear": 4, "quadratic": 2 },\n'
+      + '      "rumor": { "base": 25, "grace": 1, "linear": 5, "quadratic": 3 },\n'
+      + '      "sentiment": { "base": 8, "grace": 5, "linear": 2, "quadratic": 1 }\n'
+      + '    },\n'
+      + '    "retention": {\n'
+      + '      "terminalBaseKeepRounds": 2, "terminalLevelKeepRounds": 2, "influenceKeepRounds": 8,\n'
+      + '      "enemyTerminalKeepRounds": 20, "ledgerKeepRounds": 20,\n'
+      + '      "caps": { "events": 16, "factions": 15, "winds": 12, "worldTrends": 4, "influence": 12, "enemies": 8, "economySignals": 8, "blackbox": 12 }\n'
+      + '    }\n'
+      + '  },\n';
+  }
+
   function buildFreeGenerationPrompt(source, options) {
     options = options || {};
     var builtinRefs = buildBuiltinModuleReferenceText();
@@ -1767,6 +1888,7 @@
       + '- rules 写给推演 AI 的模块规则，说明什么时候新增、更新、删除或保持该模块数据。\n'
       + '- display 说明 UI 展示方式：style 可用 cards/table/keyvalue/list，titleField/badgeFields/bodyFields 只能引用 fields。\n'
       + '- mechanics 可选，只在需要时配置：dice 支持 mode=threshold/decay/trigger；stages 支持 states 或 order；verdicts 支持 axes 和 levels。\n'
+      + buildLocalMechanicsGenerationRequirements()
       + '- headerMood 指定【顶部状态条】跟踪的模块与字段（自由模式下默认的稳定度只看内置模块，所以纯自定义世界必须靠 headerMood 才能让顶部那行字随剧情变化）：module 写上面某个模块的 id，field 写该模块里一个最能代表整体氛围的数值或枚举字段 key；tiers 是分档短语——数值字段用 min 从高到低分档（每档一句贴合世界观的氛围短语），枚举字段改用 value 精确匹配该字段的每个取值。另外必须填写 default：世界刚生成、第 0 轮还没有任何数据时顶部显示的初始短语（用来替换默认的「海静不扬波」），写一句贴合该世界开场氛围的话。务必填写 headerMood 和其中的 default。\n\n'
       + '- showStability：布尔值，是否需要顶部「世界稳定度/压力」仪表。若这个自由世界以人物关系、恋爱、日常为核心、没有宏观局势压力，设为 false；否则 true。拿不准设为 true。\n\n'
       + '请严格按以下 JSON 返回，只返回 JSON：\n\n'
@@ -1776,6 +1898,11 @@
       + '  "description": "一句话描述这个自由世界预设",\n'
       + '  "mode": "free",\n'
       + '  "showStability": true,\n'
+      + '  "regionalIncidents": {\n'
+      + '    "chance": 0.03, "durationRounds": 5, "cooldownRounds": 5,\n'
+      + '    "types": [{ "type": "英文标识", "label": "中文名称", "weight": 10, "guide": "世界观专属事件示例" }]\n'
+      + '  },\n'
+      + buildLocalMechanicsJsonTemplate()
       + '  "modules": [\n'
       + '    { "id": "events", "kind": "builtin", "enabled": true, "order": 1 },\n'
       + '    {\n'
@@ -1845,6 +1972,8 @@
       ui: parsed.ui || {},
       headerMood: parsed.headerMood || null,
       showStability: parsed.showStability !== false,
+      regionalIncidents: parsed.regionalIncidents || ANCIENT_CHINESE.regionalIncidents,
+      localMechanics: parsed.localMechanics || {},
       termMap: {}
     };
     saveCustomPreset(preset);
@@ -1899,6 +2028,7 @@
           cooldownRounds: preset.regionalIncidents && preset.regionalIncidents.cooldownRounds,
           types: eventTypes
         },
+        localMechanics: preset.localMechanics || normalizeLocalMechanics({}),
         ui: {
           labels: preset.ui && preset.ui.labels || {},
           moods: preset.ui && preset.ui.moods || {},
@@ -2054,6 +2184,7 @@
       + '      { "type": "英文标识", "label": "中文名称", "weight": 10, "guide": "该事件的详细示例场景描述" }\n'
       + '    ]\n'
       + '  },\n'
+      + buildLocalMechanicsJsonTemplate()
       + '  "schemaOverrides": {\n'
       + '    "factions": {\n'
       + '      "addFields": {\n'
@@ -2093,6 +2224,7 @@
       + '- verdicts 的“描述文字”才用目标世界观的风格来写，要生动具体、贴合世界观。\n'
       + '- 不要返回 termMap。不要使用“原始术语 -> 替换词”的方式；请直接在 reputation.dimensions、verdicts 描述、ui.labels、ui.moods、schemaOverrides 的说明与示例中写出贴合当前世界的显示文本。\n'
       + '- regionalIncidents.types 需要约12种，weight 总和约为100。\n'
+      + buildLocalMechanicsGenerationRequirements()
       + '- ui.labels 直接定义界面显示文案：key 必须原样使用上面给出的中文词，value 是当前世界观下自然的叫法（例如赛博朋克可把“世界核心”改为“系统核心”、“账本”改为“事件日志”）。\n'
       + '- ui.moods 的 key 必须用固定的五档（天下太平/暗流浮动/局势紧张/动荡失序/崩坏边缘），value 是该世界观下对应稳定度档位的一句氛围短语（替换古风诗句）。\n'
       + '- ui.moduleLabels 定义12个推演模块在“模块开关”面板里的显示名：key 必须原样使用上面给出的英文 moduleId（world/events/factions/winds/influence/contact/reputation/economy/enemies/regional/blackbox/trends），value 保留“模块X：”前缀、只把冒号后的词替换成当前世界观的叫法（例如赛博朋克“模块三：势力”→“模块三：企业”，“模块十一：信息黑盒”→“模块十一：暗网档案”）。必须12个模块全部给出，不要遗漏。\n'
@@ -2132,6 +2264,7 @@
       factions: parsed.factions || ANCIENT_CHINESE.factions,
       economy: parsed.economy || ANCIENT_CHINESE.economy,
       regionalIncidents: parsed.regionalIncidents || ANCIENT_CHINESE.regionalIncidents,
+      localMechanics: parsed.localMechanics || {},
       termMap: {},
       ui: parsed.ui || {},
       schemaOverrides: parsed.schemaOverrides || {},
@@ -2383,6 +2516,8 @@
     uiMotto:            uiMotto,
     uiSummaryEmpty:     uiSummaryEmpty,
     normalizePreset:    normalizePreset,
+    normalizeLocalMechanics: normalizeLocalMechanics,
+    getLocalMechanicsDefaults: function () { return deepClone(LOCAL_MECHANICS_DEFAULTS); },
     migratePreset:      migratePreset,
     getInternalSchema:  function () { return deepClone(INTERNAL_SCHEMA); },
     _VERDICT_ENGINE: VerdictEngine,

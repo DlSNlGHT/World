@@ -36,15 +36,93 @@ window.WORLD_ENGINE_EVOLUTION = (function() {
     sentiment: { base: 8, grace: 5, linear: 2, quadratic: 1 }
   };
 
-  // ========== [移植 v2.4.1] 本地机制调参读取 ==========
-  //   设置缺失/非法时回退到上面各常量的出厂值，行为与旧版硬编码一致。
+  // ========== [pigment 3.6] 预设随附本地机制 ==========
+  // 设置组勾选“跟随当前预设”时从 preset.localMechanics / regionalIncidents 读取；
+  // 关闭后才读取全局手动数值。缺失/非法配置始终回退出厂硬编码。
+  const LOCAL_MECHANIC_SETTING_MAP = {
+    localRegionalIncidentChancePercent: { flag: 'localRegionalIncidentUsePreset', regional: 'chance', scale: 100 },
+    localRegionalIncidentDuration: { flag: 'localRegionalIncidentUsePreset', regional: 'durationRounds' },
+    localRegionalIncidentCooldown: { flag: 'localRegionalIncidentUsePreset', regional: 'cooldownRounds' },
+    localDistantEventLedgerThreshold: { flag: 'localDistantEventUsePreset', path: ['distantEvent', 'ledgerThreshold'] },
+    localDistantEventChancePercent: { flag: 'localDistantEventUsePreset', path: ['distantEvent', 'chancePercent'] },
+    localDistantEventCooldown: { flag: 'localDistantEventUsePreset', path: ['distantEvent', 'cooldownRounds'] },
+    localDistantEventEventPercent: { flag: 'localDistantEventUsePreset', path: ['distantEvent', 'eventPercent'] },
+    localNearEventChancePercent: { flag: 'localNearEventUsePreset', path: ['nearEvent', 'chancePercent'] },
+    localNearEventCooldown: { flag: 'localNearEventUsePreset', path: ['nearEvent', 'cooldownRounds'] },
+    localNearEventEventPercent: { flag: 'localNearEventUsePreset', path: ['nearEvent', 'eventPercent'] },
+    localEventDiceModifier: { flag: 'localEventDiceUsePreset', path: ['eventDice', 'modifier'] },
+    localEventSetbackRatioPercent: { flag: 'localEventDiceUsePreset', path: ['eventDice', 'setbackRatioPercent'] },
+    localProgressFailBase: { flag: 'localEventDiceUsePreset', path: ['eventDice', 'progressFailBase'] },
+    localConflictFailBase: { flag: 'localEventDiceUsePreset', path: ['eventDice', 'conflictFailBase'] },
+    localTerminalBaseKeepRounds: { flag: 'localRetentionUsePreset', path: ['retention', 'terminalBaseKeepRounds'] },
+    localTerminalLevelKeepRounds: { flag: 'localRetentionUsePreset', path: ['retention', 'terminalLevelKeepRounds'] },
+    localInfluenceKeepRounds: { flag: 'localRetentionUsePreset', path: ['retention', 'influenceKeepRounds'] },
+    localEnemyTerminalKeepRounds: { flag: 'localRetentionUsePreset', path: ['retention', 'enemyTerminalKeepRounds'] },
+    localLedgerKeepRounds: { flag: 'localRetentionUsePreset', path: ['retention', 'ledgerKeepRounds'] },
+    localCapEvents: { flag: 'localRetentionUsePreset', path: ['retention', 'caps', 'events'] },
+    localCapFactions: { flag: 'localRetentionUsePreset', path: ['retention', 'caps', 'factions'] },
+    localCapWinds: { flag: 'localRetentionUsePreset', path: ['retention', 'caps', 'winds'] },
+    localCapWorldTrends: { flag: 'localRetentionUsePreset', path: ['retention', 'caps', 'worldTrends'] },
+    localCapInfluence: { flag: 'localRetentionUsePreset', path: ['retention', 'caps', 'influence'] },
+    localCapEnemies: { flag: 'localRetentionUsePreset', path: ['retention', 'caps', 'enemies'] },
+    localCapEconomySignals: { flag: 'localRetentionUsePreset', path: ['retention', 'caps', 'economySignals'] },
+    localCapBlackbox: { flag: 'localRetentionUsePreset', path: ['retention', 'caps', 'blackbox'] },
+    localWindAnnouncementBase: { flag: 'localWindDecayUsePreset', path: ['windDecay', 'announcement', 'base'] },
+    localWindAnnouncementGrace: { flag: 'localWindDecayUsePreset', path: ['windDecay', 'announcement', 'grace'] },
+    localWindAnnouncementLinear: { flag: 'localWindDecayUsePreset', path: ['windDecay', 'announcement', 'linear'] },
+    localWindAnnouncementQuadratic: { flag: 'localWindDecayUsePreset', path: ['windDecay', 'announcement', 'quadratic'] },
+    localWindReportBase: { flag: 'localWindDecayUsePreset', path: ['windDecay', 'report', 'base'] },
+    localWindReportGrace: { flag: 'localWindDecayUsePreset', path: ['windDecay', 'report', 'grace'] },
+    localWindReportLinear: { flag: 'localWindDecayUsePreset', path: ['windDecay', 'report', 'linear'] },
+    localWindReportQuadratic: { flag: 'localWindDecayUsePreset', path: ['windDecay', 'report', 'quadratic'] },
+    localWindRumorBase: { flag: 'localWindDecayUsePreset', path: ['windDecay', 'rumor', 'base'] },
+    localWindRumorGrace: { flag: 'localWindDecayUsePreset', path: ['windDecay', 'rumor', 'grace'] },
+    localWindRumorLinear: { flag: 'localWindDecayUsePreset', path: ['windDecay', 'rumor', 'linear'] },
+    localWindRumorQuadratic: { flag: 'localWindDecayUsePreset', path: ['windDecay', 'rumor', 'quadratic'] },
+    localWindSentimentBase: { flag: 'localWindDecayUsePreset', path: ['windDecay', 'sentiment', 'base'] },
+    localWindSentimentGrace: { flag: 'localWindDecayUsePreset', path: ['windDecay', 'sentiment', 'grace'] },
+    localWindSentimentLinear: { flag: 'localWindDecayUsePreset', path: ['windDecay', 'sentiment', 'linear'] },
+    localWindSentimentQuadratic: { flag: 'localWindDecayUsePreset', path: ['windDecay', 'sentiment', 'quadratic'] }
+  };
+
   function localSettings() {
     return api && api.getSettings ? api.getSettings() : {};
   }
 
+  function activePreset() {
+    try {
+      return window.WORLD_ENGINE_PRESETS && typeof window.WORLD_ENGINE_PRESETS.getActivePreset === 'function'
+        ? window.WORLD_ENGINE_PRESETS.getActivePreset()
+        : null;
+    } catch (e) {
+      return null;
+    }
+  }
+
+  function getPresetMechanicValue(key) {
+    const spec = LOCAL_MECHANIC_SETTING_MAP[key];
+    if (!spec) return undefined;
+    const preset = activePreset();
+    if (!preset) return undefined;
+    let value;
+    if (spec.regional) {
+      value = preset.regionalIncidents && preset.regionalIncidents[spec.regional];
+    } else {
+      value = preset.localMechanics;
+      for (const part of spec.path || []) value = value && value[part];
+    }
+    const n = Number(value);
+    if (!Number.isFinite(n)) return undefined;
+    const scaled = n * (spec.scale || 1);
+    return spec.scale ? Number(scaled.toFixed(12)) : scaled;
+  }
+
   function numSetting(key, fallback, min, max) {
-    const n = Number(localSettings()[key]);
-    let v = Number.isFinite(n) ? n : fallback;
+    const settings = localSettings();
+    const spec = LOCAL_MECHANIC_SETTING_MAP[key];
+    const presetValue = spec && settings[spec.flag] === true ? getPresetMechanicValue(key) : undefined;
+    const n = Number(settings[key]);
+    let v = Number.isFinite(presetValue) ? presetValue : (Number.isFinite(n) ? n : fallback);
     if (min !== undefined) v = Math.max(min, v);
     if (max !== undefined) v = Math.min(max, v);
     return v;
@@ -147,9 +225,7 @@ window.WORLD_ENGINE_EVOLUTION = (function() {
     return REGIONAL_INCIDENT_CONFIG;
   }
 
-  // [移植 v2.4.1·pigment 适配] 区域事件参数：用户设置 > 预设 > 内置。
-  //   上游没有预设层，直接读设置；pigment 的预设可自带 regionalIncidents，
-  //   故约定「设置保持出厂默认 = 跟随预设/内置」，用户改过（≠默认）才覆盖预设值。
+  // 区域事件类型始终来自预设；概率/持续/冷却按 UsePreset 开关解析。
   function tunedRegionalConfig() {
     const cfg = getRegionalConfig();
     const chancePct = numSetting('localRegionalIncidentChancePercent', 3, 0, 100);
@@ -157,9 +233,9 @@ window.WORLD_ENGINE_EVOLUTION = (function() {
     const cooldown = intSetting('localRegionalIncidentCooldown', 5, 0);
     return {
       ...cfg,
-      chance: chancePct !== 3 ? chancePct / 100 : cfg.chance,
-      durationRounds: duration !== 5 ? duration : cfg.durationRounds,
-      cooldownRounds: cooldown !== 5 ? cooldown : cfg.cooldownRounds
+      chance: chancePct / 100,
+      durationRounds: duration,
+      cooldownRounds: cooldown
     };
   }
 
@@ -2033,6 +2109,13 @@ ${persona}`
     _LIFECYCLE_CONFIGS: LIFECYCLE_CONFIGS,
     _GENERIC_MECHANICS: GenericMechanics,
     _GENERIC_MERGE: GenericMerge,
+    _LOCAL_MECHANICS: {
+      settingMap: LOCAL_MECHANIC_SETTING_MAP,
+      getPresetMechanicValue,
+      resolveSetting: numSetting,
+      tunedRegionalConfig,
+      tunedWindDecayTable
+    },
     _RANDOM_EVENTS: {
       getRandomEventTargets,
       pickRandomTarget,

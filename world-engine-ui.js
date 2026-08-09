@@ -2369,6 +2369,18 @@ window.WORLD_ENGINE_UI = (function() {
 
     // [移植 v2.4.1] 本地机制调参：区域事件 / 事件骰子 / 风声消散 / 保留上限，关键公式直接写在设置里
     const mech = (k, d) => { const v = settings[k]; return (v === undefined || v === null || v === '') ? d : v; };
+    const localPreset = (() => {
+      try { return window.WORLD_ENGINE_PRESETS?.getActivePreset?.() || {}; } catch (e) { return {}; }
+    })();
+    const localProfile = localPreset.localMechanics || {};
+    const followPresetRow = (id, key, summary) => `
+      <div class="we-input-group" style="padding:8px 10px;border:1px solid var(--we-border);border-radius:8px;background:var(--we-bg2, rgba(255,255,255,0.04));">
+        <label style="display:flex;align-items:center;gap:8px;cursor:pointer;margin:0;">
+          <input type="checkbox" id="${id}" ${settings[key] !== false ? 'checked' : ''}>
+          跟随当前世界观预设
+        </label>
+        <div style="font-size:11px;color:var(--we-text3);margin-top:4px;line-height:1.5;">预设值：${summary}。取消勾选后使用下方手动值。</div>
+      </div>`;
     const numInput = (id, key, label, d, min, step) =>
       '<div class="we-input-group" style="flex:1;min-width:112px;margin-bottom:0;"><label>' + label + '</label>'
       + '<input type="number" id="' + id + '" min="' + min + '" step="' + step + '" value="' + mech(key, d) + '"></div>';
@@ -2380,6 +2392,8 @@ window.WORLD_ENGINE_UI = (function() {
         区域突发事件是纯本地骰子：先由本地判定是否发生，再把事件类型和约束交给推演模型写成世界变化。
         概率越高，远方灾变、治安事件、交通断裂这类背景波动越频繁。
       </div>
+      ${followPresetRow('we-local-ri-use-preset', 'localRegionalIncidentUsePreset',
+        `概率 ${Math.round(Number(localPreset.regionalIncidents?.chance || 0.03) * 1000) / 10}% / 持续 ${localPreset.regionalIncidents?.durationRounds ?? 5} 轮 / 冷却 ${localPreset.regionalIncidents?.cooldownRounds ?? 5} 轮`)}
       <div class="we-input-group">
         <label>区域突发事件参数</label>
         <div style="display:flex;gap:6px;flex-wrap:wrap;">
@@ -2387,7 +2401,6 @@ window.WORLD_ENGINE_UI = (function() {
           ${numInput('we-local-ri-duration', 'localRegionalIncidentDuration', '持续轮数', 5, 1, '1')}
           ${numInput('we-local-ri-cooldown', 'localRegionalIncidentCooldown', '消散后冷却', 5, 0, '1')}
         </div>
-        <div style="font-size:11px;color:var(--we-text3);margin-top:3px;">保持默认值 = 跟随当前预设/内置配置；改动后以此处为准（pigment 的预设可自带区域事件参数）。</div>
       </div>`;
 
     const distantBody = `
@@ -2395,6 +2408,8 @@ window.WORLD_ENGINE_UI = (function() {
         账本达到门槛后按概率生成一条与主角及既有账本无直接关系的远方事件链或风声（Lv2/Lv3）。<br>
         类型由本地预选；返回不合格或 API fault 时保留同一类型与账本样本继续尝试。当前预设未启用 events/winds 时自动停用对应目标。
       </div>
+      ${followPresetRow('we-local-distant-use-preset', 'localDistantEventUsePreset',
+        `门槛 ${localProfile.distantEvent?.ledgerThreshold ?? 10} / 概率 ${localProfile.distantEvent?.chancePercent ?? 20}% / 冷却 ${localProfile.distantEvent?.cooldownRounds ?? 5} / 事件占比 ${localProfile.distantEvent?.eventPercent ?? 50}%`)}
       <div class="we-input-group">
         <label>远方随机事件参数</label>
         <div style="display:flex;gap:6px;flex-wrap:wrap;">
@@ -2410,6 +2425,8 @@ window.WORLD_ENGINE_UI = (function() {
         按概率生成一条与当前对话、主角、所在区域或正在发展事项有明确因果的近端事件链或风声（Lv2/Lv3）。<br>
         类型由本地预选；返回不合格或 API fault 时保持原类型继续尝试。当前预设未启用 events/winds 时自动停用对应目标。
       </div>
+      ${followPresetRow('we-local-near-use-preset', 'localNearEventUsePreset',
+        `概率 ${localProfile.nearEvent?.chancePercent ?? 20}% / 冷却 ${localProfile.nearEvent?.cooldownRounds ?? 5} / 事件占比 ${localProfile.nearEvent?.eventPercent ?? 50}%`)}
       <div class="we-input-group">
         <label>近端随机事件参数</label>
         <div style="display:flex;gap:6px;flex-wrap:wrap;">
@@ -2426,6 +2443,8 @@ window.WORLD_ENGINE_UI = (function() {
         若 骰值 &gt; T：推进一格；若 骰值 &lt; T × 受挫系数：倒退一格；否则保持。<br>
         冲突型 Lv 修正 = -(Lv - 1) × 10，Lv 越高越容易爆发。推进型 Lv 修正 = +(Lv - 1) × 10，Lv 越高越难完成。
       </div>
+      ${followPresetRow('we-local-dice-use-preset', 'localEventDiceUsePreset',
+        `推进修正 ${localProfile.eventDice?.modifier ?? 0} / 受挫 ${localProfile.eventDice?.setbackRatioPercent ?? 40}% / 保底 A=${localProfile.eventDice?.progressFailBase ?? 2}, B=${localProfile.eventDice?.conflictFailBase ?? 6}`)}
       <div class="we-input-group">
         <label>事件骰子公式参数</label>
         <div style="margin-bottom:6px;">
@@ -2448,6 +2467,8 @@ window.WORLD_ENGINE_UI = (function() {
         消散率 P = clamp(base + linear × n + quadratic × n² - (Lv - 1) × 10, 5, 95)。<br>
         掷 1d100，若 骰值 ≤ P，则该风声消散。Lv 越高，越不容易消散。
       </div>
+      ${followPresetRow('we-local-wind-use-preset', 'localWindDecayUsePreset',
+        `公告 ${localProfile.windDecay?.announcement?.base ?? 10}/${localProfile.windDecay?.announcement?.grace ?? 4}/${localProfile.windDecay?.announcement?.linear ?? 3}/${localProfile.windDecay?.announcement?.quadratic ?? 1}，消息 ${localProfile.windDecay?.report?.base ?? 20}/${localProfile.windDecay?.report?.grace ?? 2}/${localProfile.windDecay?.report?.linear ?? 4}/${localProfile.windDecay?.report?.quadratic ?? 2}，流言 ${localProfile.windDecay?.rumor?.base ?? 25}/${localProfile.windDecay?.rumor?.grace ?? 1}/${localProfile.windDecay?.rumor?.linear ?? 5}/${localProfile.windDecay?.rumor?.quadratic ?? 3}，舆论 ${localProfile.windDecay?.sentiment?.base ?? 8}/${localProfile.windDecay?.sentiment?.grace ?? 5}/${localProfile.windDecay?.sentiment?.linear ?? 2}/${localProfile.windDecay?.sentiment?.quadratic ?? 1}`)}
       <div class="we-input-group">
         <label>风声消散公式参数</label>
         ${['Rumor:流言:25:1:5:3','Sentiment:舆论:8:5:2:1','Report:消息:20:2:4:2','Announcement:公告:10:4:3:1'].map(row => {
@@ -2468,6 +2489,8 @@ window.WORLD_ENGINE_UI = (function() {
         正面终局事件（已爆发 / 已完成）保留轮数 = 基础保留 + Lv × 每级额外保留。<br>
         负面终局事件（已消散 / 已失败）下一轮清退；影响链、已终结仇敌、账本分别按各自保存轮数清退。
       </div>
+      ${followPresetRow('we-local-retention-use-preset', 'localRetentionUsePreset',
+        `终局 ${localProfile.retention?.terminalBaseKeepRounds ?? 2}+Lv×${localProfile.retention?.terminalLevelKeepRounds ?? 2} 轮 / 影响 ${localProfile.retention?.influenceKeepRounds ?? 8} / 仇敌 ${localProfile.retention?.enemyTerminalKeepRounds ?? 20} / 账本 ${localProfile.retention?.ledgerKeepRounds ?? 20}`)}
       <div class="we-input-group">
         <label>保留轮数</label>
         <div style="display:flex;gap:6px;flex-wrap:wrap;">
@@ -3671,7 +3694,13 @@ window.WORLD_ENGINE_UI = (function() {
           evolveTimeMul3: parseFloat(gv('we-time-mul3')) || 0,
           evolveTimeThreshold: Math.max(1, parseInt(gv('we-time-threshold')) || 1),
           evolveTimeMaxRounds: Math.max(1, parseInt(gv('we-time-maxrounds')) || 10),
-          // [移植 v2.4.1] 本地机制调参
+          // [pigment 3.6] 本地机制：每组可跟随当前预设，或使用手动值
+          localRegionalIncidentUsePreset: document.getElementById('we-local-ri-use-preset')?.checked !== false,
+          localDistantEventUsePreset: document.getElementById('we-local-distant-use-preset')?.checked !== false,
+          localNearEventUsePreset: document.getElementById('we-local-near-use-preset')?.checked !== false,
+          localEventDiceUsePreset: document.getElementById('we-local-dice-use-preset')?.checked !== false,
+          localWindDecayUsePreset: document.getElementById('we-local-wind-use-preset')?.checked !== false,
+          localRetentionUsePreset: document.getElementById('we-local-retention-use-preset')?.checked !== false,
           localRegionalIncidentChancePercent: Math.min(100, Math.max(0, parseFloat(gv('we-local-ri-chance')) || 0)),
           localRegionalIncidentDuration: Math.max(1, parseInt(gv('we-local-ri-duration')) || 5),
           localRegionalIncidentCooldown: Math.max(0, parseInt(gv('we-local-ri-cooldown')) || 0),
